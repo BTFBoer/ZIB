@@ -23,7 +23,7 @@ export async function kiesAdapter(voorkeur = 'auto') {
             const me = await api.init();
             return { adapter: api, me };
           } catch (e) {
-            waarschuwing = `De cloud-API is gevonden maar niet toegankelijk (${e.message}). Controleer Cloudflare Access en de instellingen ACCESS_TEAM_DOMAIN en ACCESS_AUD. ZIB werkt nu tijdelijk lokaal in deze browser.`;
+            waarschuwing = `De cloud-API is gevonden maar niet toegankelijk (${e.message}). Controleer Cloudflare Access, de instellingen ACCESS_TEAM_DOMAIN en ACCESS_AUD en of je e-mailadres op ALLOWED_EMAILS staat. ZIB werkt nu tijdelijk lokaal in deze browser.`;
           }
         }
       }

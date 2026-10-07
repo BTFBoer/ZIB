@@ -15,8 +15,9 @@ binding = "FILES"
 bucket_name = "zib-documenten"
 jurisdiction = "eu"
 
-[vars]
-# Team-domein van Cloudflare Zero Trust, bijv. "jouwteam.cloudflareaccess.com"
-ACCESS_TEAM_DOMAIN = ""
-# Application Audience (AUD) Tag van de Access-applicatie
-ACCESS_AUD = ""
+# Inloggen (Cloudflare Access) stel je in met drie versleutelde variabelen in het Pages-dashboard
+# (Settings → Variables and Secrets → Add → Encrypt), niet in dit bestand: dit bestand is de bron
+# van waarheid voor de configuratie en zou ze in het dashboard op alleen-lezen zetten.
+#   ACCESS_TEAM_DOMAIN  team-domein van Cloudflare Zero Trust, bijv. "jouwteam.cloudflareaccess.com"
+#   ACCESS_AUD          Application Audience (AUD) Tag van de Access-applicatie
+#   ALLOWED_EMAILS      optioneel slot: alleen deze e-mailadressen (komma-gescheiden) bij de gegevens

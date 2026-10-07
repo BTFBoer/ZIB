@@ -52,7 +52,7 @@ Of bouw één zelfstandig bestand met `npm run build:demo` en open `dist/zib-dem
 
 | Route | Geschikt voor | Gegevens |
 |---|---|---|
-| **Cloudflare Pages + D1 + R2 + Access** (aanbevolen) | Dagelijks gebruik, meerdere gebruikers | Centraal, EU-jurisdictie, login, automatische back-ups |
+| **Cloudflare Pages + D1 + R2 + Access** (aanbevolen) | Dagelijks gebruik, meerdere gebruikers | Centraal, EU-jurisdictie, inloggen met een code per e-mail (alleen toegestane adressen), automatische back-ups |
 | GitHub Pages | Alleen demo | Alleen in de browser van de gebruiker; site is publiek |
 
 De stap-voor-stapinstructie staat in [docs/CLOUD.md](docs/CLOUD.md).

@@ -1,3 +1,5 @@
 # Kopieer naar .dev.vars voor lokaal testen met `npm run dev:cloud`.
 # Hiermee werkt de API zonder Cloudflare Access. Nooit in productie gebruiken.
 DEV_ALLOW_ANON=1
+# Optioneel: alleen deze e-mailadressen krijgen toegang (komma-gescheiden). Geldt alleen met Cloudflare Access.
+# ALLOWED_EMAILS=jij@voorbeeld.nl

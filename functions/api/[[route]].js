@@ -157,11 +157,13 @@ export async function onRequest(context) {
   const seg = Array.isArray(params.route) ? params.route : (params.route ? [params.route] : []);
   try {
     if (seg[0] === 'health') {
-      return json({ ok: true, app: 'ZIB', database: !!env.DB, bestanden: !!env.FILES, access: !!(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD) });
+      return json({ ok: true, app: 'ZIB', database: !!env.DB, bestanden: !!env.FILES, access: !!(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD),
+        toegangslijst: !!String(env.ALLOWED_EMAILS || '').trim() });
     }
     if (!env.DB) return json({ fout: 'D1-binding "DB" ontbreekt. Koppel de database in de Pages-instellingen.' }, 500);
     const user = await gebruiker(request, env);
     if (!user) return json({ fout: 'Niet ingelogd of Cloudflare Access is niet ingesteld.' }, 401);
+    if (user.toegang === false) return json({ fout: `${user.email} heeft geen toegang tot deze ZIB-omgeving.` }, 403);
 
     switch (seg[0]) {
       case 'me':
