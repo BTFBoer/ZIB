@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+.DS_Store
+*.log
+# Back-ups en exports bevatten persoonsgegevens: nooit committen
+zib-backup-*.json
+backups/

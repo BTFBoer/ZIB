@@ -1,0 +1,3 @@
+# Kopieer naar .dev.vars voor lokaal testen met `npm run dev:cloud`.
+# Hiermee werkt de API zonder Cloudflare Access. Nooit in productie gebruiken.
+DEV_ALLOW_ANON=1
