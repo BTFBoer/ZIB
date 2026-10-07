@@ -9,6 +9,7 @@ import { pil, veld, keuze, leeg, melding, icoon } from './ui.js';
 import { samenvatting } from './aanvragen.js';
 import { ACCREDITATIES } from './formats.js';
 import { ui } from './uistate.js';
+import { drive } from '../store/drive.js';
 
 const POST_LABEL = Object.fromEntries([...BALANS_RIJEN, ...VW_RIJEN].filter((r) => r.k).map((r) => [r.k, r.label]));
 POST_LABEL.vpb = 'Vennootschapsbelasting';
@@ -119,6 +120,8 @@ const FAQ = [
     'Als overwinst (niet-uitgekeerde winst) tot het inkomen wordt gerekend, gaan we ervan uit dat die als dividend uitgekeerd had kunnen worden. ZIB stelt daarom ook een balans op waarin de overwinst fictief is onttrokken aan het eigen vermogen, het balanstotaal en de vlottende activa, en toetst of de onderneming dan nog aan de normen voldoet. Maximale overwinst solvabiliteit: (aansprakelijk vermogen - norm × balanstotaal) / (1 - norm); liquiditeit: vlottende activa - 1 × kort vreemd vermogen (current ratio ≥ 1), of het gemiddelde werkkapitaal met als maximum het laatste jaar. De laagste uitkomst begrenst de overwinst. NHG schrijft de toets voor (25%, gemiddeld werkkapitaal, afslag 25%). Bij ABN AMRO (Woonbeleid 3.63, niet-uitgekeerd dividend) stel je per hoofdbedrijf in: de solvabiliteitsnorm (standaard 20%), de liquiditeitstoets, of je alle toetsjaren toetst, of ook de tussentijdse balans meetelt en of eerdere fictieve onttrekkingen cumulatief meetellen. Verder gelden: zelfstandige bevoegdheid (100% of aangetoond, bijvoorbeeld een dividendbeleid), minimaal 3 boekjaren, winst in het laatste jaar, een onderbouwde vrije kasstroom en de balanstest (vrij uitkeerbare reserves). De rekentool van de bank rekent geen niet-uitgekeerd dividend mee: ZIB stelt dan een afwijkend inkomen voor, met de volledige rekenkundige onderbouwing in de conclusie.'],
   ['Wat staat er op het tabblad BZI-invoer?',
     'De uitkomst van de (gedetailleerde) berekening vertaald naar de velden van de rekentool van de bank, per bedrijf in de volgorde van die tool: vinkje per jaar, status, belang, DGA-inkomen, bijtelling en dividend, omzet en nettowinst, management fee en het interne dividend aan de aandeelhouder, de correcties per type, eigen vermogen, balanstotaal, vlottende activa en kort vreemd vermogen. Daaronder staan de uitkomsten die de rekentool moet laten zien (ter controle) en het advies: berekend inkomen of een afwijkend inkomen met onderbouwing. Met "Kopieer als tabel" plak je een bedrijf in Excel.'],
+  ['Hoe bewaar ik dossiers in Google Drive?',
+    'In de demo op claude.ai: Downloads → Google Drive → Google Drive koppelen, en sta de koppeling toe. ZIB bewaart je dossiers dan als bestand in de map ZIB in je Google Drive, met de tien nieuwste versies. Na een wijziging slaat ZIB binnen ongeveer twintig seconden op; bij het openen op een ander apparaat haalt ZIB de nieuwste versie op en voegt die samen met wat in die browser staat (per dossier wint de nieuwste wijziging). Bewaar daar alleen fictieve of geanonimiseerde dossiers.'],
   ['Hoe leg ik een STAK, certificaathouders of andere aandeelhouders vast?',
     'Bij het organogram (Bedrijven of Klantgegevens) voeg je partijen toe die niet in de berekening meetellen: personen, een STAK (met de bestuurder in de toelichting) of de holding van een medeaandeelhouder. Met lijnen leg je vast wie welk belang heeft; certificaten tekent ZIB gestippeld. Geeft een STAK certificaten uit voor meer vennootschappen, kies dan bij elke certificaathouder "Certificaten van": elke vennootschap krijgt met haar certificaathouders een eigen kleur. ZIB controleert of de belangen per vennootschap optellen tot 100%, toont het organogram grafisch en als tekst, en de partijen zijn te kiezen als tegenpartij bij de geldstromen (bijvoorbeeld een management fee aan de holding van een medeaandeelhouder). Eerdere structuren leg je vast als situatie; bij "Invoegen in notities" komen ze onder elkaar met de huidige situatie als laatste.'],
   ['Kan ik de volgorde van de jaarkolommen wijzigen?',
@@ -167,9 +170,40 @@ export function renderHulp() {
 }
 
 // ---------------------------------------------------------------------------
+/** Google Drive-opslag (alleen in de ingesloten demo op claude.ai). */
+function paneelDrive() {
+  if (!globalThis.ZIB_ARTIFACT) return '';
+  if (!drive.beschikbaar) {
+    return `<div class="paneel" id="drive"><h2>Google Drive</h2>
+      <p class="dempen">Google Drive is in deze weergave niet beschikbaar. Open de demo op claude.ai, ingelogd met het account waaraan je Google Drive hebt gekoppeld.</p></div>`;
+  }
+  const tijd = drive.laatst ? `${String(drive.laatst.getHours()).padStart(2, '0')}:${String(drive.laatst.getMinutes()).padStart(2, '0')}` : '';
+  const status = drive.status === 'ok' ? pil('akkoord', `Bewaard om ${tijd}`)
+    : drive.status === 'bezig' ? pil('info', 'Bezig…')
+      : drive.status === 'fout' ? pil('niet_akkoord', 'Niet gelukt')
+        : pil('neutraal', drive.uitgezet ? 'Ontkoppeld in deze browser' : 'Niet gekoppeld');
+  const gekoppeld = drive.status === 'ok' || (drive.status === 'fout' && drive.toestemming === 'granted');
+  const knoppen = [
+    gekoppeld || drive.status === 'bezig'
+      ? `<button class="knop" data-actie="drive-sync"${drive.status === 'bezig' ? ' disabled' : ''}>Nu opslaan en ophalen</button>`
+      : '<button class="knop" data-actie="drive-koppel">Google Drive koppelen</button>',
+    drive.mapUrl ? `<a class="knop sec" href="${esc(drive.mapUrl)}" target="_blank" rel="noopener">Map ZIB openen in Google Drive</a>` : '',
+    drive.toestemming === 'denied' ? '<button class="knop sec" data-actie="drive-rechten">Rechten beheren</button>' : '',
+    gekoppeld ? '<button class="knop link" data-actie="drive-uit">Ontkoppelen in deze browser</button>' : '',
+  ].join('');
+  return `<div class="paneel" id="drive"><div class="paginakop" style="margin:0 0 8px"><h2>Google Drive</h2>${status}</div>
+    <p>ZIB bewaart je dossiers als bestand in de map <b>ZIB</b> in je Google Drive. Elke opslag is een nieuwe versie; de tien nieuwste blijven staan, oudere gaan naar de prullenbak (30 dagen terug te halen). Bij het openen haalt ZIB de nieuwste versie op en voegt die samen met wat in deze browser staat: per dossier wint de nieuwste wijziging. Na een wijziging slaat ZIB binnen ongeveer twintig seconden op.</p>
+    ${drive.bestand ? `<p class="dempen klein">Laatste versie: ${esc(drive.bestand)}${drive.versies ? ` · ${drive.versies} ${drive.versies === 1 ? 'versie' : 'versies'} in de map` : ''}</p>` : ''}
+    ${drive.status === 'fout' ? melding('niet_akkoord', esc(drive.melding)) : ''}
+    <div class="acties" style="margin-top:10px">${knoppen}</div>
+    <div style="margin-top:12px">${melding('attentie', 'Alleen fictieve of geanonimiseerde dossiers: echte klantgegevens horen niet in een persoonlijke Google Drive.')}</div>
+  </div>`;
+}
+
 export function renderDownloads() {
   return `${paginakop('Downloads', 'Back-ups, sjablonen en documentenlijsten.')}
-    <div class="raster-2">
+    ${paneelDrive()}
+    <div class="raster-2"${globalThis.ZIB_ARTIFACT ? ' style="margin-top:16px"' : ''}>
       <div class="paneel"><h2>Back-up</h2>
         <p>Exporteer alle dossiers, advieskantoren, taken en tickets als JSON-bestand. Bewaar het op een beveiligde locatie; het bestand bevat persoonsgegevens.</p>
         <div class="acties"><button class="knop" data-actie="export">Back-up downloaden</button>

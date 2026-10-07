@@ -7,7 +7,8 @@ import { bereken, salarisPeriode, organogramGraaf, organogramTekst } from './eng
 import {
   parseBedrag, setPath, getPath, esc, fmt, todayISO, uid, nowISO, naamAanvrager, debounce, num, clone, isIngevuld,
 } from './util.js';
-import { balk, banners, opslagStatusHTML } from './views/layout.js';
+import { balk, banners, opslagStatusHTML, driveStatusHTML } from './views/layout.js';
+import { initDrive, synchroniseer, ontkoppel, beheerRechten, opDriveWijziging, drive } from './store/drive.js';
 import {
   renderAanvragen, tabelAanvragen, filters, modaalNieuweKlant, modaalStatus, modaalHypotheeknummer, modaalTaken,
   modaalKopieren, modaalVerwijderen, modaalEerdereAanvragen, modaalHerbeoordeling, modaalZoekAfgerond, samenvatting,
@@ -127,6 +128,27 @@ const herberekenDossier = debounce(() => {
     if (el.dataset.calc.endsWith('|VERSCHIL')) el.classList.toggle('fout', Math.abs(Number(w) || 0) > 1);
   });
 }, 150);
+
+/** Alleen de meldingen boven de pagina bijwerken (zonder de hele pagina opnieuw te tekenen). */
+function werkBannersBij() {
+  const nieuw = banners();
+  const oud = app.querySelector(':scope > .banner');
+  if (oud) {
+    if (nieuw) oud.outerHTML = nieuw;
+    else oud.remove();
+  } else if (nieuw) {
+    document.getElementById('main')?.insertAdjacentHTML('beforebegin', nieuw);
+  }
+}
+
+// Google Drive (ingesloten demo): status in de bovenbalk; na het ophalen van records opnieuw tekenen.
+opDriveWijziging((type) => {
+  if (route.pagina === 'login' || !document.getElementById('main')) return;
+  if (type === 'records' || route.pagina === 'downloads') { render({ behoudScroll: true }); return; }
+  const el = document.getElementById('drivestatus');
+  if (el) el.innerHTML = driveStatusHTML();
+  werkBannersBij();
+});
 
 opWijziging((type) => {
   if (type === 'opslag') {
@@ -1178,6 +1200,21 @@ const ACTIES = {
 </html>`;
     downloadBestand(`${d.nummer || 'dossier'}-rapport.html`, html, 'text/html');
   },
+  async 'drive-koppel'() {
+    const r = await synchroniseer();
+    if (r) toast(r.opgehaald ? `Google Drive gekoppeld: ${r.opgehaald} ${r.opgehaald === 1 ? 'record' : 'records'} opgehaald.` : 'Google Drive gekoppeld: je dossiers staan in de map ZIB.');
+  },
+  async 'drive-sync'() {
+    const r = await synchroniseer();
+    if (r) toast(r.opgehaald ? `${r.opgehaald} ${r.opgehaald === 1 ? 'record' : 'records'} opgehaald uit Google Drive.` : 'Google Drive is bijgewerkt.');
+  },
+  'drive-uit'() {
+    ontkoppel();
+    toast('Google Drive ontkoppeld in deze browser. De bestanden in Drive blijven staan.');
+  },
+  async 'drive-rechten'() {
+    if (!(await beheerRechten())) toast('Open het menu Rechten van deze pagina in claude.ai en zet Google Drive aan.');
+  },
   'kopieer-download'() {
     const el = document.getElementById('download-tekst');
     if (!el) return;
@@ -1345,7 +1382,9 @@ const ACTIES = {
     render();
   },
   async 'lokaal-wissen'() {
-    if (!(await bevestig('Alle lokale gegevens (dossiers, documenten, taken) definitief wissen? Maak eerst een back-up als je ze wilt bewaren.', 'Alles wissen'))) return;
+    const driveTekst = globalThis.ZIB_ARTIFACT && drive.status === 'ok'
+      ? ' De versies in Google Drive blijven staan en komen bij de volgende synchronisatie terug; ontkoppel Google Drive eerst als je dat niet wilt.' : '';
+    if (!(await bevestig(`Alle lokale gegevens (dossiers, documenten, taken) definitief wissen? Maak eerst een back-up als je ze wilt bewaren.${driveTekst}`, 'Alles wissen'))) return;
     await wisLokaal();
     toast('Lokale gegevens gewist.');
     render();
@@ -1402,6 +1441,7 @@ function voerUit(actie, el, e) {
     await start();
     if (!location.hash) location.hash = state.profiel || state.modus === 'cloud' ? '#/klanten' : '#/login';
     render();
+    initDrive();
   } catch (e) {
     console.error(e);
     app.innerHTML = `<div class="pagina"><div class="melding niet_akkoord">ZIB kon niet starten: ${esc(e.message || String(e))}</div></div>`;

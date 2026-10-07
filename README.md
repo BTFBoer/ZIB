@@ -36,7 +36,7 @@ Twee beleidskaders, elk voor twee soorten aanvragen:
 - **Notities** in de opbouw van de rekentool (algemene informatie en organogram, financiële informatie per onderneming, privé, kredietbestemming, conclusie, bijlagen) met formats, concepttekst uit de invoer en de rekenkundige onderbouwing van een afwijkend inkomen.
 - **Rapport**: uitgebreide rapportage (printen of pdf) met organogram, inkomensvaststelling, berekeningen naast elkaar (1-1-1, 1-2-3), overwinst, geldstromen, kengetallen, voorwaarden en alle rekenstappen.
 - **Fiattering**: 1e beoordeling (gereed melden), 2e beoordeling met controlevragen en accreditatiecheck (vier ogen), historie en eerdere versies.
-- **Opslag**: lokaal in de browser (demo/offline) of centraal in Cloudflare D1 met versiegeschiedenis, conflictdetectie en point-in-time-herstel. Zie [docs/CLOUD.md](docs/CLOUD.md).
+- **Opslag**: lokaal in de browser (demo/offline), in de demo op claude.ai gespiegeld naar een map in je Google Drive (versies, samenvoegen per dossier), of centraal in Cloudflare D1 met versiegeschiedenis, conflictdetectie en point-in-time-herstel. Zie [docs/CLOUD.md](docs/CLOUD.md).
 
 ## Snel starten (lokaal, zonder afhankelijkheden)
 

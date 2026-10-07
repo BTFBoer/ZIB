@@ -16,6 +16,16 @@ ZIB bevat de code voor de Cloudflare-route volledig: de API (`functions/`), het 
 
 > Werk je met echte klantgegevens voor een bank of andere werkgever, dan beslist die werkgever waar de gegevens mogen staan. Een persoonlijk Cloudflare- of GitHub-account is daar in de regel niet voor goedgekeurd. Gebruik deze route dan voor testen met fictieve dossiers, en vraag IT/privacy naar een goedgekeurde omgeving (bijvoorbeeld de eigen Azure-tenant van de werkgever). Zie ook [PRIVACY.md](PRIVACY.md).
 
+## Google Drive (demo op claude.ai)
+
+De demo op claude.ai kan dossiers bewaren in je eigen Google Drive, via de Google Drive-koppeling van claude.ai. Op de pagina Downloads kies je **Google Drive koppelen** en sta je de koppeling toe.
+
+- ZIB maakt de map `ZIB` en zet daar bij elke opslag een nieuw bestand `ZIB-gegevens <tijd>.json` neer. De koppeling kan een bestaand bestand niet overschrijven; daarom zijn het versies. De tien nieuwste blijven staan, oudere gaan naar de prullenbak (30 dagen terug te halen).
+- Na een wijziging slaat ZIB binnen ongeveer twintig seconden op. Bij het openen haalt ZIB de nieuwste versie op en voegt die samen met wat in de browser staat: per dossier wint de nieuwste wijziging, ook een verwijdering.
+- Geüploade documenten (pdf's) gaan niet mee; die blijven in de browser.
+- Werk je op twee apparaten tegelijk aan hetzelfde dossier, dan wint de laatste opslag. Gebruik het als persoonlijke opslag voor één gebruiker.
+- Alleen voor fictieve of geanonimiseerde dossiers: een persoonlijke Google Drive is geen goedgekeurde plek voor klantgegevens.
+
 ## Stap voor stap: Cloudflare
 
 Benodigd: een (gratis) Cloudflare-account en de repository op GitHub. Alles kan in het Cloudflare-dashboard; de opdrachtregel (Node.js 20+, `npx wrangler login`) is een alternatief.

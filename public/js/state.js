@@ -259,6 +259,16 @@ export async function importeer(json) {
 
 export async function laadDemo() {
   const recs = demoRecords();
+  if (state.adapter?.naam === 'lokaal') {
+    // Lokaal met de oorspronkelijke tijdstempels: een nieuwere versie elders (bijv. in Google Drive,
+    // waar een demodossier is gewijzigd of verwijderd) wint dan bij het samenvoegen.
+    const metTijd = recs.map((r) => ({ ...r, version: 1, updated_at: r.gewijzigd || r.aangemaakt || '2026-01-01T00:00:00.000Z' }));
+    await state.adapter.importAll({ records: metTijd });
+    metTijd.forEach((r) => state.records.set(r.id, migreer({ ...r })));
+    lsSet('zib.demo.geladen', '1');
+    meld('records');
+    return;
+  }
   for (const r of recs) {
     const res = await state.adapter.put(r);
     state.records.set(r.id, migreer({ ...r, version: res.version, updated_at: res.updated_at }));
