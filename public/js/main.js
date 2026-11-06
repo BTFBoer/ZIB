@@ -16,7 +16,7 @@ import {
 import { renderDossier, kopVoor, calcWaarde, docAanwezig, NAAR_BZI, NAAR_VIIZ, roosterJaren, weergaveDossier } from './views/dossier.js';
 import { modaalCorrectie, correctieLijstHTML, modaalVaSamenstelling, modaalSalaris, MAANDEN_KORT } from './views/bzi.js';
 import {
-  renderDocumenten, renderAdvieskantoren, renderTaken, renderMeekijken, renderFAQ, renderHulp,
+  renderDocumenten, renderAdvieskantoren, renderTaken, renderMeekijken, renderFAQ, renderHulp, renderToetskaders,
   renderDownloads, renderTickets, renderTicket, renderMijnGegevens, renderLogin, renderEmail, emailFormulier,
 } from './views/paginas.js';
 import { openModaal, sluitModaal, waardeUit, toast, downloadBestand, leeg, bevestig, vervangModaalInhoud, icoon } from './views/ui.js';
@@ -26,7 +26,7 @@ import { documentenlijst } from './schema/documenten.js';
 import { WINST_CORRECTIES, VERMOGENS_CORRECTIES } from './schema/correcties.js';
 import { pasDetailToe, DOSSIER_STATUSSEN, AFGEROND, BALANS_RIJEN, VW_RIJEN } from './schema/fields.js';
 import { parseGrootboekTekst, verdeelGrootboek } from './schema/rekeningschema.js';
-import { RECHTSVORMEN } from './engine/kaders.js';
+import { RECHTSVORMEN, KADERS, kaderLabel } from './engine/kaders.js';
 import { ui, zetUitgebreid, zetPaginagrootte, toggleNotitie, zetNotitiesVerborgen, zetJaarVolgorde, zetOrganogramWeergave } from './views/uistate.js';
 import { organogramSVG } from './views/organogram.js';
 
@@ -63,7 +63,7 @@ function parseRoute() {
 
 const MENU_KEY = {
   aanvragen: 'klanten', documenten: 'documenten', advieskantoren: 'advieskantoren', taken: 'taken', 'mijn-taken': 'mijn-taken',
-  hulp: 'hulp', meekijken: 'meekijken', faq: 'faq', downloads: 'downloads', tickets: 'tickets', ticket: 'tickets',
+  hulp: 'hulp', meekijken: 'meekijken', faq: 'faq', toetskaders: 'toetskaders', downloads: 'downloads', tickets: 'tickets', ticket: 'tickets',
   'mijn-gegevens': 'mijn-gegevens', 'e-mail': 'e-mail',
 };
 
@@ -104,6 +104,7 @@ export function render({ behoudScroll = false } = {}) {
     case 'hulp': inhoud = renderHulp(); titel = 'Hulp nodig?'; break;
     case 'meekijken': inhoud = renderMeekijken(); titel = 'Meekijken'; break;
     case 'faq': inhoud = renderFAQ(); titel = 'FAQ'; break;
+    case 'toetskaders': inhoud = renderToetskaders(); titel = 'Toetskaders'; breed = true; break;
     case 'downloads': inhoud = renderDownloads(); titel = 'Downloads'; break;
     case 'tickets': inhoud = renderTickets(); titel = 'Tickets'; break;
     case 'ticket': inhoud = renderTicket(route.id); titel = 'Ticket'; break;
@@ -208,6 +209,21 @@ function verwerkBinding(el, magRenderen) {
       if (ond?.jaren?.[m[2]]) pasDetailToe(ond.jaren[m[2]], m[3], m[4]);
     }
     if (el.dataset.bind === 'status') doel.obj.statusDatum = nowISO();
+    // Handmatige keuzes die de uitkomst bepalen, komen in de historie (wie, wanneer, wat).
+    if (magRenderen) {
+      const bind = el.dataset.bind || '';
+      if (bind === 'kader') logHistorie(doel.obj, `Toetskader gewijzigd naar ${kaderLabel(waarde)}`);
+      const afw = /^(?:ond:([^.]+)\.)?afwijkend\.(actief|bedrag|motivatie)$/.exec(bind);
+      if (afw) {
+        const ond = afw[1] ? ondVan(doel.obj, afw[1]) : null;
+        const a = (ond ? ond.afwijkend : doel.obj.afwijkend) || {};
+        const wie = ond ? ` (${ond.naam || 'hoofdbedrijf'})` : '';
+        if (afw[2] === 'actief') logHistorie(doel.obj, `Afwijkend inkomen${wie} ${waarde ? 'ingeschakeld' : 'uitgeschakeld'}${waarde && a.bedrag ? `: € ${fmt.getal(Number(a.bedrag))}` : ''}`);
+        else if (afw[2] === 'bedrag' && a.actief) logHistorie(doel.obj, `Afwijkend inkomen${wie} vastgesteld op € ${fmt.getal(Number(waarde) || 0)}${a.motivatie ? '' : ' (motivatie nog leeg)'}`);
+        else if (afw[2] === 'motivatie' && a.actief) logHistorie(doel.obj, `Motivatie afwijkend inkomen${wie} vastgelegd: ${String(waarde || '').slice(0, 140)}`);
+      }
+      if (/^instellingen\.belet\.actief$/.test(bind)) logHistorie(doel.obj, `Beletperiode / incidenteel jaar ${waarde ? 'ingeschakeld' : 'uitgeschakeld'}`);
+    }
   }
   opslaan(doel.obj);
   if (doel.soort === 'dossier') herberekenDossier();
@@ -1355,11 +1371,16 @@ const ACTIES = {
     const tekst = Object.entries(FORMATS).map(([k, v]) => `### ${k}\n${v}`).join('\n\n');
     downloadBestand('zib-formats-dossieraantekeningen.txt', tekst, 'text/plain');
   },
+  'naar-kader'(el, e) {
+    e?.preventDefault?.();
+    document.getElementById(`kader-${el.dataset.kader}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  },
   'download-doclijst'(el) {
     const kader = el.dataset.kader;
+    const k = KADERS[kader] || KADERS.NHG;
     const jaar = new Date().getFullYear();
     const lijstje = documentenlijst({ soort: 'IKV', ondernemingen: [], loondienst: { meenemen: true } },
-      { kader, T: [jaar - 3, jaar - 2, jaar - 1], C: jaar, heeftVPB: true, heeftSamenwerking: true, starter: true, meerdereBV: true, stilleReserves: true, box3: true, rc: true, zk: true, beroepsregister: true, leningDirectie: true, dividendbeleid: true, deelnemingen: true });
+      { kader, familie: k.familie, kaderCfg: k, T: [jaar - 3, jaar - 2, jaar - 1], C: jaar, heeftVPB: true, heeftSamenwerking: true, starter: true, meerdereBV: true, stilleReserves: true, box3: true, rc: true, zk: true, beroepsregister: true, leningDirectie: true, dividendbeleid: true, deelnemingen: true });
     const tekst = lijstje.map((x) => `- ${x.naam}\n  Wanneer: ${x.wanneer}${x.geldigheid ? `\n  Geldigheid: ${x.geldigheid}` : ''}`).join('\n');
     downloadBestand(`documentenlijst-${kader.toLowerCase()}.txt`, tekst, 'text/plain');
   },

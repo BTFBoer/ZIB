@@ -57,10 +57,16 @@ export function documentenlijst(d, ctx) {
     return lijst;
   }
 
-  if (ctx.kader === 'NHG') {
+  const familie = ctx.familie || (ctx.kader === 'ABN' ? 'ABN' : 'NHG');
+  const k = ctx.kaderCfg || {};
+  const dv = k.definitiefVerplichtVanaf ? `${String(k.definitiefVerplichtVanaf.d).padStart(2, '0')}-${String(k.definitiefVerplichtVanaf.m).padStart(2, '0')}` : '01-05';
+  if (familie === 'NHG') {
     lijst.push(item('kvk', 'Uittreksel KvK', 'Bij KvK-plichtige ondernemers', { geldigheid: 'Niet ouder dan 3 maanden' }));
-    lijst.push(item('ib_aangifte', `IB-aangiftes laatste drie jaar (${jaren3})`, 'Laatste jaar vanaf 01-05; de aangifte moet zijn ingediend', { aantal: 3, jaren: T }));
-    lijst.push(item('jaarrekening', `Jaarrekeningen (${jaren3})`, 'Laatste jaar vanaf 01-05', { aantal: 3, jaren: T }));
+    lijst.push(item('ib_aangifte', `IB-aangiftes laatste drie jaar (${jaren3})`, `Laatste jaar vanaf ${dv}; de aangifte moet zijn ingediend`, { aantal: 3, jaren: T }));
+    lijst.push(item('jaarrekening', `Jaarrekeningen (${jaren3})`, `Laatste jaar vanaf ${dv}`, { aantal: 3, jaren: T }));
+    if (ctx.starter) lijst.push(item('prognose', k.id === 'KNAB' || k.id === 'OPT' ? 'Prognose volgens NBA-standaard 3400 (lopend en komend jaar)' : 'Prognose met gerealiseerde cijfers lopend jaar en onderbouwing', 'Bij starters (12 tot 36 maanden); opgesteld door de vaste accountant of boekhouder'));
+    if (k.beletRegel && ctx.belet) lijst.push(item('verklaring_boekhouder', 'Verklaring boekhouder over de oorzaak van het belet en tussentijdse cijfers ná het belet (min. 6 maanden)', 'Bij een beletperiode'));
+    if (k.incidentRegel && ctx.belet) lijst.push(item('tussentijds', 'Tussentijdse cijfers die het herstel na het incident aantonen (opgesteld door de vaste accountant)', 'Bij een incidenteel jaar (§3.8)'));
     lijst.push(item('ib_aanslag', 'IB-aanslagen: de laatste twee definitieve', 'Altijd', { aantal: 2 }));
     lijst.push(item('vgi', 'Verklaring geregistreerd inkomen (oudste twee jaren)', 'Digitaal, onder de oorspronkelijke bestandsnaam', { aantal: 2 }));
     lijst.push(item('uwv', 'UWV verzekeringsbericht', 'In alle situaties'));

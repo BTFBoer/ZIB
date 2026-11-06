@@ -32,7 +32,14 @@ export const VERMOGENS_CORRECTIES = {
   odv: { label: 'ODV / pensioenvoorziening', zijde: 'passiva', teken: +1, soorten: ['VPB'], effect: [], auto: 'odv', alleenNHG: true },
   lvv: { label: 'Lang vreemd vermogen (lening o/g)', zijde: 'passiva', teken: +1, soorten: ['VPB'], effect: [], alleenNHG: true },
   overigPassivaLang: { label: 'Overig – passivazijde (langlopend)', zijde: 'passiva', teken: +1, soorten: ['IB', 'VPB'], effect: [], alleenNHG: true },
-  overigPassivaKort: { label: 'Overig – passivazijde (kortlopend)', zijde: 'passiva', teken: 0, soorten: ['IB', 'VPB'], effect: ['kvv'] },
+  overigPassivaKort: { label: 'Overig – passivazijde (kortlopend, telt als aansprakelijk vermogen)', zijde: 'passiva', teken: 0, soorten: ['IB', 'VPB'], effect: ['kvv'],
+    hint: 'Kortlopende schuld die als (achtergesteld) eigen vermogen telt: verhoogt het aansprakelijk vermogen en verlaagt het kort vreemd vermogen. Alleen een andere looptijd? Kies dan Herrubricering.' },
+  // Herrubricering tussen kort en lang vreemd vermogen: alleen de looptijd verandert, het eigen vermogen niet.
+  // Positief bedrag = schuld die als kortlopend is opgenomen maar langlopend is (KVV omlaag);
+  // negatief bedrag = langlopende schuld die binnen een jaar vervalt (KVV omhoog).
+  herrubriceringKortLang: { label: 'Herrubricering kort ↔ lang vreemd vermogen (geen effect op EV)', zijde: 'passiva', teken: 0, soorten: ['IB', 'VPB'],
+    effect: ['kvv'], geenEV: true,
+    hint: 'Positief: kortlopende schuld die feitelijk langlopend is (verlaagt het kort vreemd vermogen). Negatief: langlopende schuld die binnen een jaar vervalt.' },
 };
 
 /** Effect van een correctie met teken (verlagend = negatief). */

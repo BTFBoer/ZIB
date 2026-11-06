@@ -1,6 +1,6 @@
 import { esc, fmt, naamAanvrager, todayISO } from '../util.js';
 import { lijst, get, state, opslagvoorkeur, mijnNaam } from '../state.js';
-import { kaderLabel, SOORTEN } from '../engine/kaders.js';
+import { kaderLabel, SOORTEN, KADERS, KADER_VOLGORDE, PARAM_LABELS, leesPad } from '../engine/kaders.js';
 import { CATEGORIEEN } from '../schema/documenten.js';
 import { RUBRIEKEN, postVoorRekening } from '../schema/rekeningschema.js';
 import { BALANS_RIJEN, VW_RIJEN } from '../schema/fields.js';
@@ -106,6 +106,14 @@ export function emailFormulier({ aan = '', bcc = '', onderwerp = '', bericht = '
 
 // ---------------------------------------------------------------------------
 const FAQ = [
+  ['Welke toetskaders zitten in ZIB?',
+    'Vijf: NHG (Toetskaders Inkomensverklaring Ondernemer 2026-1), ABN AMRO (Woonbeleid, rekentool BZI), ASN Bank (voorheen de Volksbank, Risk Policy voor geaccrediteerde partijen v1.5), Knab (concept toetskader 2024.013) en Optimaal, een eigen referentiekader. Je kiest per dossier het kader dat de uitkomst bepaalt; op het tabblad Berekening en in het rapport zie je hetzelfde dossier volgens alle vijf naast elkaar. Onder Toetskaders staat per kader de bron, de regels en wat een interpretatie is.'],
+  ['Wat is het Optimaal toetskader en waarom zo?',
+    'Een poging om het inkomen zo eerlijk en realistisch mogelijk te bepalen: wat de ondernemer werkelijk verdient en duurzaam kan onttrekken, zonder de toevalligheden van één kader. Een DGA met zeggenschap telt loon plus zijn aandeel in de winst na Vpb (dividend komt uit dezelfde winst en telt niet nog eens), maar alleen voor zover die winst na een dubbele balanstoets en uit vrije reserves uitkeerbaar is. Recente jaren wegen zwaarder (1-2-3, maximaal 10% boven het gemiddelde en maximaal het laatste jaar). Een lager lopend jaar weegt mee naar rato van de lengte van de periode, sterke schommelingen kosten een afslag, en dividend uit een minderheidsbelang telt alleen met een trackrecord en tot de winst van de deelneming. Starters met relevante ervaring krijgen geen afslag. De parameters zijn per dossier instelbaar.'],
+  ['Wat is de holdingroute (ABN AMRO 3.63)?',
+    'Als de persoonlijke holding structureel dividend ontvangt uit een minderheidsdeelneming, is het inkomen het DGA-loon plus het ontvangen dividend: het gemiddelde over drie jaar, maximaal het laatste jaar. Uitkering en winst van de holding zelf tellen dan niet mee, anders telt hetzelfde geld dubbel. Zet de holdingroute aan bij de onderneming; ZIB gebruikt het ontvangen dividend uit de geldstromen (of het uitgekeerde interne dividend naar rato van het belang).'],
+  ['Wanneer kies ik een herrubricering in plaats van "Overig – passivazijde (kortlopend)"?',
+    'Als alleen de looptijd van een schuld anders is dan op de balans (bijvoorbeeld een voorfinanciering die vanaf volgend jaar langlopend is): de herrubricering verlaagt het kort vreemd vermogen maar laat het aansprakelijk vermogen ongemoeid. "Overig – passivazijde (kortlopend)" telt de schuld daarnaast als eigen vermogen, zoals bij een achtergestelde lening.'],
   ['Wat is het verschil tussen het NHG-kader en het ABN AMRO Woonbeleid in ZIB?',
     'NHG: gemiddelde van 3 jaar met maximum laatste jaar; tussentijdse cijfers kunnen alleen verlagen; solvabiliteit ≥ 25% volgens het bandbreedtemodel; positieve balanscorrecties (box 3, stille reserves, FOR, achtergestelde leningen) zijn toegestaan; box 2 via route 1, route 2 (25% afslag) of een gemotiveerde combinatie. ABN AMRO: laagste van gemiddelde en laatste jaar; starters 75% (1-2 boekjaren) of 90% (2-3 boekjaren) met de prognose als maximum; solvabiliteit ≥ 20%; correcties vooral negatief (immateriële activa, R/C en lening directie) plus de cashflowcorrectie.'],
   ['Wanneer gebruik ik een 0-verklaring?',
@@ -141,6 +149,49 @@ const FAQ = [
   ['Mag ik echte klantgegevens invoeren?',
     'Alleen als de omgeving daarvoor is goedgekeurd door je werkgever (privacy en informatiebeveiliging). Gebruik voor testen de demodossiers of fictieve gegevens en leg nooit een BSN vast.'],
 ];
+
+// ---------------------------------------------------------------------------
+// Toetskaders: bron, regels, aannames en de belangrijkste parameters naast elkaar
+// ---------------------------------------------------------------------------
+const pctK = (x) => (x === null || x === undefined ? '–' : `${String(Math.round(x * 1000) / 10).replace('.', ',')}%`);
+
+function kenmerken(k) {
+  const band = k.bandbreedte ? (k.bandbreedte.norm !== undefined ? `${pctK(k.bandbreedte.laag)} / ${pctK(k.bandbreedte.norm)} / ${pctK(k.bandbreedte.hoog)}`
+    : `IB ${pctK(k.bandbreedte.IB.laag)}-${pctK(k.bandbreedte.IB.hoog)}, BV ${pctK(k.bandbreedte.VPB.laag)}-${pctK(k.bandbreedte.VPB.hoog)}`) : null;
+  const starters = k.starterFactoren ? k.starterFactoren.filter((x) => x.factor < 1).map((x) => pctK(x.factor)).join(' / ') : 'Volgens NHG: loon vóór de start uit dezelfde branche telt mee';
+  const box2 = { NHG: `Route 1 dividend of route 2 overwinst (${pctK(1 - (k.box2.afslag || 0))}) na dubbele balanstoets`, ABN: 'Uitgekeerd dividend (max. nettowinst); optioneel overwinst (3.63) of holdingroute', ASN: 'Winst na Vpb + dividend (> 50%), dubbele balanstoets CR ≥ 1 en solvabiliteit ≥ 20%', OPT: 'Aandeel in winst na Vpb (look-through), begrensd op uitkeerbare ruimte' }[k.box2.model];
+  return [
+    ['Inkomen', k.inkomensberekening[0]],
+    ['Weging', k.methode123 ? `1-2-3, max. ${pctK(k.methode123.maxBoven111)} boven 1-1-1${k.methode123.maxBovenNHG ? `, max. ${pctK(k.methode123.maxBovenNHG)} boven NHG` : ''}` : '1-1-1 (gelijk gewogen), max. laatste jaar'],
+    ['Lopend jaar', k.totaal === 'OPT' ? 'Lager geëxtrapoleerd inkomen weegt naar rato van de periode' : k.totaal === 'ASN' ? 'Geen verplichte toets; vervangen vanaf 1 april' : k.familie === 'ABN' ? 'Signaal als het geëxtrapoleerde inkomen lager is' : 'Lager geëxtrapoleerd inkomen verlaagt'],
+    ['Starters', starters],
+    ['Solvabiliteit', band ? `Bandbreedte ${band}` : `≥ ${pctK(k.solvabiliteitMin)}${k.familie === 'ABN' ? ' of gemiddelde solvabiliteitsruimte ≥ 0' : ''}`],
+    ['Liquiditeit', `Current ratio ≥ ${String(k.liquiditeitMin).replace('.', ',')}${k.toetsen.liquiditeit === 'ENOF' ? ' (laatste jaar en/of controlejaar)' : k.toetsen.liquiditeit === 'ABN' ? ' of gemiddelde liquiditeitsruimte ≥ 0' : ''}`],
+    ['Box 2', box2],
+    ['Bijtelling auto', k.bijtellingDrempel ? `Alleen het deel boven ${pctK(k.bijtellingDrempel)} van winst of loon` : k.bijtellingDGA === 'alle' ? 'Volledig, alle jaren' : 'Volledig; DGA laatste jaar en lopend jaar'],
+    ['Definitieve cijfers verplicht vanaf', `${k.definitiefVerplichtVanaf.d}-${k.definitiefVerplichtVanaf.m}`],
+    ['Buitenland', (k.landen || ['NL']).join(', ')],
+  ];
+}
+
+export function renderToetskaders() {
+  const ids = KADER_VOLGORDE;
+  const rijen = kenmerken(KADERS.NHG).map(([label], i) => `<tr><td><b>${esc(label)}</b></td>${ids.map((id) => `<td>${esc(kenmerken(KADERS[id])[i][1])}</td>`).join('')}</tr>`).join('');
+  const kaarten = ids.map((id) => {
+    const k = KADERS[id];
+    return `<div class="paneel" id="kader-${id}"><h2>${esc(k.kort)} <span class="dempen klein">${esc(k.versie)}</span></h2>
+      <p class="klein"><b>${esc(k.naam)}</b>. ${esc(k.bestemdVoor)}.</p>
+      <p class="dempen klein">Bron: ${esc(k.bron)}. ${esc(k.bronStatus || '')}</p>
+      <h3>Regels</h3><ul>${k.regels.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      ${k.aannames?.length ? `<h3>Interpretaties en aannames</h3><ul>${k.aannames.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+      ${k.instelbaar?.length ? `<p class="dempen klein">Instelbaar per dossier: ${esc(k.instelbaar.map((p) => `${(PARAM_LABELS[p] || [p])[0]} (standaard ${PARAM_LABELS[p]?.[1] === 'pct' ? pctK(leesPad(k, p)) : String(leesPad(k, p)).replace('.', ',')})`).join('; '))}.</p>` : ''}
+    </div>`;
+  }).join('');
+  return `${paginakop('Toetskaders', 'Vijf kaders in één rekenkern: wat ze vragen, waar ze verschillen en waar ZIB interpreteert.')}
+    ${melding('info', 'Kies het kader per dossier bij Klantgegevens. Op het tabblad Berekening en in het rapport staat hetzelfde dossier volgens alle vijf kaders naast elkaar. De kaders van ABN AMRO, ASN Bank en Knab zijn in eigen woorden vertaald uit (interne) beleidsdocumenten: eigen interpretatie, geen officiële publicatie van de bank. Controleer bij twijfel de actuele versie bij de geldverstrekker.')}
+    <div class="paneel"><h2>Naast elkaar</h2><div class="scroll"><table class="tabel compact"><thead><tr><th></th>${ids.map((id) => `<th><a href="#/toetskaders" data-actie="naar-kader" data-kader="${id}">${esc(KADERS[id].kort)}</a></th>`).join('')}</tr></thead><tbody>${rijen}</tbody></table></div></div>
+    ${kaarten}`;
+}
 
 export function renderFAQ() {
   return `${paginakop('FAQ', 'Veelgestelde vragen over de rekenregels en het gebruik van ZIB.')}
@@ -212,8 +263,7 @@ export function renderDownloads() {
       </div>
       <div class="paneel"><h2>Sjablonen</h2>
         <div class="acties"><button class="knop sec" data-actie="download-formats">Formats dossieraantekeningen (.txt)</button>
-          <button class="knop sec" data-actie="download-doclijst" data-kader="NHG">Documentenlijst NHG</button>
-          <button class="knop sec" data-actie="download-doclijst" data-kader="ABN">Documentenlijst ABN AMRO</button>
+          ${KADER_VOLGORDE.map((id) => `<button class="knop sec" data-actie="download-doclijst" data-kader="${id}">Documentenlijst ${esc(KADERS[id].kort)}</button>`).join('')}
           <button class="knop sec" data-actie="download-grootboeksjabloon">Sjabloon grootboekimport (.csv)</button></div>
       </div>
     </div>
@@ -284,7 +334,7 @@ export function renderMijnGegevens() {
         ${state.modus === 'lokaal' ? `<div class="acties" style="margin-top:12px"><button class="knop sec" data-actie="demo-laden">Demodossiers laden</button>
           <button class="knop gevaar" data-actie="lokaal-wissen">Alle lokale gegevens wissen</button></div>` : ''}
       </div>
-      <div class="paneel"><h2>Over ZIB</h2><p>Rekenkern volgens het NHG-toetskader Inkomensverklaring Ondernemer (01.2026) en het ABN AMRO Woonbeleid voor zakelijk inkomen. Het berekende inkomen is een hulpmiddel; de beoordeling en motivering blijven bij de acceptant.</p></div>
+      <div class="paneel"><h2>Over ZIB</h2><p>Rekenkern met vijf toetskaders: NHG (01.2026), ABN AMRO Woonbeleid, ASN Bank (Risk Policy v1.5), Knab (concept 2024.013) en het eigen kader Optimaal. De kaders van de banken zijn eigen vertalingen van hun beleid, geen officiële publicaties. Het berekende inkomen is een hulpmiddel; de beoordeling en motivering blijven bij de acceptant.</p></div>
     </div>`;
 }
 
@@ -292,7 +342,7 @@ export function renderMijnGegevens() {
 export function renderLogin() {
   return `<div class="inloggen"><div class="paneel">
     <div class="woordmerk-groot">ZIB</div>
-    <p class="dempen" style="margin:10px 0 18px">Bepaling van bestendig zakelijk inkomen volgens het NHG-toetskader en het ABN AMRO Woonbeleid.</p>
+    <p class="dempen" style="margin:10px 0 18px">Bepaling van bestendig zakelijk inkomen volgens NHG, ABN AMRO, ASN Bank, Knab en het eigen kader Optimaal.</p>
     <div class="raster-3" style="grid-template-columns:1fr">
       <label class="veld"><span>Naam</span><input id="login-naam" type="text" autocomplete="name" placeholder="Bijv. A. de Groot"></label>
       <label class="veld"><span>Initialen</span><input id="login-initialen" type="text" placeholder="AdG"></label>

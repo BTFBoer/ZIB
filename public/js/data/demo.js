@@ -349,12 +349,91 @@ function vanDalen() {
   };
 }
 
+// Knab: zelfstandig fotograaf met een beletperiode (zwangerschaps- en bevallingsverlof) in 2024.
+function mulder() {
+  const vw = (omzet, uitbesteed, auto, kantoor, alg, afs) => ({ omzet, uitbesteedWerk: uitbesteed, autokosten: auto, kantoorkosten: kantoor, algemeneKosten: alg, afschrijvingMVA: afs });
+  const jaren = {
+    2023: { status: 'definitief', vw: vw(98000, 18000, 6200, 4300, 13500, 4000),
+      balans: balans({ mvaOverig: 14000, debiteuren: 8600, liquideMiddelen: 21500, klCrediteuren: 3900, klOB: 4100 }) },
+    2024: { status: 'definitief', vw: vw(68000, 11000, 5900, 4100, 12000, 4000),
+      balans: balans({ mvaOverig: 10000, debiteuren: 6100, liquideMiddelen: 19800, klCrediteuren: 3300, klOB: 2900 }) },
+    2025: { status: 'definitief', vw: vw(103000, 19500, 6400, 4500, 13600, 4000),
+      balans: balans({ mvaOverig: 16000, debiteuren: 9900, liquideMiddelen: 25400, klCrediteuren: 4200, klOB: 4500 }) },
+    2026: { status: 'tussentijds', van: '2026-01-01', tot: '2026-06-30',
+      vw: vw(54000, 10200, 3300, 2300, 7000, 2000),
+      balans: balans({ mvaOverig: 14000, debiteuren: 10400, liquideMiddelen: 27800, klCrediteuren: 4300, klOB: 4700 }) },
+  };
+  return {
+    id: 'dos_demo_mulder', type: 'dossier', nummer: 'ZIB-2026-0101', soort: 'IKV', kader: 'KNAB',
+    status: 'beoordeling_1', statusDatum: nu, niveau: 'Basis', behandelaar: 'A. de Groot', advieskantoorId: 'adv_demo_vandijk',
+    aangemaakt: nu, gewijzigd: nu, berekeningsdatum: '2026-09-15', datumAanvraag: '2026-09-08', uitersteDatum: '2026-10-06',
+    label: 'Knab', leningnummer: 'DEMO-100301', via: 'Adviseur',
+    aanvrager: { voorletters: 'R.', achternaam: 'Mulder', geslacht: 'V', geboortedatum: '1989-10-04', woonplaats: 'Amersfoort' },
+    instellingen: { controlejaar: true, initieelAantalOndernemingen: 1, box2Route: 'route1',
+      belet: { actief: true, jaar: 2024, oorzaak: 'Zwangerschaps- en bevallingsverlof (16 weken)',
+        motivatie: 'Verklaring boekhouder: omzetdaling 2024 volledig door verlof van april t/m juli; tussentijdse cijfers 2026 (6 maanden) en btw-aangiften Q1-Q2 tonen herstel naar het niveau van 2023 en 2025.' } },
+    loondienst: { meenemen: false, voorStartMeenemen: true },
+    ondernemingen: [{ id: 'ond_mulder', naam: 'Mulder Fotografie', rechtsvorm: 'EZ', kvk: '00000301', startdatum: '2016-03-01',
+      sbi: '74.20 Fotografie', activiteit: 'Fotografie', land: 'NL', belastingplichtig: 'NL', actief: true, meenemen: true, medewerkers: 0, jaren }],
+    ib: {
+      2023: { perOnd: { ond_mulder: { sfw: 52000 } } },
+      2024: { perOnd: { ond_mulder: { sfw: 31000 } } },
+      2025: { perOnd: { ond_mulder: { sfw: 55000 } } },
+    },
+    weergave: 'viiz',
+    notities: { algemeen: 'Fictief voorbeeld. Zelfstandig fotograaf (portret en bedrijfsreportages) sinds 2016. In 2024 vier maanden verlof rond de geboorte van het eerste kind; Knab D.1 (beletperiode) is toegepast.' },
+    historie: [{ at: nu, door: 'A. de Groot', actie: 'Dossier aangemaakt' }],
+  };
+}
+
+// Holding met een minderheidsbelang (25%) dat structureel dividend uitkeert: Optimaal telt het ontvangen dividend
+// (met trackrecord, tot de winst van de deelneming) en de eigen winst van de holding naar belang.
+function deWit() {
+  const hold = (nw, ev, bt, va, kvv) => ({ omzet: 80000, nettowinst: nw, ev, bt, va, kvv, managementFee: 0 });
+  const groep = (nw, div) => ({ omzet: 4200000, nettowinst: nw, ev: 1600000, bt: 2600000, va: 1500000, kvv: 700000, managementFee: 80000, internDividend: div });
+  return {
+    id: 'dos_demo_dewit', type: 'dossier', nummer: 'ZIB-2026-0102', soort: 'IKV', kader: 'OPT',
+    status: 'beoordeling_1', statusDatum: nu, niveau: 'Top', behandelaar: 'A. de Groot', advieskantoorId: 'adv_demo_rijnmond',
+    aangemaakt: nu, gewijzigd: nu, berekeningsdatum: '2026-09-15', datumAanvraag: '2026-09-09', uitersteDatum: '2026-10-07',
+    label: 'Overig', leningnummer: 'DEMO-100302', via: 'Adviseur',
+    aanvrager: { voorletters: 'K.', tussenvoegsel: 'de', achternaam: 'Wit', geslacht: 'M', geboortedatum: '1977-01-19', woonplaats: 'Apeldoorn' },
+    instellingen: { controlejaar: false, initieelAantalOndernemingen: 2, box2Route: 'route1' },
+    loondienst: { meenemen: false, voorStartMeenemen: true },
+    ondernemingen: [
+      { id: 'ond_dewit_beheer', naam: 'De Wit Beheer B.V.', rechtsvorm: 'BV', activiteit: 'Holding (managementdiensten)', kvk: '00000302',
+        startdatum: '2015-01-01', aandeelPct: 100, direct: true, land: 'NL', actief: true, meenemen: true,
+        jaren: {
+          2023: { status: 'definitief', bzi: hold(112000, 230000, 250000, 150000, 20000), geldstromen: { ontvangenDividend: { ond_rijnstad: 100000 }, ontvangenFee: { ond_rijnstad: 80000 } } },
+          2024: { status: 'definitief', bzi: hold(136000, 255000, 275000, 170000, 20000), geldstromen: { ontvangenDividend: { ond_rijnstad: 125000 }, ontvangenFee: { ond_rijnstad: 80000 } } },
+          2025: { status: 'definitief', bzi: hold(138000, 260000, 280000, 180000, 20000), geldstromen: { ontvangenDividend: { ond_rijnstad: 125000 }, ontvangenFee: { ond_rijnstad: 80000 } } },
+        } },
+      { id: 'ond_rijnstad', naam: 'Rijnstad Techniek Groep B.V.', rechtsvorm: 'BV', activiteit: 'Technische installaties', kvk: '00000303',
+        startdatum: '2008-06-01', parentId: 'ond_dewit_beheer', aandeelPct: 25, direct: false, land: 'NL', actief: true, meenemen: true,
+        jaren: {
+          2023: { status: 'definitief', bzi: groep(520000, 400000) },
+          2024: { status: 'definitief', bzi: groep(560000, 500000) },
+          2025: { status: 'definitief', bzi: groep(600000, 500000) },
+        } },
+    ],
+    ib: {
+      2023: { perOnd: { ond_dewit_beheer: { loon: 55000, dividend: 60000 } } },
+      2024: { perOnd: { ond_dewit_beheer: { loon: 56000, dividend: 80000 } } },
+      2025: { perOnd: { ond_dewit_beheer: { loon: 58000, dividend: 90000 } } },
+    },
+    organogram: { knopen: [{ id: 'k_partners', soort: 'bv', naam: 'Drie medeaandeelhouders (elk 25%)', toelichting: 'Holdings van de andere directeuren' }],
+      lijnen: [{ van: 'k_partners', naar: 'ond_rijnstad', pct: 75 }] },
+    weergave: 'viiz',
+    notities: { algemeen: 'Fictief voorbeeld. Directeur via zijn holding voor 25% aandeelhouder in een installatiegroep met vier gelijke aandeelhouders; de groep keert al jaren het grootste deel van de winst uit. Vergelijk de kaders: NHG en ABN AMRO (berekend) tellen alleen het dividend aan de DGA, ABN AMRO met de holdingroute en Optimaal het dividend dat de holding ontvangt.' },
+    historie: [{ at: nu, door: 'A. de Groot', actie: 'Dossier aangemaakt' }],
+  };
+}
+
 export function demoRecords() {
   return [
     { id: 'adv_demo_westland', type: 'advieskantoor', naam: 'Hypotheekhuis Voorbeeld', afm: '12000001', contactpersoon: 'J. van Leeuwen', email: 'info@hypotheekhuis.example', telefoon: '0100 000000', plaats: 'Naaldwijk', aangemaakt: nu },
     { id: 'adv_demo_vandijk', type: 'advieskantoor', naam: 'Van Dijk Financieel Advies (demo)', afm: '12000002', contactpersoon: 'E. van Dijk', email: 'advies@vandijk.example', telefoon: '0100 000001', plaats: 'Leiden', aangemaakt: nu },
     { id: 'adv_demo_rijnmond', type: 'advieskantoor', naam: 'Rijnmond Hypotheken (demo)', afm: '12000003', contactpersoon: 'K. Bos', email: 'kantoor@rijnmond.example', telefoon: '0100 000002', plaats: 'Rotterdam', aangemaakt: nu },
-    vanDalen(), jansen(), deVries(), bakker(), elAmrani(), visser(),
+    vanDalen(), jansen(), deVries(), bakker(), elAmrani(), visser(), mulder(), deWit(),
     { id: 'taak_demo_1', type: 'taak', titel: 'Btw-aangifte Q2 2026 opvragen', dossierId: 'dos_demo_elamrani', toegewezenAan: 'A. de Groot', deadline: '2026-10-07', status: 'open', door: 'A. de Groot', aangemaakt: nu },
     { id: 'taak_demo_2', type: 'taak', titel: '2e beoordeling uitvoeren', dossierId: 'dos_demo_devries', toegewezenAan: 'R. Smit', deadline: '2026-10-03', status: 'open', door: 'A. de Groot', aangemaakt: nu },
     { id: 'taak_demo_3', type: 'taak', titel: 'Google check en KvK-adrescheck vastleggen', dossierId: 'dos_demo_bakker', toegewezenAan: 'A. de Groot', deadline: '2026-10-05', status: 'open', door: 'A. de Groot', aangemaakt: nu },

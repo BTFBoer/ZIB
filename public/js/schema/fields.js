@@ -191,12 +191,14 @@ export const DIVERSEN_RIJEN = [
     hint: 'Leeg = de bijzondere baten uit de V&W. Vul 0 in als die niet incidenteel zijn.' },
   { k: 'incidenteleLasten', label: 'Incidentele lasten (corrigeren)', sign: +1,
     hint: 'Leeg = de bijzondere lasten uit de V&W. NHG: alleen indien fiscaal van aard.' },
-  { k: 'willekeurigeAfschrijving', label: 'Willekeurige afschrijving', sign: +1, kaders: ['NHG'] },
-  { k: 'investeringsaftrek', label: 'Investeringsaftrek', sign: +1, kaders: ['NHG'], soorten: ['IB'],
+  { k: 'willekeurigeAfschrijving', label: 'Willekeurige afschrijving', sign: +1, als: 'fiscaleCorrecties' },
+  { k: 'investeringsaftrek', label: 'Investeringsaftrek', sign: +1, als: 'fiscaleCorrecties', soorten: ['IB'],
     hint: 'Fiscale aftrek: positief corrigeren op de saldo fiscale winst.' },
-  { k: 'beperktAftrekbaar', label: 'Beperkt / niet aftrekbare kosten', sign: -1, kaders: ['NHG'], soorten: ['IB'],
+  { k: 'beperktAftrekbaar', label: 'Beperkt / niet aftrekbare kosten', sign: -1, als: 'fiscaleCorrecties', soorten: ['IB'],
     hint: 'Fiscaal bijgeteld: negatief corrigeren op de saldo fiscale winst.' },
-  { k: 'aflossingenLVV', label: 'Contractuele aflossingen langlopende schulden', kaders: ['ABN'],
+  { k: 'vervallenHuurlasten', label: 'Vervallen kale huurlasten (bedrijfsruimte in de nieuwe woning)', sign: +1, als: 'vervallenHuurPct',
+    hint: 'Kale jaarhuur die vervalt; ASN telt 85% positief mee op het resultaat.' },
+  { k: 'aflossingenLVV', label: 'Contractuele aflossingen langlopende schulden', als: 'cashflowCorrectie',
     hint: 'Werkelijk betaalde contractuele aflossingen in het boekjaar (niet de post op de balans).' },
   { k: 'correctieDeelneming', label: 'Correctie resultaat deelneming', sign: +1,
     hint: 'Negatief bedrag = resultaat deelneming niet meenemen.' },
@@ -204,13 +206,13 @@ export const DIVERSEN_RIJEN = [
   { k: 'overigeNegatief', label: 'Overige negatieve correctie', sign: -1 },
 
   { t: 'kop', label: 'Balanscorrecties' },
-  { k: 'stilleReserves', label: 'Stille reserve onroerend goed', kaders: ['NHG'],
+  { k: 'stilleReserves', label: 'Stille reserve onroerend goed', model: 'NHG',
     hint: 'WOZ/taxatie (max. 6 maanden oud) minus boekwaarde.' },
-  { k: 'box3Ingezet', label: 'Box 3 vermogen ingezet bij deze onderneming', kaders: ['NHG'] },
+  { k: 'box3Ingezet', label: 'Box 3 vermogen ingezet bij deze onderneming', model: 'NHG' },
   { k: 'dubieuzeDebiteuren', label: 'Dubieuze debiteuren zonder voorziening' },
-  { k: 'surplusOntvangen', label: 'Surplus werkkapitaal ontvangen van groep', kaders: ['NHG'] },
+  { k: 'surplusOntvangen', label: 'Surplus werkkapitaal ontvangen van groep', model: 'NHG' },
   { k: 'surplusIngezet', label: 'Surplus werkkapitaal ingezet bij groep' },
-  { k: 'balansOverigPositief', label: 'Overige positieve correctie EV', kaders: ['NHG'] },
+  { k: 'balansOverigPositief', label: 'Overige positieve correctie EV', model: 'NHG' },
   { k: 'balansOverigNegatief', label: 'Overige negatieve correctie EV en balanstotaal' },
 
   { t: 'kop', label: 'Overige gegevens' },
@@ -218,10 +220,22 @@ export const DIVERSEN_RIJEN = [
 ];
 
 export const DIVERSEN_VLAGGEN = [
-  { k: 'incidenteleLastenFiscaal', label: 'Incidentele lasten zijn fiscaal van aard', kaders: ['NHG'], standaard: true },
+  { k: 'incidenteleLastenFiscaal', label: 'Incidentele lasten zijn fiscaal van aard', als: 'incidenteelAlleenFiscaal', standaard: true },
   { k: 'leningDGAGedekt', label: 'Lening u/g aan DGA is gedekt (eigen woning of box 3 onroerend goed)', soorten: ['VPB'], standaard: false },
-  { k: 'cashflowNietToepassen', label: 'Cashflowcorrectie niet toepassen (gemotiveerd: geen negatieve invloed op verdiencapaciteit)', kaders: ['ABN'], standaard: false },
+  { k: 'cashflowNietToepassen', label: 'Cashflowcorrectie niet toepassen (gemotiveerd: geen negatieve invloed op verdiencapaciteit)', als: 'cashflowCorrectie', standaard: false },
 ];
+
+/**
+ * Is een invoerregel zichtbaar voor dit kader en deze soort ondernemer? `kaders` = lijst kader-id's,
+ * `model` = correctiemodel van het kader, `als` = kaderparameter die waar moet zijn.
+ */
+export function veldZichtbaar(def, kader, soort) {
+  if (def.soorten && !def.soorten.includes(soort)) return false;
+  if (def.kaders && !def.kaders.includes(kader.id)) return false;
+  if (def.model && kader.correctieModel !== def.model) return false;
+  if (def.als && !kader[def.als]) return false;
+  return true;
+}
 
 // IB-aangifte: per onderneming en persoonlijk.
 export const IB_ONDERNEMING_RIJEN = [

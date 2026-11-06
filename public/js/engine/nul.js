@@ -1,6 +1,7 @@
 import { num, rond, isIngevuld } from '../util.js';
 import { g, r, p } from './trace.js';
 import { slechtste } from './onderneming.js';
+import { solvNorm } from './kaders.js';
 
 // 0-verklaring: het zakelijk inkomen wordt op € 0 gesteld. Beoordeeld wordt of de onderneming
 // aantoonbaar aan haar korte- en langetermijnverplichtingen kan voldoen, of er beperkende
@@ -91,7 +92,7 @@ export function beoordeelNul(dossier, analyses, ctx) {
     if (!bj?.heeftBalans) {
       add('lang', 'Langetermijnverplichtingen', 'akkoord', 'Geen langlopende schulden vastgesteld.');
     } else {
-      const svNorm = kader.id === 'NHG' ? kader.bandbreedte.norm : kader.solvabiliteitMin;
+      const svNorm = solvNorm(kader, a.soort);
       if (bj.EVcor < 0) {
         const gedekt = box3Prive >= -bj.EVcor;
         add('lang', 'Langetermijnverplichtingen', gedekt ? 'attentie' : 'niet_akkoord',
@@ -189,7 +190,7 @@ export function beoordeelNul(dossier, analyses, ctx) {
     toelichtingCorrectie,
     rcMaandlast: rc?.maandlast || 0,
     conclusie,
-    nhgOpmerking: kader.id === 'NHG'
+    nhgOpmerking: kader.familie === 'NHG'
       ? 'Het NHG-toetskader voorziet niet in een nul-verklaring. De beoordeling volgt het Woonbeleid (3.67/3.109) en is getoetst aan de NHG-normen (liquiditeit ≥ 1,00, solvabiliteit ≥ 25%). Bij ABN AMRO wordt het nul-inkomen in een apart dossier zonder NHG vastgelegd.'
       : '',
   };

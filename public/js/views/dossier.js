@@ -1,10 +1,12 @@
 import { esc, fmt, naamAanvrager, num, isIngevuld, getPath } from '../util.js';
 import { get, lijst, state } from '../state.js';
-import { bepaalJaren, bereken } from '../engine/index.js';
-import { RECHTSVORMEN, BEROEPSGROEPEN, SOORTEN, kaderLabel, soortOndernemer, KADERS } from '../engine/kaders.js';
+import { bepaalJaren, vergelijkKaders } from '../engine/index.js';
+import {
+  RECHTSVORMEN, BEROEPSGROEPEN, SOORTEN, kaderLabel, soortOndernemer, KADERS, kaderOpties, kaderVoor, PARAM_LABELS, leesPad,
+} from '../engine/kaders.js';
 import {
   BALANS_RIJEN, VW_RIJEN, DIVERSEN_RIJEN, DIVERSEN_VLAGGEN, IB_ONDERNEMING_RIJEN, IB_PERSOON_RIJEN,
-  DOSSIER_STATUSSEN, JAAR_STATUSSEN, AFGEROND, weergaveVan, detailSom,
+  DOSSIER_STATUSSEN, JAAR_STATUSSEN, AFGEROND, weergaveVan, detailSom, veldZichtbaar,
 } from '../schema/fields.js';
 import { CATEGORIEEN } from '../schema/documenten.js';
 import { WINST_CORRECTIES, VERMOGENS_CORRECTIES } from '../schema/correcties.js';
@@ -61,7 +63,7 @@ export function dossierKop(d, r) {
     toelichting = `Berekend inkomen ${fmt.eur(r.berekend)}`;
   } else if (r.bron === 'geen') {
     toelichting = 'Voorwaarden niet akkoord: geen zakelijk inkomen afgeven';
-  } else if (r.kader === 'ABN') {
+  } else if (r.familie === 'ABN') {
     label = 'Berekend inkomen (BZI)';
     const ph = r.inkomen?.perHoofdbedrijf || [];
     if (ph.some((x) => !x.nul && !x.voldoet)) toelichting = 'Voldoet niet aan het toetskader: motiveer een afwijking of geef geen inkomen af';
@@ -161,7 +163,7 @@ function geenOnderneming(d) {
 function tabKlant(d, r) {
   const a = d.aanvrager || {};
   const inst = d.instellingen || {};
-  const kader = KADERS[d.kader] || KADERS.NHG;
+  const kader = kaderVoor(d);
   const { jaarNu } = bepaalJaren(d);
   const advOpties = lijst('advieskantoor').sort((x, y) => x.naam.localeCompare(y.naam)).map((x) => [x.id, x.naam]);
   const toetsjaarOpties = [['', `Standaard (${r.T3})`], ...[jaarNu - 1, jaarNu - 2, jaarNu - 3].map((y) => [String(y), String(y)])];
@@ -169,7 +171,7 @@ function tabKlant(d, r) {
 
   const aanvraag = `<div class="paneel"><h2>Aanvraag</h2><div class="raster-3">
     ${keuze('Soort aanvraag', 'soort', { IKV: 'Inkomensverklaring (IKV)', NUL: '0-verklaring (nul-inkomen)' }, d.soort, { render: true })}
-    ${keuze('Beleidskader', 'kader', { NHG: 'NHG Toetskaders Inkomensverklaring Ondernemer', ABN: 'ABN AMRO Woonbeleid zakelijk inkomen' }, d.kader, { render: true })}
+    ${keuze('Toetskader', 'kader', kaderOpties(), d.kader, { render: true, hint: `${kader.versie}. ${kader.bronStatus || ''}` })}
     ${veld('Berekeningsdatum', 'berekeningsdatum', d.berekeningsdatum, { type: 'datum', render: true })}
     ${keuze('Laatste toetsjaar', 'instellingen.laatsteToetsjaar', toetsjaarOpties, inst.laatsteToetsjaar ?? '', { render: true, type: 'getal',
       hint: `Definitieve cijfers vorig jaar verplicht vanaf ${kader.definitiefVerplichtVanaf.d}-${kader.definitiefVerplichtVanaf.m}.` })}
@@ -177,7 +179,7 @@ function tabKlant(d, r) {
     ${keuze('Niveau dossier', 'niveau', ['Basis', 'Medium', 'Top'], d.niveau || 'Basis')}
     ${veld('Behandelaar (1e fiat)', 'behandelaar', d.behandelaar)}
     ${keuze('Advieskantoor', 'advieskantoorId', advOpties, d.advieskantoorId, { leeg: 'Geen / onbekend' })}
-    ${keuze('Opdrachtnemer (label)', 'label', ['ABN AMRO', 'Florius', 'Moneyou', 'Overig'], d.label || 'ABN AMRO')}
+    ${keuze('Opdrachtnemer (label)', 'label', ['ABN AMRO', 'Florius', 'Moneyou', 'ASN Bank', 'Knab', 'Overig'], d.label || ({ ASN: 'ASN Bank', KNAB: 'Knab' }[d.kader] || 'ABN AMRO'))}
     ${keuze('Afdeling', 'afdeling', ['FMD', 'IMV', 'RV'], d.afdeling || 'IMV', { hint: 'Bepaalt het format van de conclusie.' })}
     ${veld('Hypotheekaanvraagnummer', 'leningnummer', d.leningnummer)}
     ${veld('Aantal ondernemingen bij aanvraag', 'instellingen.initieelAantalOndernemingen', inst.initieelAantalOndernemingen, { type: 'getal' })}
@@ -190,15 +192,12 @@ function tabKlant(d, r) {
     <div>${vink('Spoeddossier', 'spoed', !!d.spoed, { render: true })}</div>
     <div>${vink('Bestaande relatie van de geldverstrekker', 'bestaandeRelatie', !!d.bestaandeRelatie, { render: true })}</div>
     <div>${vink('Controlejaar / lopend jaar meenemen (als er cijfers zijn)', 'instellingen.controlejaar', inst.controlejaar !== false, { render: true })}</div>
-    ${d.kader === 'NHG' && d.soort === 'IKV' ? `<div>${vink('Oudste jaar vervangen door het gerealiseerde resultaat van het lopende jaar', 'instellingen.vervangOudsteJaar', !!inst.vervangOudsteJaar, { render: true, hint: 'NHG: vanaf 1/4 met tussentijdse balans, W&V en OB-aangiften; alleen hele maanden.' })}
+    ${kader.vervangenVanaf && kader.familie === 'NHG' && d.soort === 'IKV' ? `<div>${vink('Oudste jaar vervangen door het gerealiseerde resultaat van het lopende jaar', 'instellingen.vervangOudsteJaar', !!inst.vervangOudsteJaar, { render: true, hint: `${kader.kort}: vanaf ${kader.vervangenVanaf.d}-${kader.vervangenVanaf.m} met tussentijdse balans en W&V${kader.id === 'ASN' ? '; op basis van het werkelijke aantal maanden, maximaal het laatste volledige jaar' : kader.id === 'KNAB' ? '; het vervangende jaar weegt 3×' : '; alleen hele maanden'}.` })}
       ${r.inkomen?.vergelijking ? `<p class="dempen klein" style="margin:6px 0 0 24px">Box 1 zonder vervanging ${esc(fmt.eur(r.inkomen.vergelijking.zonder))}, met vervanging ${esc(fmt.eur(r.inkomen.vergelijking.met))}.</p>` : ''}</div>` : ''}
   </div>
-  ${heeftVPB && d.soort === 'IKV' ? (d.kader === 'NHG'
-    ? `<div class="raster-3" style="margin-top:14px">${keuze('Box 2 inkomen (DGA)', 'instellingen.box2Route', { route1: 'Route 1: uitgekeerd dividend', route2: 'Route 2: nog niet uitgekeerde winstreserve', combinatie: 'Uitzonderingsroute: combinatie (motiveren)', geen: 'Geen box 2 inkomen' }, inst.box2Route || 'route1', { render: true })}</div>`
-    : `<div class="raster-2" style="margin-top:14px">
-        ${vink('Uitgekeerd dividend meenemen', 'instellingen.abnDividend.uitgekeerd', inst.abnDividend?.uitgekeerd !== false, { render: true })}
-        <p class="dempen klein" style="margin:0">Overwinst (niet-uitgekeerd dividend) met de dubbele balanstoets stel je per hoofdbedrijf in op het tabblad <a href="#/dossier/${esc(d.id)}/berekening">Berekening</a>.</p>
-      </div>`) : ''}
+  ${heeftVPB && d.soort === 'IKV' ? box2Keuzes(d, kader, inst) : ''}
+  ${d.soort === 'IKV' && kader.familie === 'NHG' && kader.id !== 'NHG' ? kaderKeuzes(d, kader, inst) : ''}
+  ${kader.instelbaar?.length && d.soort === 'IKV' ? kaderParameters(d, kader) : ''}
   </div>`;
 
   const aanvrager = `<div class="paneel"><h2>Aanvrager</h2><div class="raster-3">
@@ -223,12 +222,76 @@ function tabKlant(d, r) {
   return `${aanvraag}${aanvrager}${ondernemingen}
     ${paneelOrganogram(d, { bewerken: true, titel: 'Organogram en overige aandeelhouders' })}
     ${paneelGeldstromen(d, r)}
-    ${d.kader === 'NHG' || d.soort === 'NUL' ? paneelLoondienst(d, r) : ''}
+    ${kader.familie === 'NHG' || d.soort === 'NUL' ? paneelLoondienst(d, r) : ''}
     ${heeftVPB ? paneelRC(d, r) : ''}
     ${heeftVPB ? paneelLeningDirectie(d, r) : ''}
     ${paneelZK(d)}
     ${d.soort === 'NUL' || (d.ondernemingen || []).some((o) => o.meenemen === false || o.nulInkomen) ? paneelNul(d) : ''}
     ${d.soort === 'IKV' ? paneelAfwijkend(d, r) : ''}`;
+}
+
+// Keuzes voor box 2 per kader
+function box2Keuzes(d, kader, inst) {
+  const m = kader.box2?.model;
+  if (m === 'NHG') {
+    const pctOw = Math.round((1 - (kader.box2.afslag || 0)) * 100);
+    return `<div class="raster-3" style="margin-top:14px">${keuze('Box 2 inkomen (DGA)', 'instellingen.box2Route', {
+      route1: `Route 1: uitgekeerd dividend${kader.box2.dividendPerJaar ? ' (per jaar in het totaalinkomen)' : ''}`,
+      route2: `Route 2: nog niet uitgekeerde winstreserve (${pctOw}%)`,
+      combinatie: 'Uitzonderingsroute: combinatie (motiveren)', geen: 'Geen box 2 inkomen' }, inst.box2Route || 'route1', { render: true })}</div>`;
+  }
+  if (m === 'ABN') {
+    return `<div class="raster-2" style="margin-top:14px">
+        ${vink('Uitgekeerd dividend meenemen', 'instellingen.abnDividend.uitgekeerd', inst.abnDividend?.uitgekeerd !== false, { render: true })}
+        <p class="dempen klein" style="margin:0">Overwinst (niet-uitgekeerd dividend) met de dubbele balanstoets stel je per hoofdbedrijf in op het tabblad <a href="#/dossier/${esc(d.id)}/berekening">Berekening</a>; de holdingroute bij de onderneming.</p>
+      </div>`;
+  }
+  if (m === 'ASN') {
+    return `<p class="dempen klein" style="margin-top:14px">ASN Bank (§3.2): bij meer dan 50% zeggenschap tellen de gemiddelde winst na Vpb en het uitgekeerde dividend vanzelf mee, begrensd door de dubbele balanstoets (current ratio ≥ 1, solvabiliteit ≥ 20%) en op loon plus winst na Vpb van het laatste jaar. Een minderheidsbelang telt alleen met een jaarlijks terugkerend dividend (vink dat aan bij de onderneming).</p>`;
+  }
+  if (m === 'OPT') {
+    return `<p class="dempen klein" style="margin-top:14px">Optimaal: loon plus het aandeel in de winst na Vpb van vennootschappen met zeggenschap (look-through, zonder resultaat deelnemingen), begrensd op wat na de dubbele balanstoets en uit vrije reserves uitkeerbaar is. Minderheidsbelangen tellen alleen via werkelijk ontvangen dividend met een trackrecord.</p>`;
+  }
+  return '';
+}
+
+// Kaderspecifieke keuzes (ASN, Knab, Optimaal)
+function kaderKeuzes(d, kader, inst) {
+  const b = inst.belet || {};
+  const { T } = bepaalJaren(d);
+  const beletLabel = kader.incidentRegel ? 'Incidenteel jaar (§3.8: bijv. zwangerschap of een afgesloten weg)' : 'Beletperiode (zwangerschap, ziekte, calamiteit; maximaal 12 maanden)';
+  const hintBelet = kader.incidentRegel
+    ? 'Het jaar wordt vervangen door de geëxtrapoleerde tussentijdse cijfers; voorleggen aan een senior specialist.'
+    : 'Het jaar wordt vervangen door het laagste omliggende jaar; het inkomen is maximaal het inkomen ná het belet. Alleen bij 36 maanden of langer.';
+  return `<h3 style="margin-top:16px">Keuzes ${esc(kader.kort)}</h3>
+  <div class="raster-2">
+    <div style="display:grid;gap:8px">
+      ${vink(kader.id === 'ASN' ? 'Aanvrager werd partner in het bedrijf waar hij werknemer was, of was leidinggevende in de overgenomen onderneming (§3.4)' : 'Relevant voorafgaand dienstverband: zelfde branche én vergelijkbare activiteiten', 'instellingen.relevantDienstverband', inst.relevantDienstverband === true,
+    { render: true, hint: kader.id === 'ASN' ? 'Loon vóór de start telt dan mee.' : 'Loon vóór de start telt mee en de starterafslag vervalt.' })}
+      ${kader.id === 'ASN' ? vink('Trackrecord van 3 jaar bij dezelfde onderneming: de startersafslag vervalt (§3.4)', 'instellingen.trackrecordZelfdeOnderneming', inst.trackrecordZelfdeOnderneming === true, { render: true }) : ''}
+    </div>
+    ${kader.beletRegel || kader.incidentRegel ? `<div>${vink(beletLabel, 'instellingen.belet.actief', !!b.actief, { render: true, hint: hintBelet })}
+      ${b.actief ? `<div class="raster-2" style="margin-top:8px">${keuze('Jaar', 'instellingen.belet.jaar', T.map((y) => [String(y), String(y)]), b.jaar ? String(b.jaar) : '', { render: true, leeg: 'Kies', type: 'getal' })}
+        ${veld('Oorzaak', 'instellingen.belet.oorzaak', b.oorzaak, { placeholder: 'Bijv. zwangerschapsverlof' })}</div>
+        ${tekstvak('Motivatie en stukken', 'instellingen.belet.motivatie', b.motivatie, { rijen: 3, hint: 'Verklaring boekhouder over de oorzaak, periode van het belet en de cijfers erna.' })}` : ''}</div>` : '<div></div>'}
+  </div>`;
+}
+
+// Instelbare parameters van het kader (per dossier)
+function kaderParameters(d, kader) {
+  const over = d.instellingen?.kaderParams?.[kader.id] || {};
+  const basis = KADERS[kader.id];
+  const velden = kader.instelbaar.map((pad) => {
+    const [label, eenheid] = PARAM_LABELS[pad] || [pad, 'getal'];
+    const std = leesPad(basis, pad);
+    const stdTekst = eenheid === 'pct' ? `${String(Math.round(std * 1000) / 10).replace('.', ',')}%` : String(std).replace('.', ',');
+    const raw = over[pad] ?? leesPad(over, pad);
+    return veld(`${label}${eenheid === 'pct' ? ' (%)' : ''}`, `instellingen.kaderParams.${kader.id}.${pad}`, raw ?? '',
+      { type: eenheid === 'pct' ? 'pct' : 'getal', render: true, placeholder: stdTekst, hint: `Standaard ${stdTekst}` });
+  }).join('');
+  const aantal = Object.keys(kader.aangepast || {}).length;
+  return `<details class="stappen" style="margin-top:14px"${aantal ? ' open' : ''}><summary>Parameters ${esc(kader.kort)}${aantal ? ` (${aantal} aangepast)` : ' (standaard)'}</summary>
+    <div class="inhoud"><p class="dempen klein">Laat een veld leeg voor de standaardwaarde. Aangepaste parameters staan in de rekenstappen en het rapport.</p><div class="raster-3">${velden}</div></div></details>`;
 }
 
 function ondernemingKaart(d, o, i, r) {
@@ -262,6 +325,9 @@ function ondernemingKaart(d, o, i, r) {
         ${vink('Onderneming is actief', `${b}.actief`, o.actief !== false, { render: true })}
         ${d.soort === 'IKV' ? vink('Inkomen uit deze onderneming meenemen', `${b}.meenemen`, o.meenemen !== false, { render: true, hint: 'Uitzetten = alleen risicobeoordeling (zoals bij een 0-verklaring).' }) : ''}
         ${soort === 'VPB' ? vink('Zelfstandig bevoegd om dividend uit te keren (zeggenschap aangetoond)', `${b}.zeggenschap`, !!o.zeggenschap, { render: true }) : ''}
+        ${d.soort === 'IKV' && r.familie !== 'ABN' ? vink('0-inkomen / beoordelingsverklaring (alleen risicobeoordeling)', `${b}.nulInkomen`, !!o.nulInkomen, { render: true, hint: 'Bijv. een nieuwe persoonlijke holding zonder eigen inkomen: telt niet mee in het inkomen en het toetskader.' }) : ''}
+        ${soort === 'VPB' && r.kader === 'ASN' && !o.parentId && analyse && analyse.aandeel <= 0.5 ? vink('Dividend uit dit minderheidsbelang is jaarlijks terugkerend en bestendig (§3.2, expert judgement)', `${b}.minderheidDividendBestendig`, !!o.minderheidDividendBestendig, { render: true }) : ''}
+        ${soort === 'VPB' && r.familie === 'ABN' && !o.parentId ? vink('Holdingroute (3.63): DGA-loon + ontvangen dividend uit minderheidsdeelneming(en)', `${b}.holdingroute`, !!o.holdingroute, { render: true, hint: 'Gemiddeld ontvangen dividend, maximaal het laatste jaar. Uitkering en winst van de holding tellen dan niet mee.' }) : ''}
         ${o.parentId && soort === 'VPB' ? vink('Cijfers zijn geconsolideerd in de aandeelhouder', `${b}.geconsolideerd`, !!o.geconsolideerd, { render: true }) : ''}
         ${vink('Opgericht naar Nederlands recht', `${b}.rechtNL`, o.rechtNL !== false, { render: true })}
         ${vink('Prognose opgesteld door RA/AA-accountant', `${b}.prognoseRAAA`, !!o.prognoseRAAA, { render: true })}
@@ -322,7 +388,7 @@ function tabRooster(d, ond, tab, r) {
   const sectie = { balans: 'balans', vw: 'vw', diversen: 'div' }[tab];
   const soort = soortOndernemer(ond.rechtsvorm);
   const rijen = (tab === 'balans' ? BALANS_RIJEN : tab === 'vw' ? VW_RIJEN : DIVERSEN_RIJEN)
-    .filter((x) => (!x.kaders || x.kaders.includes(d.kader)) && (!x.soorten || x.soorten.includes(soort)));
+    .filter((x) => veldZichtbaar(x, kaderVoor(d), soort));
   const heeftExtra = rijen.some((x) => x.t === 'extra');
   const kop = `<tr><th>${tab === 'balans' ? `Balans (${ui.uitgebreid ? 'uitgebreide modus' : 'quick-scan'})` : tab === 'vw' ? `Winst- en verliesrekening (${ui.uitgebreid ? 'uitgebreide modus' : 'quick-scan'})` : 'Correcties en aanvullende gegevens'}</th>
     ${jaren.map((y) => `<th>${jaarKop(ond, y, kandidaatC, tab !== 'diversen')}</th>`).join('')}</tr>`;
@@ -330,7 +396,7 @@ function tabRooster(d, ond, tab, r) {
   let vlaggen = '';
   let correcties = '';
   if (tab === 'diversen') {
-    const v = DIVERSEN_VLAGGEN.filter((f) => (!f.kaders || f.kaders.includes(d.kader)) && (!f.soorten || f.soorten.includes(soort)));
+    const v = DIVERSEN_VLAGGEN.filter((f) => veldZichtbaar(f, kaderVoor(d), soort));
     if (v.length) {
       vlaggen = `<tr class="kop"><td colspan="${jaren.length + 1}">Keuzes per jaar</td></tr>${v.map((f) => `<tr><td>${esc(f.label)}</td>${jaren.map((y) => {
         const w = ond.jaren?.[y]?.div?.[f.k];
@@ -468,7 +534,7 @@ export function inkomensTabel(d, r) {
   const ink = r.inkomen;
   const TO = ordeJaren(T);
   const recent = ui.jaarVolgorde !== 'oud';
-  if (r.kader === 'NHG') {
+  if (r.familie !== 'ABN') {
     // Kolommen: (lopend jaar gerealiseerd) toetsjaren, gemiddelde, lopend jaar geëxtrapoleerd, box 2
     const cG = (w) => (C ? `<td class="num">${fmt.eur(w)}</td>` : '');
     const rijen = ink.perOnderneming.map((o) => {
@@ -488,7 +554,8 @@ export function inkomensTabel(d, r) {
     return `<div class="scroll"><table class="tabel"><thead><tr><th>Onderneming</th><th>Rechtsvorm</th><th>Jaren ondernemer</th><th>Voorwaarden</th>
       ${recent ? kopC + kopTj : kopTj + kopC}<th class="num">Gemiddelde na correcties</th>${C ? `<th class="num">${C} (geëxtrapoleerd)</th>` : ''}<th class="num">Box 2</th></tr></thead>
       <tbody>${rijen}${persRij}
-      <tr class="totaal"><td colspan="4">Toetsinkomen totaal (NHG)</td>${recent ? totC + totTj : totTj + totC}<td class="num">${fmt.eur(ink.box1)}</td>${C ? `<td class="num">${fmt.eur(ink.controleExtr)}</td>` : ''}<td class="num">${fmt.eur(ink.box2)}</td></tr>
+      <tr class="totaal"><td colspan="4">Toetsinkomen totaal (${esc(kaderLabel(r.kader))})${r.kader === 'OPT' ? '<div class="dempen klein">per jaar: economisch inkomen</div>' : ''}</td>${recent ? totC + totTj : totTj + totC}<td class="num">${fmt.eur(ink.box1)}</td>${C ? `<td class="num">${fmt.eur(ink.controleExtr)}</td>` : ''}<td class="num">${fmt.eur(ink.box2)}</td></tr>
+      <tr><td colspan="4"><b>Berekend inkomen</b></td>${TO.map(() => '<td></td>').join('')}${C ? '<td></td>' : ''}<td class="num" colspan="${C ? 3 : 2}"><b>${fmt.eur(ink.toetsinkomen)}</b></td></tr>
       </tbody></table></div>`;
   }
   const rijen = ink.perHoofdbedrijf.map((o) => {
@@ -527,25 +594,36 @@ function voorwaardenLijst(checks) {
   return `<div class="voorwaarden">${checks.map((c) => `<div class="voorwaarde"><b>${esc(c.label)}</b><div>${pil(c.status)}</div><div class="tekst">${esc(c.tekst)}</div></div>`).join('')}</div>`;
 }
 
-/** Berekening 1-1-1 met en zonder NHG en 1-2-3 zonder NHG, zoals de rekensoftware ze naast elkaar zet. */
+/** Hetzelfde dossier volgens alle toetskaders naast elkaar, plus de berekeningswijzen 1-1-1 en 1-2-3. */
 export function methodenTabel(d, r) {
-  if (d.soort === 'NUL' || !r.inkomen?.methoden) return '';
-  let alt = null;
-  try { alt = bereken({ ...d, kader: r.kader === 'NHG' ? 'ABN' : 'NHG' }); } catch { alt = null; }
-  const nhg = r.kader === 'NHG' ? r : alt;
-  const abn = r.kader === 'ABN' ? r : alt;
-  const m = (x) => x?.inkomen?.methoden;
+  if (d.soort === 'NUL' || !r.inkomen) return '';
+  let v = [];
+  try { v = vergelijkKaders(d); } catch { v = []; }
+  const m = r.inkomen.methoden;
   const TO = ordeJaren(r.T);
-  const rij = (nr, naam, uitleg, mm, veldW, f) => `<tr><td>${nr}</td><td><b>${esc(naam)}</b><div class="dempen klein">${esc(uitleg)}</div></td>
-    <td class="num">${mm ? TO.map((y) => fmt.getal(mm.jaren[y])).join(' / ') : ''}</td><td class="num">${mm ? `<span class="f">${esc(f(mm))}</span>${fmt.eur(mm[veldW])}` : 'n.v.t.'}</td></tr>`;
-  return `<h3>Berekeningen naast elkaar</h3>
-    <p class="dempen klein">Ter vergelijking, op basis van het totale inkomen per toetsjaar (incl. dividend). De afgegeven uitkomst volgt het gekozen kader (${esc(kaderLabel(r.kader))}).</p>
-    <div class="scroll"><table class="tabel trace"><thead><tr><th>Nr.</th><th>Berekening</th><th class="num">${ordeJaren(r.T).join(' / ')}</th><th class="num">Uitkomst</th></tr></thead><tbody>
-      ${rij('1', '1-1-1 met NHG', 'Gemiddelde van drie jaar (gelijk gewogen), maximaal het laatste jaar', m(nhg), 'm111', (x) => `${x.fGemiddelde} ${fmt.getal(x.gemiddelde)}; max. laatste jaar`)}
-      ${rij('2', '1-1-1 zonder NHG', 'Gemiddelde van drie jaar (gelijk gewogen), maximaal het laatste jaar', m(abn), 'm111', (x) => `${x.fGemiddelde} ${fmt.getal(x.gemiddelde)}; max. laatste jaar`)}
-      ${rij('3', '1-2-3 zonder NHG', 'Gewogen gemiddelde (oudste jaar 1×, middelste 2×, laatste 3×), maximaal het laatste jaar', m(abn), 'm123', (x) => `${x.fGewogen} ${fmt.getal(x.gewogen)}; max. laatste jaar`)}
-    </tbody></table></div>
-    ${alt ? `<p class="dempen klein" style="margin-top:8px">Uitkomst volgens het andere kader (${esc(kaderLabel(alt.kader))}): ${esc(fmt.eur(alt.vastgesteld))}, ${esc(STATUS_TEKST[alt.status] || alt.status)}${alt.bron === 'geen' ? ' (geen inkomen)' : ''}.</p>` : ''}`;
+  const rijen = v.map((x) => {
+    if (x.fout) return `<tr><td><b>${esc(x.kort)}</b></td><td colspan="5" class="dempen">Niet te berekenen: ${esc(x.fout)}</td></tr>`;
+    const huidig = x.id === r.kader;
+    const reden = x.status === 'niet_akkoord' && x.nok.length ? `<div class="dempen klein">${esc(x.nok.slice(0, 3).join('; '))}</div>` : '';
+    const stap = x.stappen?.length ? `<div class="dempen klein">${esc(x.stappen.slice(0, 2).join(' '))}</div>` : '';
+    return `<tr${huidig ? ' class="actief-rij"' : ''}><td><b>${esc(x.kort)}</b>${huidig ? ' <span class="dempen klein">(gekozen)</span>' : ''}<div class="dempen klein">${esc(x.versie)}</div></td>
+      <td>${pil(x.status)}${reden}</td>
+      <td class="num">${fmt.eur(x.box1 ?? 0)}</td><td class="num">${x.box2 ? fmt.eur(x.box2) : ''}</td>
+      <td class="num"><b>${fmt.eur(x.toetsinkomen)}</b>${stap}</td>
+      <td class="num">${x.bron === 'geen' ? `<span class="dempen">€ 0 (geen inkomen)</span>` : fmt.eur(x.vastgesteld)}</td></tr>`;
+  }).join('');
+  const bedragen = v.filter((x) => !x.fout).map((x) => x.vastgesteld);
+  const spreiding = bedragen.length ? Math.max(...bedragen) - Math.min(...bedragen) : 0;
+  return `<h3>Vergelijking toetskaders</h3>
+    <p class="dempen klein">Hetzelfde dossier volgens elk kader, zonder handmatig afwijkend inkomen. Instellingen die per kader verschillen (zoals de box 2-route of een beletperiode) gelden voor alle kaders waar ze bestaan. De afgegeven uitkomst volgt het gekozen kader (${esc(kaderLabel(r.kader))}).</p>
+    <div class="scroll"><table class="tabel"><thead><tr><th>Kader</th><th>Oordeel</th><th class="num">Box 1</th><th class="num">Box 2</th><th class="num">Berekend inkomen</th><th class="num">Af te geven</th></tr></thead>
+      <tbody>${rijen}</tbody></table></div>
+    ${spreiding ? `<p class="dempen klein" style="margin-top:6px">Verschil tussen het hoogste en laagste kader: ${esc(fmt.eur(spreiding))}.</p>` : ''}
+    ${m ? `<details class="stappen" style="margin-top:10px"><summary>Berekeningswijzen 1-1-1 en 1-2-3 op het totaal per jaar</summary><div class="inhoud">
+      <div class="scroll"><table class="tabel trace"><thead><tr><th>Berekening</th><th class="num">${TO.join(' / ')}</th><th class="num">Uitkomst</th></tr></thead><tbody>
+      <tr><td><b>1-1-1</b><div class="dempen klein">Gemiddelde van drie jaar, maximaal het laatste jaar (NHG, ABN AMRO, ASN Bank)</div></td><td class="num">${TO.map((y) => fmt.getal(m.jaren[y])).join(' / ')}</td><td class="num"><span class="f">${esc(`${m.fGemiddelde} ${fmt.getal(m.gemiddelde)}; max. laatste jaar`)}</span>${fmt.eur(m.m111)}</td></tr>
+      <tr><td><b>1-2-3</b><div class="dempen klein">Gewogen: oudste 1×, middelste 2×, laatste 3×, maximaal het laatste jaar (basis van Knab en Optimaal, die er ook een grens van 10% boven 1-1-1 op zetten)</div></td><td class="num">${TO.map((y) => fmt.getal(m.jaren[y])).join(' / ')}</td><td class="num"><span class="f">${esc(`${m.fGewogen} ${fmt.getal(m.gewogen)}; max. laatste jaar`)}</span>${fmt.eur(m.m123)}</td></tr>
+      </tbody></table></div></div></details>` : ''}`;
 }
 
 function tabBerekening(d, r) {
@@ -576,12 +654,14 @@ function tabBerekening(d, r) {
     }
   }
   r.ondernemingen.forEach((a) => {
-    if (d.soort === 'IKV' && !a.meenemen && r.kader === 'NHG') return;
-    delen.push(`<div class="paneel"><h2>${esc(a.naam)} <span class="dempen klein">${esc(a.rechtsvormLabel)}, ${esc(a.soort === 'VPB' ? 'niet-IB (DGA)' : 'IB-ondernemer')}${a.aandeel < 1 ? `, ${fmt.pct(a.aandeel, 0)}` : ''}${a.isDeelneming ? ', deelneming' : ''}</span></h2>
+    if (d.soort === 'IKV' && !a.meenemen && r.familie !== 'ABN') return;
+    const econ = a.belangEconomisch !== undefined && a.belangEconomisch !== null && Math.abs(a.belangEconomisch - a.aandeel) > 0.0001
+      ? `, economisch ${fmt.pct(a.belangEconomisch, 1)}` : '';
+    delen.push(`<div class="paneel"><h2>${esc(a.naam)} <span class="dempen klein">${esc(a.rechtsvormLabel)}, ${esc(a.soort === 'VPB' ? 'niet-IB (DGA)' : 'IB-ondernemer')}${a.aandeel < 1 ? `, ${fmt.pct(a.aandeel, 0)}` : ''}${econ}${a.isDeelneming ? ', deelneming' : ''}${a.soort === 'VPB' && a.zeggenschap === false ? ', geen zeggenschap' : ''}</span></h2>
       ${kengetallenTabel(a, r)}
       ${d.soort === 'IKV' ? `<h3 style="margin-top:16px">Voorwaarden</h3>${voorwaardenLijst(a.checks)}` : ''}
       <div class="raster-2" style="margin-top:14px">
-        <div>${melding('info', `Maximaal te onttrekken vlottende activa zodat de onderneming nog aan de ratio's voldoet (${a.laatsteBalansJaar}): <b>${esc(fmt.eur(a.maxOnttrekken ?? 0))}</b>`)}</div>
+        <div>${a.maxOnttrekkenNvt ? melding('info', `Maximaal te onttrekken: n.v.t. ${esc(a.maxOnttrekkenNvt)}`) : melding('info', `Maximaal te onttrekken vlottende activa zodat de onderneming nog aan de ratio's voldoet (${a.laatsteBalansJaar}): <b>${esc(fmt.eur(a.maxOnttrekken ?? 0))}</b>`)}</div>
         <div>${a.benodigdBox3 ? melding('attentie', `Minimaal benodigde balansversterking (box 3 vermogen) om aan de normen te voldoen: <b>${esc(fmt.eur(a.benodigdBox3))}</b> (liquiditeit ${esc(fmt.eur(a.benodigdBox3Detail.nodigCr))}, solvabiliteit ${esc(fmt.eur(a.benodigdBox3Detail.nodigSv))}).`) : melding('akkoord', 'Geen aanvullend box 3 vermogen nodig.')}</div>
         ${a.box2?.benodigdVoorOverwinst ? `<div>${melding('info', `Benodigde balansversterking om de volledige overwinst mee te nemen: <b>${esc(fmt.eur(a.box2.benodigdVoorOverwinst))}</b>.`)}</div>` : ''}
       </div>

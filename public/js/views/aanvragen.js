@@ -4,7 +4,7 @@
 import { esc, fmt, naamAanvrager, todayISO } from '../util.js';
 import { lijst, get, state } from '../state.js';
 import { bereken } from '../engine/index.js';
-import { soortOndernemer } from '../engine/kaders.js';
+import { soortOndernemer, KADERS, KADER_VOLGORDE } from '../engine/kaders.js';
 import { AFGEROND, DOSSIER_STATUSSEN } from '../schema/fields.js';
 import { datumKort } from './layout.js';
 import { pil, statusPil, leeg, icoon } from './ui.js';
@@ -29,8 +29,9 @@ export function samenvatting(d) {
 }
 
 export function soortAanvraagTekst(d) {
-  const label = d.label || (d.kader === 'ABN' ? 'ABN AMRO' : '');
-  const nhg = d.kader === 'NHG' ? 'met NHG' : 'zonder NHG';
+  const k = KADERS[d.kader];
+  const label = d.label || (k && d.kader !== 'NHG' ? k.kort : '');
+  const nhg = k?.nhg ? 'met NHG' : 'zonder NHG';
   return `${d.soort === 'NUL' ? '0-verklaring' : 'IKV'} ${label} ${nhg}`.replace(/\s+/g, ' ').trim();
 }
 
@@ -209,8 +210,7 @@ export function renderAanvragen(afgerond) {
   const filterActief = filters.kader || filters.soort || filters.status || filters.mijn || filters.spoed;
   const filterPaneel = ui.aanvragen.filterOpen ? `<div class="filterpaneel geen-print">
       <select data-filter="kader" aria-label="Kader"><option value="">Alle kaders</option>
-        <option value="NHG"${filters.kader === 'NHG' ? ' selected' : ''}>Met NHG</option>
-        <option value="ABN"${filters.kader === 'ABN' ? ' selected' : ''}>Zonder NHG (ABN AMRO)</option></select>
+        ${KADER_VOLGORDE.map((id) => `<option value="${id}"${filters.kader === id ? ' selected' : ''}>${id === 'NHG' ? 'Met NHG' : `Zonder NHG (${esc(KADERS[id].kort)})`}</option>`).join('')}</select>
       <select data-filter="soort" aria-label="Soort"><option value="">Alle soorten</option>
         <option value="IKV"${filters.soort === 'IKV' ? ' selected' : ''}>Inkomensverklaring</option>
         <option value="NUL"${filters.soort === 'NUL' ? ' selected' : ''}>0-verklaring</option></select>
@@ -249,6 +249,9 @@ export function renderAanvragen(afgerond) {
 export const SOORT_KEUZES = [
   ['IKV|NHG', 'Inkomensverklaring met NHG'],
   ['IKV|ABN', 'Inkomensverklaring zonder NHG (ABN AMRO Woonbeleid)'],
+  ['IKV|ASN', 'Inkomensverklaring zonder NHG (ASN Bank, voorheen de Volksbank)'],
+  ['IKV|KNAB', 'Inkomensverklaring zonder NHG (Knab)'],
+  ['IKV|OPT', 'Inkomensverklaring volgens het Optimaal toetskader (referentie)'],
   ['NUL|ABN', '0-verklaring / beoordelingsverklaring zonder NHG'],
   ['NUL|NHG', '0-verklaring / beoordelingsverklaring met NHG'],
 ];
@@ -263,7 +266,7 @@ export function modaalNieuweKlant() {
       ${SOORT_KEUZES.map(([k, l], i) => `<label class="check"><input type="radio" name="soortkader" value="${k}"${i === 1 ? ' checked' : ''}><span>${esc(l)}</span></label>`).join('')}
     </fieldset>
     <div class="raster-2" style="grid-template-columns:1fr 1fr;gap:12px">
-      <label class="veld"><span>Geldverstrekker (label)</span><select name="label">${['ABN AMRO', 'Florius', 'Moneyou', 'Overig'].map((x) => `<option>${x}</option>`).join('')}</select></label>
+      <label class="veld"><span>Geldverstrekker (label)</span><select name="label">${['ABN AMRO', 'Florius', 'Moneyou', 'ASN Bank', 'Knab', 'Overig'].map((x) => `<option>${x}</option>`).join('')}</select></label>
       <label class="veld"><span>Hypotheekaanvraagnummer</span><input name="leningnummer" autocomplete="off"></label>
       <label class="veld"><span>Advieskantoor</span><select name="advieskantoor"><option value="">Geen / onbekend</option>${adv.map((a) => `<option value="${esc(a.id)}">${esc(a.naam)}</option>`).join('')}</select></label>
       <label class="veld"><span>Uiterste datum</span><input type="date" name="uiterste"></label>

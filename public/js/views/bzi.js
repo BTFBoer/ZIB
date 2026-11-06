@@ -5,7 +5,7 @@
 import { esc, fmt, naamAanvrager, num, isIngevuld, getPath } from '../util.js';
 import { lijst } from '../state.js';
 import { bepaalJaren } from '../engine/index.js';
-import { RECHTSVORMEN, soortOndernemer, BEROEPSGROEPEN, SOORTEN } from '../engine/kaders.js';
+import { RECHTSVORMEN, soortOndernemer, BEROEPSGROEPEN, SOORTEN, kaderLabel, solvNorm } from '../engine/kaders.js';
 import { DOSSIER_STATUSSEN, JAAR_STATUSSEN } from '../schema/fields.js';
 import { WINST_CORRECTIES, VERMOGENS_CORRECTIES, typesVoor } from '../schema/correcties.js';
 import { heeftBalans, heeftVW } from '../engine/financieel.js';
@@ -79,7 +79,7 @@ export function bziKop(d, r) {
   const isNul = d.soort === 'NUL';
   const ink = r.inkomen;
   const ph = ink?.perHoofdbedrijf || [];
-  const voldoet = r.kader !== 'ABN' ? r.status !== 'niet_akkoord' : ph.every((x) => x.nul || x.voldoet);
+  const voldoet = r.familie !== 'ABN' ? r.status !== 'niet_akkoord' : ph.every((x) => x.nul || x.voldoet);
   let label = 'Berekend inkomen';
   let bedragTekst = isNul ? '€ 0' : fmt.eur(r.vastgesteld);
   let sub = '';
@@ -87,11 +87,11 @@ export function bziKop(d, r) {
   else if (r.bron === 'afwijkend') { label = 'Afwijkend inkomen'; sub = `Berekend ${fmt.eur(r.berekend)}`; }
   else if (r.bron === 'geen') { sub = 'Geen inkomen af te geven'; bedragTekst = fmt.eur(0); }
   else if (r.bron === 'nul') { label = '0-inkomen afgegeven'; }
-  else if (r.kader === 'ABN' && r.toetsinkomen !== r.berekend) sub = `Toetsinkomen Woonbeleid ${fmt.eur(r.toetsinkomen)}`;
-  else if (r.kader === 'NHG') sub = 'Toetsinkomen NHG';
+  else if (r.familie === 'ABN' && r.toetsinkomen !== r.berekend) sub = `Toetsinkomen Woonbeleid ${fmt.eur(r.toetsinkomen)}`;
+  else if (r.familie !== 'ABN') sub = `Toetsinkomen ${kaderLabel(r.kader)}`;
   return `<div class="bzi-kop" id="dossierkop">
     <div class="bzi-kop-naam"><b>${esc(naamAanvrager(d.aanvrager))}</b>
-      <span class="dempen">${esc(d.nummer || '')}</span> ${pil('neutraal', SOORTEN[d.soort] || d.soort)} ${pil('neutraal', r.kader === 'NHG' ? 'Met NHG' : 'ABN AMRO zonder NHG')}</div>
+      <span class="dempen">${esc(d.nummer || '')}</span> ${pil('neutraal', SOORTEN[d.soort] || d.soort)} ${pil('neutraal', r.kader === 'NHG' ? 'Met NHG' : `${kaderLabel(r.kader)} zonder NHG`)}</div>
     <div class="bzi-kop-inkomen">
       ${isNul ? '' : `<span class="badge-toets ${voldoet ? 'ok' : 'nok'}">${voldoet ? 'Voldoet aan toetskader' : 'Voldoet niet aan toetskader'}</span>`}
       <span class="badge-inkomen"><span>${esc(label)}</span><b>${esc(bedragTekst.replace('€ ', ''))}</b></span>
@@ -599,7 +599,7 @@ function stapVerplichtingen(d, r) {
     ${heeftVPB ? paneelRC(d, r) : ''}
     ${heeftVPB ? paneelLeningDirectie(d, r) : ''}
     ${nulNodig ? paneelNul(d) : ''}
-    ${d.kader === 'NHG' || d.soort === 'NUL' ? paneelLoondienst(d, r) : ''}`;
+    ${r.familie !== 'ABN' || d.soort === 'NUL' ? paneelLoondienst(d, r) : ''}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -624,7 +624,7 @@ function samenvattingBedrijf(d, r, a, { hoofd = false, ph = null } = {}) {
   const jaren = ordeJaren(r.C && Object.keys(a.jaren).map(Number).includes(r.C) ? [r.C, ...r.T] : [...r.T]);
   const isVPB = a.soort === 'VPB';
   const mark = (y) => (y !== r.C && a.jaren[y]?.meegeteld ? icoon('check') : '');
-  const svMin = r.kaderCfg.id === 'NHG' ? r.kaderCfg.bandbreedte.norm : r.kaderCfg.solvabiliteitMin;
+  const svMin = solvNorm(r.kaderCfg, a.soort);
   const crMin = r.kaderCfg.liquiditeitMin;
   const g = a.gemiddeld;
   const knopCorr = (y, lijstNaam, kort = false) => {
@@ -681,16 +681,16 @@ function stapSamenvatting(d, r, ondId) {
       ${r.ondernemingen.map((a) => samenvattingBedrijf(d, r, a, { hoofd: !a.parentId })).join('')}`;
   }
   const ink = r.inkomen;
-  if (r.kader !== 'ABN') {
+  if (r.familie !== 'ABN') {
     return `<h1>Samenvatting</h1>
-      ${melding('info', 'Dit dossier volgt het NHG-toetskader: het inkomen wordt op totaalniveau bepaald (gemiddelde van 3 jaar, maximaal het laatste jaar, getoetst aan het lopende jaar). De volledige berekening staat onder Rekenstappen.')}
+      ${melding('info', `Dit dossier volgt ${esc(r.kaderCfg.kort)} (${esc(r.kaderCfg.versie)}): het inkomen wordt op totaalniveau bepaald. ${esc(r.kaderCfg.inkomensberekening[0])}. De volledige berekening staat onder Rekenstappen.`)}
       <div class="bzi-blok"><div class="badges"><span class="badge-toets ${r.status !== 'niet_akkoord' ? 'ok' : 'nok'}">${r.status !== 'niet_akkoord' ? 'Voldoet aan toetskader' : 'Voldoet niet aan toetskader'}</span>
-        <span class="badge-inkomen"><span>Toetsinkomen NHG</span><b>${esc(fmt.getal(r.vastgesteld))}</b></span></div>
+        <span class="badge-inkomen"><span>Toetsinkomen ${esc(kaderLabel(r.kader))}</span><b>${esc(fmt.getal(r.vastgesteld))}</b></span></div>
         <div class="bzi-inkomen"><div><span>Box 1</span><b>${esc(fmt.eur(ink.box1))}</b></div><div><span>Box 2</span><b>${esc(fmt.eur(ink.box2))}</b></div><div><span>Gemiddelde 3 jaar</span><b>${esc(fmt.eur(ink.gemiddelde))}</b></div></div>
       </div>
       ${r.meldingen.length ? `<div class="blok">${r.meldingen.map((m) => melding(m.niveau === 'niet_akkoord' ? 'niet_akkoord' : m.niveau === 'attentie' ? 'attentie' : 'info', esc(m.tekst))).join('')}</div>` : ''}
       ${r.ondernemingen.filter((a) => a.meenemen).map((a) => samenvattingBedrijf(d, r, a, { hoofd: !a.parentId })).join('')}
-      ${r.ondernemingen.filter((a) => a.box2?.overwinst && ['route2', 'combinatie'].includes(d.instellingen?.box2Route)).map((a) => overwinstBlok(d, r, a, { kort: true })).join('')}
+      ${r.ondernemingen.filter((a) => a.box2?.overwinst && r.kaderCfg.box2?.model === 'NHG' && ['route2', 'combinatie'].includes(d.instellingen?.box2Route)).map((a) => overwinstBlok(d, r, a, { kort: true })).join('')}
       ${r.inkomen?.geldstromen?.length ? `<div class="bzi-blok">${geldstromenTabel(r, r.inkomen.geldstromen)}</div>` : ''}
       ${paneelOrganogram(d)}`;
   }

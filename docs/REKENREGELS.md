@@ -1,10 +1,12 @@
 # Rekenregels
 
-Dit document beschrijft wat de rekenkern (`public/js/engine/`) doet, per kader. Waar een beleidstekst ruimte laat, staat de gekozen interpretatie erbij. Parameters staan in `kaders.js`; de standaardinstellingen van de dubbele balanstoets in `onderneming.js` (`DBT_STANDAARD`).
+Dit document beschrijft wat de rekenkern (`public/js/engine/`) doet, per kader. Waar een beleidstekst ruimte laat, staat de gekozen interpretatie erbij. Parameters staan in `kaders.js` (per kader, inclusief de dubbele balanstoets in `dbt`); de totaalberekeningen van ASN Bank, Knab en Optimaal in `totaal.js`.
+
+ZIB kent vijf kaders: NHG, ABN AMRO, ASN Bank (voorheen de Volksbank), Knab en Optimaal. De rekenkern vergelijkt nergens op de naam van een kader maar leest parameters (`familie`, `totaal`, `correctieModel`, `toetsen`, `box2.model`, `overwinst`, `dbt`, ...). Per dossier zijn de parameters die een kader als `instelbaar` aanmerkt aan te passen; `vergelijkKaders(dossier)` rekent hetzelfde dossier volgens alle kaders door (zonder handmatig afwijkend inkomen).
 
 Afronding: tussenstappen worden op hele euro's afgerond, zoals in gangbare rapportages ((18.519 + 25.091 + 11.731) / 3 = 18.447). Ratio's op twee decimalen, percentages op één decimaal.
 
-Inhoud: [Gemeenschappelijk](#gemeenschappelijk) · [Overwinst en dubbele balanstoets](#overwinst-en-dubbele-balanstoets) · [NHG](#nhg--toetskaders-inkomensverklaring-ondernemer-012026) · [ABN AMRO](#abn-amro--woonbeleid-zakelijk-inkomen) · [Structuur en organogram](#structuur-en-organogram) · [Geldstromen](#geldstromen) · [0-verklaring](#0-verklaring) · [Eindoordeel](#eindoordeel) · [Weergave](#weergave-en-jaarvolgorde)
+Inhoud: [Gemeenschappelijk](#gemeenschappelijk) · [Overwinst en dubbele balanstoets](#overwinst-en-dubbele-balanstoets) · [NHG](#nhg--toetskaders-inkomensverklaring-ondernemer-012026) · [ABN AMRO](#abn-amro--woonbeleid-zakelijk-inkomen) · [ASN Bank](#asn-bank--risk-policy-v15) · [Knab](#knab--concept-toetskader-2024013) · [Optimaal](#optimaal--eigen-referentiekader) · [Structuur en organogram](#structuur-en-organogram) · [Geldstromen](#geldstromen) · [0-verklaring](#0-verklaring) · [Eindoordeel](#eindoordeel) · [Weergave](#weergave-en-jaarvolgorde)
 
 ## Gemeenschappelijk
 
@@ -227,7 +229,7 @@ Toetskader per hoofdbedrijf: het slechtste oordeel van het hoofdbedrijf en de ni
 | | Berekend inkomen (zoals de rekentool) | Toets Woonbeleid |
 |---|---|---|
 | Basis | Gemiddelde over de meegetelde jaren van het DGA-inkomen (loon - bijtelling) of het saldo fiscale winst na correcties | Laagste van het gemiddelde en het laatste boekjaar |
-| Dividend | + gemiddeld box 2-dividend over de meegetelde jaren | + dividend volgens 3.63 (hieronder), inclusief overwinst als die wordt meegenomen |
+| Dividend | + gemiddeld box 2-dividend over de meegetelde jaren, maximaal de gemiddelde nettowinst × belang (een gemiddeld verlies verlaagt het inkomen; afgeleid uit de uitkomst van de rekentool in een praktijkdossier) | + dividend volgens 3.63 (hieronder), inclusief overwinst als die wordt meegenomen, of de holdingroute |
 | < 1 boekjaar | € 0 | € 0 |
 | 1-2 boekjaren | Gemiddelde | 75% van het gemiddelde, maximaal de prognose (RA/AA) |
 | 2-3 boekjaren | Gemiddelde | 90% van het gemiddelde, maximaal de prognose |
@@ -251,6 +253,7 @@ Alleen bij een hoofdbedrijf met rechtsvorm BV/NV en ≥ 3 boekjaren:
 - Uitgekeerd dividend: laagste van het gemiddelde en het laatste bruto dividend over de drie toetsjaren, maximaal de gemiddelde nettowinst (max. laatste jaar) × belang. Uit te zetten.
 - Niet-uitgekeerd dividend: de overwinst na de dubbele balanstoets × belang, alleen als "Overwinst meenemen" is aangevinkt en alle voorwaarden akkoord zijn. Zie [Overwinst en dubbele balanstoets](#overwinst-en-dubbele-balanstoets).
 - Dividendplafond: uitgekeerd + niet-uitgekeerd samen maximaal de gemiddelde nettowinst (max. laatste jaar) × belang.
+- Holdingroute (per hoofdbedrijf aan te zetten): de persoonlijke holding ontvangt structureel dividend uit een minderheidsdeelneming (≤ 50%). Inkomen = DGA-loon + het ontvangen dividend (gemiddelde van drie jaar, maximaal het laatste jaar); uitkering en winst van de holding tellen dan niet mee. Het ontvangen dividend komt uit de geldstromen, anders uit het uitgekeerde interne dividend × het belang van dat jaar. Zonder dividend in alle drie de jaren: attentie (bestendigheid onderbouwen).
 
 In het voorbeeld hierboven: uitgekeerd € 20.000 + overwinst € 50.000 = € 70.000 (onder het plafond van € 100.000). Berekend inkomen volgens de rekentool 60.000 + 20.000 = € 80.000; volgens het Woonbeleid 60.000 + 70.000 = € 130.000. Omdat de rekentool geen niet-uitgekeerd dividend kent, wordt € 130.000 vastgelegd als afwijkend inkomen met de onderbouwing.
 
@@ -280,6 +283,61 @@ Het tabblad BZI-invoer zet de uitkomst om naar de velden van de rekentool, per b
 | Controle | Nettowinst, aansprakelijk vermogen, balanstotaal, VA en KVV na correctie, solvabiliteit en liquiditeit zoals de rekentool ze zou moeten tonen |
 
 Daaronder per hoofdbedrijf het verwachte berekend inkomen, het inkomen volgens het Woonbeleid en het advies (berekend inkomen, afwijkend inkomen of 0-inkomen), met de onderbouwing om te kopiëren.
+
+## ASN Bank – Risk Policy v1.5
+
+Bron: de Volksbank, Risk Policy "Vaststellen zakelijk inkomen door een geaccrediteerde partij", versie 1.5 (1 juli 2024), aangevuld met de openbare informatie van ASN Bank (2026). Sinds 1 juli 2025 heet de Volksbank ASN Bank. Het document is intern (voor de geaccrediteerde partijen); ZIB beschrijft de regels in eigen woorden.
+
+- Inkomen (§3.1/3.2): gemiddelde van drie boekjaren, maximaal het laatste jaar. IB: saldo fiscale winst; een verlies telt mee. DGA: gemiddeld loon; een verlies van de BV (na correcties × belang) telt mee in het jaar zelf; het maximum is loon plus resultaat na Vpb van het laatste jaar.
+- Box 2 (§3.2), bij meer dan 50% zeggenschap en ≥ 36 maanden: gemiddelde winst na Vpb × belang (alleen winstjaren; verliezen zitten al in box 1), begrensd door de dubbele balanstoets (current ratio ≥ 1 en solvabiliteit ≥ 20% na onttrekking, laatste balans), plus het gemiddeld uitgekeerde dividend (per jaar maximaal de winst na Vpb). Het totaal is maximaal loon + winst na Vpb van het laatste jaar (zonder winst: loon + dividend). Interpretatie: de policy noemt winst én dividend; de begrenzing voorkomt dat een uitgekeerde winst dubbel telt.
+- Minderheidsbelang: alleen een jaarlijks terugkerend dividend uit één minderheidsdeelneming (expert judgement, per onderneming aan te vinken), gemiddeld en maximaal het laatste jaar.
+- Structuur (§3.3): maximaal drie entiteiten (geconsolideerd telt als één) en maximaal twee minderheidsdeelnemingen; anders niet akkoord (bij een bestaande relatie attentie).
+- Correcties (§3.6): de NHG-set, met als verschillen: alle immateriële activa (ook goodwill) negatief; bijtelling auto alleen het deel boven 15% van winst of loon; R/C directie vanaf € 17.500 minimaal 2% (of de werkelijke rente) op het loon, tenzij kasrondje; vervallen huurlasten voor 85% van de kale huur positief.
+- Ratio's: laatste boekjaar positief, current ratio ≥ 1, solvabiliteit ≥ 20%. Herstel in het lopende jaar (tussentijdse balans): attentie, tweede fiat (§3.10).
+- Lopend jaar: geen verplichte toets; een lager geëxtrapoleerd inkomen geeft een attentie. Vanaf 1 april kan het lopende jaar het oudste vervangen op basis van het werkelijke aantal maanden: (TJr-2 + TJr-1 + gerealiseerd) / (24 + maanden) × 12, maximaal het laatste volledige jaar.
+- Starters (§3.7), 12-36 maanden: inkomen over de werkelijke maanden (inclusief het lopende jaar) × 12, × 75% (12 maanden definitieve cijfers) of 90% (24 maanden); het startjaar vervalt bij twee volle boekjaren; maximaal het laatste volledige jaar en de prognose (die kan alleen verlagen). Voorbeeld uit de policy: (15.000 + 20.000 + 15.000) / 30 × 12 × 90% = € 18.000. Bij partnerschap waar de aanvrager werknemer was of een leidinggevende functie in de overgenomen onderneming telt loon vóór de start mee; met een trackrecord van drie jaar vervalt de afslag (§3.4).
+- Incidenteel jaar (§3.8): één toetsjaar mag worden vervangen door de geëxtrapoleerde tussentijdse cijfers; voorleggen aan een senior specialist.
+- Loondienst ≥ 80%: maximaal 30% (§3.11). Loon naast de onderneming telt niet mee in het zakelijk inkomen.
+
+## Knab – concept toetskader 2024.013
+
+Bron: Knab, Concept toetskader zakelijk inkomen versie 2024.013 met werkinstructies (25 april 2024) en de lijst risicosectoren. Het is een conceptversie; controleer of Knab deze heeft vastgesteld.
+
+- Box 1 (B.1.1): 1-2-3-methode, (1 × oudste + 2 × middelste + 3 × laatste) / 6, maximaal het laatste jaar en maximaal 10% boven het gewone gemiddelde. Het totaal is maximaal 20% boven het NHG-inkomen (B.1.1.0; ZIB rekent het NHG-inkomen van hetzelfde dossier mee).
+- Dividend (B.4.1, route 1): per jaar in het totaalinkomen, per jaar maximaal de winst vóór belasting × belang. Overwinst (B.4.2, route 2): winst vóór belasting na correcties (niet verminderd met dividend), 75%, na dubbele balanstoets (werkkapitaal alle jaren, solvabiliteit ≥ 25% in het laatste jaar en het controlejaar). Combinatie: dividend en overwinst samen maximaal 75% van de gemiddelde winst.
+- Lopend jaar (B.1.3): conform NHG; voor de vergelijking telt het gemiddelde dividend bij het geëxtrapoleerde inkomen (dividend wordt niet geëxtrapoleerd). Vervangen vanaf 1 april: het vervangende jaar telt 3× in de 1-2-3, maximaal 10% boven 1-1-1, daarna de stappen a, b en d van NHG.
+- Dalende trend (B.1.2.1): inkomen > € 10.000 en > 40% daling van oudste naar laatste én > 20% van middelste naar laatste jaar: attentie (prognose NBA 3400, verklaring boekhouder).
+- Starters (B.2): vanaf 12 maanden. Zonder relevant voorafgaand dienstverband: gemiddelde over de actieve jaren × 80% (12-24 maanden) of 90% (24-36), maximaal het laatste jaar en de prognose; het startjaar na 1 juli telt niet mee; de 10%- en 20%-grens gelden niet. Met relevant dienstverband (zelfde branche én vergelijkbare activiteiten): loon + zakelijk inkomen via 1-2-3, zonder afslag.
+- Beletperiode (D.1): zwangerschap, ziekte, calamiteit (max. 12 maanden, minimaal 6 maanden geleden, alleen bij ≥ 36 maanden): het jaar wordt vervangen door het laagste omliggende jaar; het inkomen is maximaal het (geëxtrapoleerde) inkomen ná het belet.
+- Correcties (B.3/C): de NHG-set; incidentele lasten ook als ze niet fiscaal van aard zijn; bijtelling auto alleen boven 15%; lasten R/C directie (≥ € 17.500) en lening directie minimaal 2% per jaar, tenzij kasrondje.
+- Ratio's (C): winst ≥ 0, current ratio ≥ 1, werkkapitaal ≥ 0 in het laatste jaar en/of het controlejaar; solvabiliteit IB 15/20/25%, DGA 20/25/30% (bandbreedte).
+- Sectoren: SBI-codes uit de lijst risicosectoren zijn niet akkoord (Nee) of attentie (voorleggen).
+
+## Optimaal – eigen referentiekader
+
+Een eigen kader dat het inkomen zo eerlijk en realistisch mogelijk bepaalt: wat de ondernemer werkelijk verdient en duurzaam kan onttrekken. Het is geen beleid van een geldverstrekker. Parameters (tussen haakjes de standaard) zijn per dossier instelbaar.
+
+1. Economisch inkomen per jaar = box 1 (saldo fiscale winst of DGA-loon, na correcties) + het aandeel in de eigen winst na Vpb van elke vennootschap met zeggenschap (look-through) + bestendig dividend uit minderheidsbelangen.
+   - Zeggenschap: meer dan 50%, ook samen via meer eigen vennootschappen (30% + 30% = 60%), of aangetoond. Het economisch belang voor het inkomen telt alleen via ondernemingen die meetellen (niet via een holding met 0-inkomen).
+   - Groepseliminatie: resultaat deelnemingen, of als dat niet apart staat het ontvangen dividend van deelnemingen, hoort bij de bron en telt bij de ontvanger niet mee.
+   - Minderheidsbelang (geen zeggenschap): alleen het werkelijk ontvangen dividend, per jaar maximaal de winst van de deelneming × belang (uitkering uit reserves is geen inkomen), met een trackrecord van (3) jaar. Voldoet de deelneming niet aan de normen, dan telt het dividend niet en weegt haar oordeel niet mee in het dossieroordeel.
+2. Normalisatie: incidentele baten én lasten (niet alleen fiscale), fiscale posten teruggedraaid, bijtelling auto in alle jaren, cashflowcorrectie (aflossingen boven afschrijvingen), lasten R/C en lening directie minimaal 2%.
+3. Weging: 1-2-3, maximaal (10%) boven het gewone gemiddelde en maximaal het laatste jaar.
+4. Lopend jaar: is het geëxtrapoleerde inkomen lager, dan weegt het verschil mee naar rato van de lengte van de periode: 0 bij (3) maanden, volledig vanaf (9) maanden. Dividend uit minderheidsbelangen wordt niet geëxtrapoleerd (gemiddelde).
+5. Uitkeerbaarheid: per vennootschap telt het aandeel in de winst maximaal tot het uitgekeerde deel plus de ruimte na de dubbele balanstoets (solvabiliteit 25%, werkkapitaal) en de vrije reserves. Is meer dan de helft van het inkomen ingehouden winst: attentie (dividendbeleid vastleggen).
+6. Beweeglijkheid: variatiecoëfficiënt (populatie) boven (20%) kost (0,5) × het meerdere, maximaal (25%).
+7. Starters: 12-24 maanden (80%), 24-36 maanden (90%), maar 100% bij aantoonbaar relevante ervaring in dezelfde branche; altijd maximaal het laatste jaar en de prognose. Beletperiode zoals Knab.
+8. Toetsing: winst ≥ 0, current ratio ≥ 1 en werkkapitaal ≥ 0 in het laatste jaar en/of het controlejaar; solvabiliteit IB 15/20/25%, BV 20/25/30%; buitenland NL, BE, DE en LU (attentie buiten NL).
+
+## Controles op de invoer
+
+- Onmogelijke balans: eigen vermogen, vlottende activa of kort vreemd vermogen groter dan het balanstotaal, een negatief balanstotaal, of bij totaalposten een negatief lang vreemd vermogen: niet akkoord. Aansprakelijk vermogen na correcties groter dan het balanstotaal na correcties: attentie.
+- Een correctie "Overig – passivazijde (kortlopend)" verhoogt het aansprakelijk vermogen (zoals een achtergestelde lening). Gaat het alleen om de looptijd, gebruik dan "Herrubricering kort ↔ lang vreemd vermogen": die verlaagt (of verhoogt) alleen het kort vreemd vermogen. ZIB signaleert het eerste.
+- Belang per jaar: het percentage van een jaar (bij de onderneming) en de periode van een extra aandeelhouder (vanaf/tot) bepalen het belang in de geldstromen en het economisch belang; een nieuwe aandeelhouder krijgt geen dividend uit eerdere jaren.
+- Een onderneming zonder eigen inkomen die korter bestaat dan de minimale duur zet bij de totaalkaders het hele inkomen op € 0; ZIB stelt dan een 0-inkomen (beoordelingsverklaring) voor. Een 0-inkomen telt bij alle kaders alleen mee in de risicobeoordeling.
+- Maximaal te onttrekken is n.v.t. bij een vennootschap zonder zeggenschap (ook via de keten).
+- Het toetskader, een afwijkend inkomen (aan/uit, bedrag, motivatie) en een beletperiode komen met naam en tijdstip in de historie.
+
 
 ## Structuur en organogram
 

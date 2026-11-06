@@ -12,10 +12,10 @@ function instellingen(d, a, ow) {
   const o = (d.ondernemingen || []).find((x) => x.id === a.id) || {};
   const b = `ond:${a.id}.overwinst`;
   const k = o.overwinst || {};
-  if (d.kader === 'NHG') {
+  if (a.box2?.route !== undefined) {
     return `<div class="ow-keuzes">
-      ${keuze('Box 2 inkomen (NHG)', 'instellingen.box2Route', { route1: 'Route 1: uitgekeerd dividend', route2: 'Route 2: nog niet uitgekeerde winstreserve (overwinst)', combinatie: 'Uitzonderingsroute: combinatie (motiveren)', geen: 'Geen box 2 inkomen' }, d.instellingen?.box2Route || 'route1', { render: true })}
-      <p class="dempen klein">Het NHG-toetskader schrijft de dubbele balanstoets voor: ${esc(ow.omschrijving)}; uitkomst met een afslag van 25%.</p></div>`;
+      ${keuze('Box 2 inkomen', 'instellingen.box2Route', { route1: 'Route 1: uitgekeerd dividend', route2: 'Route 2: nog niet uitgekeerde winstreserve (overwinst)', combinatie: 'Uitzonderingsroute: combinatie (motiveren)', geen: 'Geen box 2 inkomen' }, d.instellingen?.box2Route || 'route1', { render: true })}
+      <p class="dempen klein">Het toetskader schrijft de dubbele balanstoets voor: ${esc(ow.omschrijving)}${ow.afslag ? `; uitkomst met een afslag van ${Math.round(ow.afslag * 100)}%` : ''}.</p></div>`;
   }
   const ok = a.box2?.overwinstMeenemen;
   return `<div class="ow-keuzes">
@@ -84,7 +84,7 @@ function uitkomst(r, ow) {
 export function overwinstBlok(d, r, a, { bewerken = true, kort = false } = {}) {
   const ow = a.box2?.overwinst;
   if (!ow) return '';
-  const isNHG = r.kader === 'NHG';
+  const isNHG = a.box2?.route !== undefined;
   const mee = isNHG ? ['route2', 'combinatie'].includes(d.instellingen?.box2Route) : !!a.box2?.overwinstMeenemen;
   const status = !mee ? pil('neutraal', 'Niet meegenomen') : ow.toegestaan ? pil('akkoord', `Meegenomen ${fmt.eur(ow.bedrag)}`) : pil('niet_akkoord', 'Voorwaarden niet akkoord');
   const { t1, t2 } = overwinstTabellen(r, ow);

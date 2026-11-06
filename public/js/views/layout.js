@@ -11,10 +11,11 @@ export const MENU = [
   ['#/mijn-taken', 'Mijn Taken', 'mijn-taken'],
   ['#/hulp', 'Hulp nodig?', 'hulp'],
   ['#/meekijken', 'Meekijken', 'meekijken'],
+  ['#/toetskaders', 'Toetskaders', 'toetskaders'],
   ['#/faq', 'FAQ', 'faq'],
   ['#/downloads', 'Downloads', 'downloads'],
   ['#/tickets', 'Tickets', 'tickets'],
-  ['#/e-mail', 'E-mail versturen', 'e-mail', 'email-versturen'],
+  ['#/e-mail', 'E-mail', 'e-mail', 'email-versturen'],
   ['#/mijn-gegevens', 'Mijn gegevens', 'mijn-gegevens'],
 ];
 

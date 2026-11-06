@@ -1,7 +1,7 @@
 // Panelen die zowel in de ViiZ-weergave (tabblad Klantgegevens) als in de BZI-weergave
 // (stap Kredieten en verplichtingen) worden gebruikt.
 import { esc, fmt, num, isIngevuld } from '../util.js';
-import { soortOndernemer, RECHTSVORMEN } from '../engine/kaders.js';
+import { soortOndernemer, RECHTSVORMEN, kaderVoor } from '../engine/kaders.js';
 import { ZK_SOORTEN } from '../engine/nul.js';
 import { bedrag, veld, keuze, vink, tekstvak, melding, icoon } from './ui.js';
 
@@ -76,7 +76,7 @@ export function paneelLoondienst(d, r) {
       ${veld('Actueel loondienstinkomen op jaarbasis', 'loondienst.loonJaar', ld.loonJaar, { type: 'getal', render: true })}
     </div>
     <div class="raster-2" style="margin-top:12px">
-      ${d.kader === 'NHG' && d.soort === 'IKV' ? `
+      ${kaderVoor(d).familie === 'NHG' && d.soort === 'IKV' ? `
         ${vink('Looninkomen naast de onderneming meenemen in de inkomensverklaring', 'loondienst.meenemen', !!ld.meenemen, { render: true, hint: 'Situatie 1 en 2 uit de toelichting; bij gestegen loon (situatie 3) in principe niet.' })}
         ${vink('Looninkomsten vóór de start van de onderneming meenemen', 'loondienst.voorStartMeenemen', ld.voorStartMeenemen !== false, { render: true, hint: 'Alleen uit dezelfde branche; exclusief ontslagvergoedingen.' })}
         ${vink('Resultaat uit overige werkzaamheden meenemen', 'loondienst.rowMeenemen', ld.rowMeenemen !== false, { render: true })}
@@ -105,7 +105,7 @@ export function paneelNul(d) {
 
 export function paneelAfwijkend(d, r) {
   const afw = d.afwijkend || {};
-  const ph = d.kader === 'ABN' ? (r?.inkomen?.perHoofdbedrijf || []).filter((h) => !h.nul) : [];
+  const ph = r?.familie === 'ABN' ? (r?.inkomen?.perHoofdbedrijf || []).filter((h) => !h.nul) : [];
   const perHoofd = ph.length ? `<h3 style="margin-top:4px">Per hoofdbedrijf (zoals in de rekentool van de bank)</h3>
     ${ph.map((h) => {
     const o = (d.ondernemingen || []).find((x) => x.id === h.id) || {};
@@ -142,6 +142,8 @@ export function structuurVelden(d, o, { render = true } = {}) {
     ${o.parentId ? `<div class="veld"><span class="label">Ook deelneming van</span>
       ${extra.map((x, i) => `<div class="extra-ouder">${keuze(null, `${b}.extraParents.${i}.id`, ouders.filter(([id]) => id !== o.parentId), x.id || '', { leeg: 'Kies', render })}
         <input class="pct" inputmode="decimal" value="${isIngevuld(x.pct) ? esc(String(x.pct).replace('.', ',')) : ''}" data-bind="${b}.extraParents.${i}.pct" data-type="pct" data-render="1" aria-label="Belang (%)" placeholder="%">
+        <input class="pct" inputmode="numeric" value="${isIngevuld(x.vanaf) ? esc(String(x.vanaf)) : ''}" data-bind="${b}.extraParents.${i}.vanaf" data-type="getal" data-render="1" aria-label="Belang vanaf jaar" placeholder="vanaf" title="Vanaf welk jaar bestaat dit belang? Leeg = altijd">
+        <input class="pct" inputmode="numeric" value="${isIngevuld(x.tot) ? esc(String(x.tot)) : ''}" data-bind="${b}.extraParents.${i}.tot" data-type="getal" data-render="1" aria-label="Belang tot en met jaar" placeholder="t/m" title="Tot en met welk jaar? Leeg = nog steeds">
         <button type="button" class="knop link klein" data-actie="extra-ouder-weg" data-ond="${esc(o.id)}" data-index="${i}" title="Verwijderen">${icoon('prullenbak')}</button></div>`).join('')}
       <button type="button" class="knop link klein" data-actie="extra-ouder-toevoegen" data-ond="${esc(o.id)}">${icoon('plus')}Andere aandeelhouder binnen de structuur</button></div>` : ''}
   </div>`;

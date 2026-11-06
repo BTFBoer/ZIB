@@ -2,12 +2,17 @@
 
 ZIB is een webapplicatie voor acceptanten zakelijk inkomen. Je voert per klantdossier de jaarcijfers in, ZIB berekent het bestendig zakelijk inkomen, toetst de voorwaarden en maakt een herleidbare rapportage met alle rekenstappen. De opzet volgt de rekensoftware voor inkomensverklaringen (ViiZ): volledige balans en W&V, normalisaties, overwinst met dubbele balanstoets, rekenstappen met formules en een uitgebreid rapport. Voor ABN AMRO-dossiers vertaalt ZIB de uitkomst bovendien naar de invoer van de rekentool van de bank (BZI).
 
-Twee beleidskaders, elk voor twee soorten aanvragen:
+Vijf toetskaders; per dossier kies je het kader dat de uitkomst bepaalt, en op het tabblad Berekening en in het rapport staat hetzelfde dossier volgens alle vijf naast elkaar:
 
-| | Inkomensverklaring (IKV) | 0-verklaring (nul-inkomen) |
-|---|---|---|
-| **NHG** – Toetskaders Inkomensverklaring Ondernemer 01.2026 | Gemiddelde 3 jaar, max. laatste jaar; lopend jaar alleen verlagend; vervanging oudste jaar; bandbreedtemodel solvabiliteit; box 2 via route 1, route 2 (overwinst met dubbele balanstoets) of combinatie | NHG kent geen nul-verklaring: beoordeling volgens het Woonbeleid, getoetst aan de NHG-normen |
-| **ABN AMRO** – Woonbeleid zakelijk inkomen | Berekend inkomen zoals de rekentool van de bank (gemiddelde over de meegetelde jaren per hoofdbedrijf, inclusief deelnemingen in het toetskader) plus de toets aan het Woonbeleid: laagste van gemiddelde en laatste jaar, starters 75%/90%, dividendplafond, niet-uitgekeerd dividend met dubbele balanstoets | Verplichtingen, zekerheden, kasstroom en verlies → € 0 met eventuele maandlastcorrectie |
+| Kader | Inkomensverklaring (IKV) |
+|---|---|
+| **NHG** – Toetskaders Inkomensverklaring Ondernemer 01.2026 | Gemiddelde 3 jaar, max. laatste jaar; lopend jaar alleen verlagend; vervanging oudste jaar; bandbreedtemodel solvabiliteit; box 2 via route 1, route 2 (overwinst met dubbele balanstoets) of combinatie |
+| **ABN AMRO** – Woonbeleid zakelijk inkomen | Berekend inkomen zoals de rekentool van de bank (per hoofdbedrijf, dividend max. nettowinst × belang) plus de toets aan het Woonbeleid: laagste van gemiddelde en laatste jaar, starters 75%/90%, dividendplafond, niet-uitgekeerd dividend met dubbele balanstoets, holdingroute |
+| **ASN Bank** (voorheen de Volksbank) – Risk Policy v1.5 | Gemiddelde 3 jaar (verlies telt mee); DGA: loon + winst na Vpb + dividend bij > 50% met dubbele balanstoets (CR ≥ 1, solvabiliteit ≥ 20%), max. loon + winst laatste jaar; starters 75%/90% over werkelijke maanden; max. drie entiteiten |
+| **Knab** – concept toetskader 2024.013 | 1-2-3-methode, max. 10% boven 1-1-1 en 20% boven NHG; starters 80%/90%; beletperiode; dividend per jaar in het totaal; risicosectoren |
+| **Optimaal** – eigen referentiekader | Economisch inkomen (loon + aandeel in de winst na Vpb met zeggenschap, look-through met groepseliminatie, minderheidsdividend met trackrecord), 1-2-3-weging, lopend jaar naar rato, uitkeerbaarheid, afslag voor beweeglijkheid; parameters instelbaar |
+
+De 0-verklaring (nul-inkomen) beoordeelt verplichtingen, zekerheden, kasstroom en verlies → € 0 met eventuele maandlastcorrectie. De kaders van ABN AMRO, ASN Bank en Knab zijn in eigen woorden vertaald uit (interne) beleidsdocumenten: eigen interpretatie, geen officiële publicatie. Zie [docs/REKENREGELS.md](docs/REKENREGELS.md) en de pagina Toetskaders in de app.
 
 > ZIB is een rekenhulpmiddel. De beoordeling, motivering en verantwoordelijkheid blijven bij de acceptant. Controleer bij twijfel altijd het actuele beleidskader.
 

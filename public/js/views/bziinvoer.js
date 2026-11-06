@@ -62,7 +62,7 @@ function rijenVoor(d, r, o, a, jaren, { isHoofd, ouder, pctOuder }) {
   }
   rijen.push({ label: 'Winstgevendheid', waarden: {}, stijl: 'sectie' });
   rij('Omzet', (j) => (j.heeftVW ? bedragT(j.vw.OMZET) : ''));
-  rij(r.kader === 'NHG' ? 'Winst vóór belasting' : 'Nettowinst', (j) => (j.heeftVW ? bedragT(r.kader === 'NHG' ? j.vw.RVB : j.winst.NW) : ''));
+  rij(r.familie === 'NHG' ? 'Winst vóór belasting' : 'Nettowinst', (j) => (j.heeftVW ? bedragT(r.familie === 'NHG' ? j.vw.RVB : j.winst.NW) : ''));
   if (!isHoofd) {
     rij(`Management fee${ouder ? ` (aan ${ouder.naam})` : ''}`, (j, y) => bedragT(o.jaren?.[y]?.bzi?.managementFee || null));
     rij(`Intern dividend${ouder ? ` (aan ${ouder.naam}${pctOuder < 1 ? `, ${Math.round(pctOuder * 1000) / 10}%`.replace('.', ',') : ''})` : ''}`,
@@ -154,7 +154,7 @@ export function renderBziInvoer(d, r) {
 
   // Samenvatting en advies
   const ph = r.inkomen?.perHoofdbedrijf || [];
-  const advies = r.kader === 'ABN' && ph.length ? `<div class="paneel"><h2>Samenvatting in de rekentool en advies</h2>
+  const advies = r.familie === 'ABN' && ph.length ? `<div class="paneel"><h2>Samenvatting in de rekentool en advies</h2>
     <div class="scroll"><table class="tabel compact"><thead><tr><th>Hoofdbedrijf</th><th>Toetskader</th><th class="num">Berekend inkomen (verwacht in de rekentool)</th><th class="num">Inkomen volgens Woonbeleid (ZIB)</th><th>Advies</th></tr></thead><tbody>
       ${ph.map((x) => {
     const verschil = !x.nul && Math.abs(x.woonbeleidVoorAfslag - x.berekend) > 1;

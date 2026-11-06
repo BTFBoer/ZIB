@@ -1,6 +1,6 @@
 import { esc, fmt, naamAanvrager, num, isIngevuld } from '../util.js';
 import { get } from '../state.js';
-import { KADERS, RECHTSVORMEN, SOORTEN } from '../engine/kaders.js';
+import { RECHTSVORMEN, SOORTEN, kaderVoor, PARAM_LABELS } from '../engine/kaders.js';
 import { organogramGraaf } from '../engine/index.js';
 import { zkLijst, zkTekst } from '../engine/nul.js';
 import { BALANS_RIJEN, VW_RIJEN } from '../schema/fields.js';
@@ -52,8 +52,20 @@ function financieleTabel(ond, r, soort) {
   return `<div class="scroll"><table class="tabel"><thead><tr><th>${soort === 'balans' ? 'Balans' : 'Winst- en verliesrekening'} (${esc(ond.naam)})</th>${jaren.map((y) => `<th class="num">${y}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
+/** Belang in de samenvatting: direct, in welke aandeelhouder, en het economische belang van de aanvrager. */
+function belangTekst(d, r, o) {
+  const an = r.ondernemingen.find((x) => x.id === o.id);
+  const direct = num(o.aandeelPct ?? 100) / 100;
+  const ouder = (d.ondernemingen || []).find((x) => x.id === o.parentId);
+  const econ = an?.belangEconomisch;
+  const delen = [`${fmt.pct(direct, 0)}${ouder ? ` (gehouden door ${esc(ouder.naam || '')})` : ''}`];
+  if (econ !== undefined && econ !== null && Math.abs(econ - direct) > 0.0001) delen.push(`economisch belang aanvrager ${fmt.pct(econ, 1)}`);
+  if (an && an.soort === 'VPB' && an.zeggenschap === false) delen.push('geen zeggenschap');
+  return delen.join('; ');
+}
+
 export function renderRapport(d, r) {
-  const kader = KADERS[d.kader] || KADERS.NHG;
+  const kader = r.kaderCfg || kaderVoor(d);
   const adv = get(d.advieskantoorId);
   const a = d.aanvrager || {};
   const n = d.notities || {};
@@ -70,11 +82,11 @@ export function renderRapport(d, r) {
     ['KvK-nummer', esc(o.kvk || '')],
     o.website ? ['Website', esc(o.website)] : null,
     ['SBI', esc(o.sbi || '').replace(/\n/g, '<br>')],
-    o.rechtsvorm !== 'EZ' ? ['Belang', fmt.pct(num(o.aandeelPct ?? 100) / 100, 0)] : null,
+    o.rechtsvorm !== 'EZ' ? ['Belang', belangTekst(d, r, o)] : null,
   ])).join('<div style="height:10px"></div>');
 
   const maxOnttrekken = r.ondernemingen.filter((x) => x.maxOnttrekken !== undefined)
-    .map((x) => `${esc(x.naam)}: ${esc(fmt.eur(x.maxOnttrekken, 2))}`).join('<br>');
+    .map((x) => (x.maxOnttrekkenNvt ? `${esc(x.naam)}: n.v.t. (${esc(x.maxOnttrekkenNvt)})` : `${esc(x.naam)}: ${esc(fmt.eur(x.maxOnttrekken, 2))}`)).join('<br>');
 
   const zakelijk = isNul
     ? `<p><b>${esc(r.nul.conclusie)}</b></p>${r.nul.nhgOpmerking ? `<p class="dempen">${esc(r.nul.nhgOpmerking)}</p>` : ''}`
@@ -128,12 +140,12 @@ export function renderRapport(d, r) {
   const geldstromen = r.inkomen?.geldstromen?.length ? geldstromenTabel(r, r.inkomen.geldstromen) : '';
 
   const overwinstDeel = isNul ? '' : r.ondernemingen.filter((x) => x.box2?.overwinst
-    && (r.kader === 'NHG' ? ['route2', 'combinatie'].includes(d.instellingen?.box2Route) : x.box2.overwinstMeenemen))
+    && (kader.box2?.model === 'NHG' ? ['route2', 'combinatie'].includes(d.instellingen?.box2Route) : x.box2.overwinstMeenemen))
     .map((x) => `<h3>Overwinst en dubbele balanstoets: ${esc(x.naam)}</h3>${overwinstBlok(d, r, x, { bewerken: false })}`).join('');
 
   const perOnderneming = r.ondernemingen.map((x) => {
     const ond = (d.ondernemingen || []).find((o) => o.id === x.id) || {};
-    if (!isNul && !x.meenemen && r.kader === 'NHG') return '';
+    if (!isNul && !x.meenemen && r.familie !== 'ABN') return '';
     return `<div class="paginabreuk"></div><h2>${esc(x.naam)}</h2>
       ${kv([
         ['Soort ondernemer', x.soort === 'VPB' ? 'Niet-IB (DGA)' : 'IB-ondernemer'],
@@ -172,7 +184,7 @@ export function renderRapport(d, r) {
     <div class="raster-2">
       <div>${kv([
         ['Dossiernummer', esc(d.nummer || '')],
-        ['Bestemd voor', esc(d.kader === 'ABN' ? (d.label || 'ABN AMRO') : kader.bestemdVoor)],
+        ['Bestemd voor', esc(r.familie === 'ABN' ? (d.label || 'ABN AMRO') : kader.bestemdVoor)],
         ['Behandelaar', esc(d.behandelaar || '')],
         ['Fiatteur', esc(f.tweede?.naam || d.fiatteur || '')],
         ['Datum', esc(fmt.datumLang(r.datum))],
@@ -204,10 +216,12 @@ export function renderRapport(d, r) {
 
     <h3>Kerngegevens</h3>${kv([
       ['Rapportnummer', esc(d.nummer || '')],
-      ['Opdrachtgever', esc(adv?.naam || '')],
+      ['Advieskantoor', esc(adv?.naam || 'Niet vastgelegd')],
       ['Ondernemer', esc(naamAanvrager(a))],
       ['Soort aanvraag', esc(SOORTEN[d.soort] || d.soort)],
       ['Gehanteerd toetskader', esc(`${kader.naam}, ${kader.versie}`)],
+      ['Status bron', esc(kader.bronStatus || '')],
+      kader.aangepast ? ['Aangepaste parameters', esc(Object.entries(kader.aangepast).map(([k, v]) => `${(PARAM_LABELS[k] || [k])[0]}: ${PARAM_LABELS[k]?.[1] === 'pct' ? `${String(Math.round(v * 1000) / 10).replace('.', ',')}%` : String(v).replace('.', ',')}`).join('; '))] : null,
       ['Nationale Hypotheek Garantie', kader.nhg ? 'Ja' : 'Nee'],
       ['Aantal ondernemingen met direct of indirect belang', String((d.ondernemingen || []).length)],
       ['Ondernemingen', esc((d.ondernemingen || []).map((o) => o.naam).join(', '))],
@@ -255,7 +269,7 @@ export function renderRapport(d, r) {
 export function dossierNotitiesTekst(d, r) {
   const n = d.notities || {};
   const regels = [];
-  const kader = KADERS[d.kader] || KADERS.NHG;
+  const kader = kaderVoor(d);
   regels.push('Algemeen');
   regels.push(`Aanvrager\t${naamAanvrager(d.aanvrager)}`);
   regels.push(`Soort aanvraag\t${SOORTEN[d.soort]} ${kader.nhg ? 'met NHG' : `zonder NHG (${kader.kort})`}`);
