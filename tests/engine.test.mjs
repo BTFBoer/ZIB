@@ -516,15 +516,19 @@ test('Geldstromen met partijen buiten de berekening worden aangesloten', () => {
   assert.ok(r.meldingen.some((m) => /Management fee Holding BV → Derde B\.V\. sluit niet aan in 2025/.test(m.tekst)));
 });
 
-test('Berekeningswijzen 1-1-1 en 1-2-3', () => {
+test('Berekeningswijzen 1-1-1, 1-2-3 en 1-3-4', () => {
   const m = vergelijkMethoden({ 2023: 30000, 2024: 40000, 2025: 60000 }, [2023, 2024, 2025]);
   assert.equal(m.gemiddelde, 43333);
   assert.equal(m.m111, 43333);
   assert.equal(m.gewogen, 48333);
   assert.equal(m.m123, 48333);
+  assert.equal(m.gewogen134, 48750);
+  assert.equal(m.m134, 48750);
   const m2 = vergelijkMethoden({ 2023: 40000, 2024: 50000, 2025: 45000 }, [2023, 2024, 2025]);
   assert.equal(m2.m111, 45000);
   assert.equal(m2.m123, 45000);
+  assert.equal(m2.gewogen134, 46250);
+  assert.equal(m2.m134, 45000);
 });
 
 test('Lening directie: annuïteit en contractuele termijn', () => {

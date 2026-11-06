@@ -51,14 +51,33 @@ export function controlejaarCijfers(mee, C, pers, T3, ondJaar) {
     van: met?.jaren[C].van, tot: met?.jaren[C].tot };
 }
 
-/** 1-2-3-weging, maximaal een percentage boven het gewone gemiddelde en maximaal het laatste jaar. */
-export function gewogen123(w, maxBoven111) {
-  const W = (w[0] + 2 * w[1] + 3 * w[2]) / 6;
+const getalT = (x) => String(x).replace('.', ',');
+
+/** Gewichten voor oudste, middelste en laatste jaar; ongeldige invoer valt terug op 1-2-3. */
+function geldigeWeging(gewichten) {
+  const gw = (gewichten || [1, 2, 3]).map((x) => Math.max(0, Number(x) || 0));
+  return gw.length === 3 && gw[0] + gw[1] + gw[2] > 0 ? gw : [1, 2, 3];
+}
+
+/** Weging als label, zoals 1-2-3 of 1-3-4. */
+export function wegingLabel(gewichten) {
+  return geldigeWeging(gewichten).map(getalT).join('-');
+}
+
+/**
+ * Gewogen gemiddelde van drie jaren (standaard 1-2-3; Knab 2026: 1-3-4), maximaal een percentage boven het
+ * gewone gemiddelde en maximaal het laatste jaar.
+ */
+export function gewogen123(w, maxBoven111, gewichten) {
+  const gw = geldigeWeging(gewichten);
+  const som = gw[0] + gw[1] + gw[2];
+  const W = (gw[0] * w[0] + gw[1] * w[1] + gw[2] * w[2]) / som;
   const A = (w[0] + w[1] + w[2]) / 3;
   const capA = maxBoven111 === null || maxBoven111 === undefined ? null : A * (1 + maxBoven111);
   const uit = Math.min(W, capA ?? Infinity, w[2]);
-  return { W: rond(W), A: rond(A), capA: capA === null ? null : rond(capA), uit: rond(uit),
-    fW: `(${g(w[0])} + 2 × ${g(w[1])} + 3 × ${g(w[2])}) / 6 =` };
+  const term = (f, x) => (f === 1 ? g(x) : `${getalT(f)} × ${g(x)}`);
+  return { W: rond(W), A: rond(A), capA: capA === null ? null : rond(capA), uit: rond(uit), gewichten: gw, som,
+    fW: `(${term(gw[0], w[0])} + ${term(gw[1], w[1])} + ${term(gw[2], w[2])}) / ${getalT(som)} =` };
 }
 
 /** Dalende trend (Knab B.1.2.1): > 40% van oudste naar laatste én > 20% van middelste naar laatste jaar. */
@@ -328,10 +347,17 @@ export function totaalKNAB(dossier, analyses, ctx, trace) {
   const st = starterInfo(mee);
   const starter = st.maanden < 36 && !relevant;
 
-  const s = trace.sectie('Berekening inkomen Knab (1-2-3-methode)', {
+  // Weging: de acceptatiegids (2026) noemt de 1-3-4-methode, het concept (2024) 1-2-3; instelbaar per dossier.
+  const gw = geldigeWeging(kader.methode123.gewichten);
+  const wl = wegingLabel(gw);
+  const somW = getalT(gw[0] + gw[1] + gw[2]);
+  const wegingBron = { '1-3-4': 'acceptatiegids Knab 2026', '1-2-3': 'concept B.1.1.2' }[wl] || 'aangepaste weging';
+  const maxNHGTekst = kader.methode123.maxBovenNHG === null || kader.methode123.maxBovenNHG === undefined ? ''
+    : `; totaal maximaal ${pctT(kader.methode123.maxBovenNHG)} boven het NHG-inkomen (B.1.1.0)`;
+  const s = trace.sectie(`Berekening inkomen Knab (${wl}-methode)`, {
     groep: 'inkomen', kolommen: jaren,
     kolomLabels: Object.fromEntries(jaren.map((y) => [y, y === C ? `${y} (controlejaar)` : String(y)])),
-    richtlijn: 'B.1.1: (1 × oudste + 2 × middelste + 3 × laatste jaar) / 6, maximaal het laatste jaar en maximaal 10% boven het gewone gemiddelde; B.1.1.0: totaal maximaal 20% boven het NHG-inkomen. Lopend jaar conform NHG.',
+    richtlijn: `Weging ${wl} (${wegingBron}): (${getalT(gw[0])} × oudste + ${getalT(gw[1])} × middelste + ${getalT(gw[2])} × laatste jaar) / ${somW}, maximaal het laatste jaar en maximaal ${pctT(kader.methode123.maxBoven111)} boven het gewone gemiddelde (B.1.1.2)${maxNHGTekst}. Lopend jaar conform NHG.`,
   });
   rijPerOnderneming(s, mee, jaren, C);
   persRijen(s, pers, jaren);
@@ -375,12 +401,12 @@ export function totaalKNAB(dossier, analyses, ctx, trace) {
     stappen.push(`Starter zonder relevant voorafgaand dienstverband (${Math.floor(st.maanden)} maanden): ${pctT(sf.factor)} van het gemiddelde; de 10%- en 20%-grens gelden niet.`);
     if (prognose === null) meldingen.push({ niveau: 'attentie', tekst: `Knab B.2.3: vraag een prognose op (NBA-standaard 3400) over ${st.maanden < 24 ? 'het lopende en het komende jaar' : 'het lopende jaar'}.` });
   } else {
-    const m = gewogen123(T.map((y) => TOT[y]), kader.methode123.maxBoven111);
+    const m = gewogen123(T.map((y) => TOT[y]), kader.methode123.maxBoven111, gw);
     gem = m.A;
     basis = m.uit;
-    s.rij('Gewogen inkomen 1-2-3', { [T3]: cel(m.W, m.fW) });
+    s.rij(`Gewogen inkomen ${wl}`, { [T3]: cel(m.W, m.fW) });
     s.rij(`Gewoon gemiddelde (1-1-1) + ${pctT(kader.methode123.maxBoven111)}`, { [T3]: cel(m.capA, `${lijstF(T.map((y) => TOT[y]), 3)} ${g(m.A)} × ${String(1 + kader.methode123.maxBoven111).replace('.', ',')}`) });
-    s.rij('Basisinkomen: laagste van 1-2-3, 1-1-1 + 10% en het laatste jaar', { [T3]: cel(basis, laagsteF([m.W, m.capA, TOT[T3]])) }, { stijl: 'resultaat' });
+    s.rij(`Basisinkomen: laagste van ${wl}, 1-1-1 + ${pctT(kader.methode123.maxBoven111)} en het laatste jaar`, { [T3]: cel(basis, laagsteF([m.W, m.capA, TOT[T3]])) }, { stijl: 'resultaat' });
     res = basis;
     if (cj?.heeft && !vervanging) {
       s.rij('Geëxtrapoleerd inkomen lopend jaar (EI)', { [C]: cel(cj.cExtr, cj.metDividend ? `${g(cj0.cReal)} × ${String(cj.factor).replace('.', ',')} + gemiddeld dividend ${g(cj.metDividend)} =` : `${g(cj.cReal)} × ${String(cj.factor).replace('.', ',')} =`) });
@@ -388,9 +414,9 @@ export function totaalKNAB(dossier, analyses, ctx, trace) {
       s.rij('Inkomen na toets lopend jaar', { [C]: cel(res, laagsteF([basis, cj.cExtr])) }, { stijl: 'resultaat' });
     }
     if (vervanging && cj?.heeft) {
-      // B.1.3.4: vervangen conform NHG; het vervangende jaar telt 3×; maximaal 10% boven 1-1-1.
-      const mv = gewogen123([TOT[T[1]], TOT[T3], cj.cReal], kader.methode123.maxBoven111);
-      const B = Math.min(mv.W, mv.capA);
+      // B.1.3.4: vervangen conform NHG; het vervangende jaar krijgt het gewicht van het laatste jaar; maximaal 10% boven 1-1-1.
+      const mv = gewogen123([TOT[T[1]], TOT[T3], cj.cReal], kader.methode123.maxBoven111, gw);
+      const B = Math.min(mv.W, mv.capA ?? Infinity);
       const last = TOT[T3];
       const a = last < B && last > cj.cReal ? last : B;
       let s1 = cj.cReal < B ? cj.cReal : B;
@@ -398,9 +424,9 @@ export function totaalKNAB(dossier, analyses, ctx, trace) {
       const d = cj.cExtr < B ? cj.cExtr : B;
       res = Math.min(a, s1, d);
       vergelijking = { zonder: Math.min(basis, cj.cExtr), met: res };
-      s.rij(`Vervanging: (1 × ${T[1]} + 2 × ${T3} + 3 × ${C} gerealiseerd) / 6, max. 1-1-1 + 10%`, { [T3]: cel(rond(B), `${mv.fW} ${g(mv.W)}; ${laagsteF([mv.W, mv.capA])}`) });
+      s.rij(`Vervanging: (${getalT(gw[0])} × ${T[1]} + ${getalT(gw[1])} × ${T3} + ${getalT(gw[2])} × ${C} gerealiseerd) / ${somW}, max. 1-1-1 + ${pctT(kader.methode123.maxBoven111)}`, { [T3]: cel(rond(B), `${mv.fW} ${g(mv.W)}; ${laagsteF([mv.W, mv.capA ?? mv.W])}`) });
       s.rij('Inkomen na vervanging (stappen a, b en d conform NHG)', { [T3]: cel(res, laagsteF([a, s1, d])) }, { stijl: 'resultaat' });
-      stappen.push(`Vervanging toegepast: ${T[0]} is vervangen door het gerealiseerde resultaat ${C} (weegt 3×).`);
+      stappen.push(`Vervanging toegepast: ${T[0]} is vervangen door het gerealiseerde resultaat ${C} (weegt ${getalT(gw[2])}×).`);
     }
     // B.1.1.0: maximaal 20% boven het NHG-inkomen
     const nhg = ctx.nhgReferentie;
@@ -533,12 +559,13 @@ export function totaalOPT(dossier, analyses, ctx, trace) {
     s.rij('Laagste van starterinkomen, laatste jaar en prognose', { [T3]: cel(basis, laagsteF(grenzen)) }, { stijl: 'resultaat' });
     if (prognose === null) meldingen.push({ niveau: 'attentie', tekst: 'Optimaal: een starter heeft een prognose nodig (RA/AA of NBA 3400), opgebouwd uit werkvoorraad, contracten en toezeggingen.' });
   } else {
-    const m = gewogen123(w, kader.methode123?.maxBoven111 ?? 0.10);
+    const m = gewogen123(w, kader.methode123?.maxBoven111 ?? 0.10, kader.methode123?.gewichten);
+    const wlO = wegingLabel(m.gewichten);
     gem = m.A;
     basis = m.uit;
-    s.rij('Gewogen inkomen 1-2-3', { [T3]: cel(m.W, m.fW) });
+    s.rij(`Gewogen inkomen ${wlO}`, { [T3]: cel(m.W, m.fW) });
     s.rij(`Gewoon gemiddelde + ${pctT(kader.methode123?.maxBoven111 ?? 0.10)}`, { [T3]: cel(m.capA, `${lijstF(w, 3)} ${g(m.A)} × ${String(1 + (kader.methode123?.maxBoven111 ?? 0.10)).replace('.', ',')}`) });
-    s.rij('Basis: laagste van 1-2-3, gemiddelde + 10% en het laatste jaar', { [T3]: cel(basis, laagsteF([m.W, m.capA, w[2]])) }, { stijl: 'resultaat' });
+    s.rij(`Basis: laagste van ${wlO}, gemiddelde + ${pctT(kader.methode123?.maxBoven111 ?? 0.10)} en het laatste jaar`, { [T3]: cel(basis, laagsteF([m.W, m.capA, w[2]])) }, { stijl: 'resultaat' });
   }
 
   // Lopend jaar: een lager geëxtrapoleerd inkomen weegt mee naar rato van de lengte van de periode.
@@ -557,7 +584,7 @@ export function totaalOPT(dossier, analyses, ctx, trace) {
   const uitkeerbaar = [];
   look.forEach((a) => {
     const reeks = T.map((y) => num(a.box2.P[y]));
-    const wP = starter ? rond(gemiddelde(reeks)) : gewogen123(reeks, kader.methode123?.maxBoven111 ?? 0.10).uit;
+    const wP = starter ? rond(gemiddelde(reeks)) : gewogen123(reeks, kader.methode123?.maxBoven111 ?? 0.10, kader.methode123?.gewichten).uit;
     const over = Math.max(0, wP - a.box2.capaciteit);
     uitkeerbaar.push({ id: a.id, naam: a.naam, gewogen: wP, capaciteit: a.box2.capaciteit, over });
     if (over > 0) {

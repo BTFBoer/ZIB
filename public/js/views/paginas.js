@@ -107,7 +107,7 @@ export function emailFormulier({ aan = '', bcc = '', onderwerp = '', bericht = '
 // ---------------------------------------------------------------------------
 const FAQ = [
   ['Welke toetskaders zitten in ZIB?',
-    'Vijf: NHG (Toetskaders Inkomensverklaring Ondernemer 2026-1), ABN AMRO (Woonbeleid, rekentool BZI), ASN Bank (voorheen de Volksbank, Risk Policy voor geaccrediteerde partijen v1.5), Knab (concept toetskader 2024.013) en Optimaal, een eigen referentiekader. Je kiest per dossier het kader dat de uitkomst bepaalt; op het tabblad Berekening en in het rapport zie je hetzelfde dossier volgens alle vijf naast elkaar. Onder Toetskaders staat per kader de bron, de regels en wat een interpretatie is.'],
+    'Vijf: NHG (Toetskaders Inkomensverklaring Ondernemer 2026-1), ABN AMRO (Woonbeleid, rekentool BZI), ASN Bank (voorheen de Volksbank, Risk Policy voor geaccrediteerde partijen v1.5), Knab (acceptatiegids 2026 en concept toetskader 2024.013) en Optimaal, een eigen referentiekader. Je kiest per dossier het kader dat de uitkomst bepaalt; op het tabblad Berekening en in het rapport zie je hetzelfde dossier volgens alle vijf naast elkaar. Onder Toetskaders staat per kader de bron, de regels en wat een interpretatie is.'],
   ['Wat is het Optimaal toetskader en waarom zo?',
     'Een poging om het inkomen zo eerlijk en realistisch mogelijk te bepalen: wat de ondernemer werkelijk verdient en duurzaam kan onttrekken, zonder de toevalligheden van één kader. Een DGA met zeggenschap telt loon plus zijn aandeel in de winst na Vpb (dividend komt uit dezelfde winst en telt niet nog eens), maar alleen voor zover die winst na een dubbele balanstoets en uit vrije reserves uitkeerbaar is. Recente jaren wegen zwaarder (1-2-3, maximaal 10% boven het gemiddelde en maximaal het laatste jaar). Een lager lopend jaar weegt mee naar rato van de lengte van de periode, sterke schommelingen kosten een afslag, en dividend uit een minderheidsbelang telt alleen met een trackrecord en tot de winst van de deelneming. Starters met relevante ervaring krijgen geen afslag. De parameters zijn per dossier instelbaar.'],
   ['Wat is de holdingroute (ABN AMRO 3.63)?',
@@ -162,7 +162,7 @@ function kenmerken(k) {
   const box2 = { NHG: `Route 1 dividend of route 2 overwinst (${pctK(1 - (k.box2.afslag || 0))}) na dubbele balanstoets`, ABN: 'Uitgekeerd dividend (max. nettowinst); optioneel overwinst (3.63) of holdingroute', ASN: 'Winst na Vpb + dividend (> 50%), dubbele balanstoets CR ≥ 1 en solvabiliteit ≥ 20%', OPT: 'Aandeel in winst na Vpb (look-through), begrensd op uitkeerbare ruimte' }[k.box2.model];
   return [
     ['Inkomen', k.inkomensberekening[0]],
-    ['Weging', k.methode123 ? `1-2-3, max. ${pctK(k.methode123.maxBoven111)} boven 1-1-1${k.methode123.maxBovenNHG ? `, max. ${pctK(k.methode123.maxBovenNHG)} boven NHG` : ''}` : '1-1-1 (gelijk gewogen), max. laatste jaar'],
+    ['Weging', k.methode123 ? `${(k.methode123.gewichten || [1, 2, 3]).join('-')}, max. ${pctK(k.methode123.maxBoven111)} boven 1-1-1${k.methode123.maxBovenNHG ? `, max. ${pctK(k.methode123.maxBovenNHG)} boven NHG` : ''}` : '1-1-1 (gelijk gewogen), max. laatste jaar'],
     ['Lopend jaar', k.totaal === 'OPT' ? 'Lager geëxtrapoleerd inkomen weegt naar rato van de periode' : k.totaal === 'ASN' ? 'Geen verplichte toets; vervangen vanaf 1 april' : k.familie === 'ABN' ? 'Signaal als het geëxtrapoleerde inkomen lager is' : 'Lager geëxtrapoleerd inkomen verlaagt'],
     ['Starters', starters],
     ['Solvabiliteit', band ? `Bandbreedte ${band}` : `≥ ${pctK(k.solvabiliteitMin)}${k.familie === 'ABN' ? ' of gemiddelde solvabiliteitsruimte ≥ 0' : ''}`],
@@ -334,7 +334,7 @@ export function renderMijnGegevens() {
         ${state.modus === 'lokaal' ? `<div class="acties" style="margin-top:12px"><button class="knop sec" data-actie="demo-laden">Demodossiers laden</button>
           <button class="knop gevaar" data-actie="lokaal-wissen">Alle lokale gegevens wissen</button></div>` : ''}
       </div>
-      <div class="paneel"><h2>Over ZIB</h2><p>Rekenkern met vijf toetskaders: NHG (01.2026), ABN AMRO Woonbeleid, ASN Bank (Risk Policy v1.5), Knab (concept 2024.013) en het eigen kader Optimaal. De kaders van de banken zijn eigen vertalingen van hun beleid, geen officiële publicaties. Het berekende inkomen is een hulpmiddel; de beoordeling en motivering blijven bij de acceptant.</p></div>
+      <div class="paneel"><h2>Over ZIB</h2><p>Rekenkern met vijf toetskaders: NHG (01.2026), ABN AMRO Woonbeleid, ASN Bank (Risk Policy v1.5), Knab (acceptatiegids 2026 en concept 2024.013) en het eigen kader Optimaal. De kaders van de banken zijn eigen vertalingen van hun beleid, geen officiële publicaties. Het berekende inkomen is een hulpmiddel; de beoordeling en motivering blijven bij de acceptant.</p></div>
     </div>`;
 }
 

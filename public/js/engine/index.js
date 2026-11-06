@@ -331,20 +331,24 @@ export function organogramTekst(dossier, { titel = '' } = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Vergelijking berekeningswijzen (zoals berekening 1-1-1 en 1-2-3 in rekensoftware)
+// Vergelijking berekeningswijzen (zoals berekening 1-1-1 en 1-2-3 in rekensoftware; Knab 2026: 1-3-4)
 // ---------------------------------------------------------------------------
 export function vergelijkMethoden(perJaar, T) {
   const w = T.map((y) => num(perJaar[y]));
   const gem = gemiddelde(w);
   const gewogen = (w[0] + 2 * w[1] + 3 * w[2]) / 6;
+  const gewogen134 = (w[0] + 3 * w[1] + 4 * w[2]) / 8;
   return {
     jaren: Object.fromEntries(T.map((y, i) => [y, rond(w[i])])),
     gemiddelde: rond(gem),
     m111: rond(Math.min(gem, w[2])),
     gewogen: rond(gewogen),
     m123: rond(Math.min(gewogen, w[2])),
+    gewogen134: rond(gewogen134),
+    m134: rond(Math.min(gewogen134, w[2])),
     fGemiddelde: lijstF(w, 3),
     fGewogen: `(${g(w[0])} + 2 × ${g(w[1])} + 3 × ${g(w[2])}) / 6 =`,
+    fGewogen134: `(${g(w[0])} + 3 × ${g(w[1])} + 4 × ${g(w[2])}) / 8 =`,
   };
 }
 

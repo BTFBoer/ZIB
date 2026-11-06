@@ -594,7 +594,7 @@ function voorwaardenLijst(checks) {
   return `<div class="voorwaarden">${checks.map((c) => `<div class="voorwaarde"><b>${esc(c.label)}</b><div>${pil(c.status)}</div><div class="tekst">${esc(c.tekst)}</div></div>`).join('')}</div>`;
 }
 
-/** Hetzelfde dossier volgens alle toetskaders naast elkaar, plus de berekeningswijzen 1-1-1 en 1-2-3. */
+/** Hetzelfde dossier volgens alle toetskaders naast elkaar, plus de berekeningswijzen 1-1-1, 1-2-3 en 1-3-4. */
 export function methodenTabel(d, r) {
   if (d.soort === 'NUL' || !r.inkomen) return '';
   let v = [];
@@ -619,10 +619,11 @@ export function methodenTabel(d, r) {
     <div class="scroll"><table class="tabel"><thead><tr><th>Kader</th><th>Oordeel</th><th class="num">Box 1</th><th class="num">Box 2</th><th class="num">Berekend inkomen</th><th class="num">Af te geven</th></tr></thead>
       <tbody>${rijen}</tbody></table></div>
     ${spreiding ? `<p class="dempen klein" style="margin-top:6px">Verschil tussen het hoogste en laagste kader: ${esc(fmt.eur(spreiding))}.</p>` : ''}
-    ${m ? `<details class="stappen" style="margin-top:10px"><summary>Berekeningswijzen 1-1-1 en 1-2-3 op het totaal per jaar</summary><div class="inhoud">
+    ${m ? `<details class="stappen" style="margin-top:10px"><summary>Berekeningswijzen 1-1-1, 1-2-3 en 1-3-4 op het totaal per jaar</summary><div class="inhoud">
       <div class="scroll"><table class="tabel trace"><thead><tr><th>Berekening</th><th class="num">${TO.join(' / ')}</th><th class="num">Uitkomst</th></tr></thead><tbody>
       <tr><td><b>1-1-1</b><div class="dempen klein">Gemiddelde van drie jaar, maximaal het laatste jaar (NHG, ABN AMRO, ASN Bank)</div></td><td class="num">${TO.map((y) => fmt.getal(m.jaren[y])).join(' / ')}</td><td class="num"><span class="f">${esc(`${m.fGemiddelde} ${fmt.getal(m.gemiddelde)}; max. laatste jaar`)}</span>${fmt.eur(m.m111)}</td></tr>
-      <tr><td><b>1-2-3</b><div class="dempen klein">Gewogen: oudste 1×, middelste 2×, laatste 3×, maximaal het laatste jaar (basis van Knab en Optimaal, die er ook een grens van 10% boven 1-1-1 op zetten)</div></td><td class="num">${TO.map((y) => fmt.getal(m.jaren[y])).join(' / ')}</td><td class="num"><span class="f">${esc(`${m.fGewogen} ${fmt.getal(m.gewogen)}; max. laatste jaar`)}</span>${fmt.eur(m.m123)}</td></tr>
+      <tr><td><b>1-2-3</b><div class="dempen klein">Gewogen: oudste 1×, middelste 2×, laatste 3×, maximaal het laatste jaar (basis van Optimaal en van het Knab-concept 2024, met een grens van 10% boven 1-1-1)</div></td><td class="num">${TO.map((y) => fmt.getal(m.jaren[y])).join(' / ')}</td><td class="num"><span class="f">${esc(`${m.fGewogen} ${fmt.getal(m.gewogen)}; max. laatste jaar`)}</span>${fmt.eur(m.m123)}</td></tr>
+      ${m.m134 !== undefined ? `<tr><td><b>1-3-4</b><div class="dempen klein">Gewogen: oudste 1×, middelste 3×, laatste 4×, maximaal het laatste jaar (Knab volgens de acceptatiegids 2026, zonder NHG; ZIB houdt de grens van 10% boven 1-1-1 aan)</div></td><td class="num">${TO.map((y) => fmt.getal(m.jaren[y])).join(' / ')}</td><td class="num"><span class="f">${esc(`${m.fGewogen134} ${fmt.getal(m.gewogen134)}; max. laatste jaar`)}</span>${fmt.eur(m.m134)}</td></tr>` : ''}
       </tbody></table></div></div></details>` : ''}`;
 }
 

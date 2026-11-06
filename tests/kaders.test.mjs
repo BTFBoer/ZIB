@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bereken, vergelijkKaders, structuur, belangen } from '../public/js/engine/index.js';
 import { KADERS, KADER_VOLGORDE, kaderVoor, sectorControle, starterFactor } from '../public/js/engine/kaders.js';
+import { gewogen123 } from '../public/js/engine/totaal.js';
 
 function ezDossier({ kader = 'NHG', datum = '2026-07-15', T3 = 2025, sfw, ytd, van, tot, start = '2010-01-01', ib: ibExtra = {}, extra = {} }) {
   const C = T3 + 1;
@@ -107,14 +108,30 @@ test('ASN: verlies van de BV telt mee in het inkomen; maximaal drie entiteiten',
   assert.equal(r2.vastgesteld, 0);
 });
 
-test('Knab: 1-2-3, maximaal 10% boven 1-1-1 en 20% boven NHG', () => {
+test('Knab: 1-3-4 (acceptatiegids 2026), maximaal 10% boven 1-1-1 en 20% boven NHG', () => {
   const r = bereken(ezDossier({ kader: 'KNAB', sfw: [30000, 40000, 60000] }));
-  // 1-2-3 = 48.333; 1-1-1 + 10% = 47.667; laatste jaar 60.000; NHG 43.333 × 1,2 = 52.000
+  // 1-3-4 = 48.750; 1-1-1 + 10% = 47.667; laatste jaar 60.000; NHG 43.333 × 1,2 = 52.000
   assert.equal(r.inkomen.nhgReferentie, 43333);
   assert.equal(r.toetsinkomen, 47667);
   const r2 = bereken(ezDossier({ kader: 'KNAB', sfw: [40000, 50000, 45000] }));
-  // 1-2-3 = 45.833; 1-1-1 + 10% = 49.500; laatste jaar 45.000 → 45.000
+  // 1-3-4 = 46.250; 1-1-1 + 10% = 49.500; laatste jaar 45.000 → 45.000
   assert.equal(r2.toetsinkomen, 45000);
+});
+
+test('Knab: weging 1-3-4 standaard, 1-2-3 (concept 2024) instelbaar per dossier', () => {
+  assert.deepEqual(KADERS.KNAB.methode123.gewichten, [1, 3, 4]);
+  // 1-3-4 = (44.000 + 3 × 40.000 + 4 × 50.000) / 8 = 45.500; 1-2-3 = 45.667; 1-1-1 + 10% = 49.133
+  const r = bereken(ezDossier({ kader: 'KNAB', sfw: [44000, 40000, 50000] }));
+  assert.equal(r.inkomen.basis, 45500);
+  assert.equal(r.toetsinkomen, 45500);
+  assert.ok(r.trace.secties.some((sx) => /1-3-4-methode/.test(sx.titel || '')));
+  const over = { kaderParams: { KNAB: { methode123: { gewichten: { 1: 2, 2: 3 } } } } };
+  const r2 = bereken(ezDossier({ kader: 'KNAB', sfw: [44000, 40000, 50000], extra: { instellingen: over } }));
+  assert.equal(r2.toetsinkomen, 45667);
+  assert.deepEqual(KADERS.KNAB.methode123.gewichten, [1, 3, 4], 'het basiskader blijft ongewijzigd');
+  // Gewogen gemiddelde: ongeldige gewichten vallen terug op 1-2-3
+  assert.equal(gewogen123([30000, 40000, 60000], null, [0, 0, 0]).W, 48333);
+  assert.equal(gewogen123([30000, 40000, 60000], null, [1, 3, 4]).fW, '(30.000 + 3 × 40.000 + 4 × 60.000) / 8 =');
 });
 
 test('Knab starter zonder relevant dienstverband: 90% bij 24-36 maanden', () => {
@@ -128,7 +145,7 @@ test('Knab beletperiode: jaar vervangen door het laagste omliggende jaar', () =>
   const d = ezDossier({ kader: 'KNAB', sfw: [50000, 20000, 52000], extra: { instellingen: { belet: { actief: true, jaar: 2024, oorzaak: 'zwangerschapsverlof', motivatie: 'verklaring boekhouder' } } } });
   const r = bereken(d);
   assert.equal(r.inkomen.belet.nieuw, 50000);
-  // 1-2-3 over 50.000 / 50.000 / 52.000 = 51.000; 1-1-1 + 10% = 55.733; laatste jaar 52.000; NHG-plafond 20% boven 40.667
+  // 1-3-4 over 50.000 / 50.000 / 52.000 = 51.000; 1-1-1 + 10% = 55.733; laatste jaar 52.000; NHG-plafond 20% boven 40.667
   assert.equal(r.inkomen.basis, 51000);
   assert.equal(r.toetsinkomen, Math.min(51000, Math.round(40667 * 1.2)));
 });
