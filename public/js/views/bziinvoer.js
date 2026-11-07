@@ -159,6 +159,7 @@ export function renderBziInvoer(d, r) {
       ${ph.map((x) => {
     const verschil = !x.nul && Math.abs(x.woonbeleidVoorAfslag - x.berekend) > 1;
     const adviesT = x.nul ? '0-inkomen afgeven (vinkje "0-inkomen afgegeven?")'
+      : x.bron === 'geen' ? 'Geen inkomen afgeven (vinkje "Geen inkomen afgeven?")'
       : x.bron === 'afwijkend' ? `Afwijkend inkomen ${fmt.eur(x.bijdrage)} (vinkje "Afwijkend inkomen?")`
         : verschil ? `Afwijkend inkomen ${fmt.eur(x.woonbeleidVoorAfslag)} overwegen, met de rekenkundige onderbouwing hieronder` : 'Berekend inkomen afgeven';
     return `<tr><td><b>${esc(x.naam)}</b></td><td>${x.nul ? pil('info', '0-inkomen') : pil(x.toetsStatus, x.voldoet ? 'Voldoet' : 'Voldoet niet')}</td>

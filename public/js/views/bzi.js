@@ -85,7 +85,7 @@ export function bziKop(d, r) {
   let sub = '';
   if (isNul) { label = '0-verklaring'; sub = r.nul?.maandlastCorrectie ? `Maandlastcorrectie € ${fmt.getal(r.nul.maandlastCorrectie)} per maand` : ''; }
   else if (r.bron === 'afwijkend') { label = 'Afwijkend inkomen'; sub = `Berekend ${fmt.eur(r.berekend)}`; }
-  else if (r.bron === 'geen') { sub = 'Geen inkomen af te geven'; bedragTekst = fmt.eur(0); }
+  else if (r.bron === 'geen') { label = 'Af te geven inkomen'; sub = r.berekend > 0 ? `Geen inkomen af te geven (berekend ${fmt.eur(r.berekend)})` : 'Geen inkomen af te geven'; bedragTekst = fmt.eur(0); }
   else if (r.bron === 'nul') { label = '0-inkomen afgegeven'; }
   else if (r.familie === 'ABN' && r.toetsinkomen !== r.berekend) sub = `Toetsinkomen Woonbeleid ${fmt.eur(r.toetsinkomen)}`;
   else if (r.familie !== 'ABN') sub = `Toetsinkomen ${kaderLabel(r.kader)}`;
@@ -546,6 +546,7 @@ function stapBedrijf(d, r, ondId) {
   const badges = `<div class="badges"><span class="badge">${isHoofd ? (o.activiteit || (soort === 'VPB' ? 'Holding' : 'Onderneming')) : 'Deelneming'}</span><span class="badge">${esc(RECHTSVORMEN[o.rechtsvorm]?.kort || o.rechtsvorm)}</span>${a ? pil(a.status) : ''}</div>`;
   const keuzesHoofd = isHoofd && d.soort === 'IKV' ? `<div class="bzi-keuzes">
       ${vink('0-inkomen afgegeven?', `${b}.nulInkomen`, !!o.nulInkomen, { render: true })}
+      ${r.familie === 'ABN' ? vink('Geen inkomen afgeven?', `${b}.geenInkomen`, !!o.geenInkomen, { render: true }) : ''}
       ${vink('Afwijkend inkomen?', `${b}.afwijkend.actief`, !!o.afwijkend?.actief, { render: true })}
     </div>
     ${o.afwijkend?.actief ? `<div class="raster-2 afwijkend">
@@ -701,7 +702,8 @@ function stapSamenvatting(d, r, ondId) {
   const ond = (d.ondernemingen || []).find((o) => o.id === h.id) || {};
   const groep = h.groep.map((id) => r.ondernemingen.find((a) => a.id === id)).filter(Boolean);
   const hoofdA = groep[0];
-  const bron = { nul: '0-inkomen afgegeven', afwijkend: 'Afwijkend inkomen', geen: 'Geen inkomen (korter dan 1 boekjaar)', berekend: 'Berekend inkomen' }[h.bron];
+  const geenReden = h.maanden < 12 ? 'korter dan 1 boekjaar' : 'keuze acceptant';
+  const bron = { nul: '0-inkomen afgegeven', afwijkend: 'Afwijkend inkomen', geen: `Geen inkomen (${geenReden})`, berekend: 'Berekend inkomen' }[h.bron];
   const meldingenH = r.meldingen.filter((m) => m.tekst.startsWith(`${h.naam}:`) || groep.some((a) => m.tekst.startsWith(`${a.naam}:`)) || (m.tekst.includes(h.naam) && /sluit niet aan/.test(m.tekst)));
   const woonbeleid = h.nul ? '' : `<div class="bzi-blok woonbeleid"><h3>Toets Woonbeleid (ZIB)</h3>
       <dl class="kv compact">

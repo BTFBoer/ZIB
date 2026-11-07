@@ -604,7 +604,7 @@ export function methodenTabel(d, r) {
   const rijen = v.map((x) => {
     if (x.fout) return `<tr><td><b>${esc(x.kort)}</b></td><td colspan="5" class="dempen">Niet te berekenen: ${esc(x.fout)}</td></tr>`;
     const huidig = x.id === r.kader;
-    const reden = x.status === 'niet_akkoord' && x.nok.length ? `<div class="dempen klein">${esc(x.nok.slice(0, 3).join('; '))}</div>` : '';
+    const reden = x.status === 'niet_akkoord' && x.nok.length ? `<div class="dempen klein">${esc(x.nok.slice(0, 4).join('; '))}</div>` : '';
     const stap = x.stappen?.length ? `<div class="dempen klein">${esc(x.stappen.slice(0, 2).join(' '))}</div>` : '';
     return `<tr${huidig ? ' class="actief-rij"' : ''}><td><b>${esc(x.kort)}</b>${huidig ? ' <span class="dempen klein">(gekozen)</span>' : ''}<div class="dempen klein">${esc(x.versie)}</div></td>
       <td>${pil(x.status)}${reden}</td>

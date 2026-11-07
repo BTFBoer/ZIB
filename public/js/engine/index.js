@@ -728,6 +728,8 @@ function totaalABN(dossier, analyses, ctx, trace, st) {
     let bijdrage = 0;
     let bron = 'berekend';
     if (nul) bron = 'nul';
+    // Keuze van de acceptant: geen inkomen afgeven (bijvoorbeeld als het toetskader niet wordt gehaald).
+    else if (ond.geenInkomen === true) bron = 'geen';
     else if (afw.actief && isIngevuld(afw.bedrag)) { bijdrage = Math.max(0, rond(num(afw.bedrag))); bron = 'afwijkend'; }
     else if (maanden < 12) bron = 'geen';
     else bijdrage = berekend;
@@ -740,7 +742,7 @@ function totaalABN(dossier, analyses, ctx, trace, st) {
 
     // Meldingen
     if (!nul && !voldoet) {
-      meldingen.push({ niveau: 'niet_akkoord', tekst: `${h.naam}: voldoet niet aan het toetskader (${nietVoldoend.join(', ')}). Het berekend inkomen blijft zichtbaar; motiveer een afwijking of geef geen inkomen af.` });
+      meldingen.push({ niveau: 'niet_akkoord', tekst: `${h.naam}: voldoet niet aan het toetskader (${nietVoldoend.join(', ')}). ${bron === 'geen' ? 'Er wordt geen inkomen afgegeven.' : 'Het berekend inkomen blijft zichtbaar; motiveer een afwijking of geef geen inkomen af.'}` });
     }
     if (!nul && maanden < 12) {
       meldingen.push({ niveau: 'niet_akkoord', tekst: `${h.naam}: korter dan 1 boekjaar ondernemer, het inkomen mag niet worden meegenomen.` });
@@ -1170,10 +1172,11 @@ export function vergelijkKaders(dossier, ids = KADER_VOLGORDE) {
   return ids.map((id) => {
     try {
       const r = bereken({ ...basis, kader: id });
+      // Eerst de concrete voorwaarden per onderneming, daarna de meldingen op dossierniveau.
       const nok = [
-        ...r.meldingen.filter((m) => m.niveau === 'niet_akkoord').map((m) => m.tekst),
         ...r.ondernemingen.filter((a) => a.meenemen !== false || r.familie === 'ABN')
           .flatMap((a) => a.checks.filter((c) => c.status === 'niet_akkoord').map((c) => `${a.naam}: ${c.label}`)),
+        ...r.meldingen.filter((m) => m.niveau === 'niet_akkoord').map((m) => m.tekst),
       ];
       return {
         id, kort: r.kaderCfg.kort, naam: r.kaderNaam, versie: r.kaderVersie, nhg: r.kaderCfg.nhg,

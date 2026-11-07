@@ -51,7 +51,7 @@ cd ZIB
 npm run dev          # statische server op http://localhost:5173
 ```
 
-Of bouw één zelfstandig bestand met `npm run build:demo` en open `dist/zib-demo.html` in de browser. In de lokale modus laadt ZIB zes fictieve demodossiers, waaronder een holdingstructuur met gedeelde deelneming, STAK, overwinst en geldstromen (ZIB-2026-0005).
+Of bouw één zelfstandig bestand met `npm run build:demo` en open `dist/zib-demo.html` in de browser. In de lokale modus laadt ZIB negen demodossiers, waaronder een holdingstructuur met gedeelde deelneming, STAK, overwinst en geldstromen (ZIB-2026-0005), een Knab-starter met beletperiode (ZIB-2026-0101), een holding met minderheidsdeelneming (ZIB-2026-0102) en een oefendossier met de echte geconsolideerde jaarcijfers van Renewi Limited en een fictieve DGA (ZIB-2026-0103: IFRS, gebroken boekjaar, buitenlandse vennootschap, beëindigde activiteiten en aandeel derden). Een nieuw demodossier verschijnt in een bestaande browser na *Mijn gegevens > Demodossiers laden*.
 
 ## Publiceren
 

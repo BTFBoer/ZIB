@@ -112,8 +112,9 @@ export function paneelAfwijkend(d, r) {
     const a = o.afwijkend || {};
     const b = `ond:${h.id}.afwijkend`;
     return `<div class="afw-hoofd"><div class="bzi-rij"><b>${esc(h.naam)}</b><span class="dempen klein">berekend ${esc(fmt.eur(h.berekend))} · Woonbeleid ${esc(fmt.eur(h.woonbeleidVoorAfslag))}${h.overwinstMee ? ` (incl. overwinst ${esc(fmt.eur(h.overwinstMee))})` : ''}</span></div>
-      ${vink('Afwijkend inkomen voor dit hoofdbedrijf', `${b}.actief`, !!a.actief, { render: true })}
-      ${a.actief ? `<div class="raster-3" style="margin-top:8px">${veld('Afwijkend inkomen', `${b}.bedrag`, a.bedrag, { type: 'getal', render: true })}</div>
+      ${vink('Geen inkomen afgeven voor dit hoofdbedrijf', `ond:${h.id}.geenInkomen`, !!o.geenInkomen, { render: true })}
+      ${o.geenInkomen ? '' : vink('Afwijkend inkomen voor dit hoofdbedrijf', `${b}.actief`, !!a.actief, { render: true })}
+      ${a.actief && !o.geenInkomen ? `<div class="raster-3" style="margin-top:8px">${veld('Afwijkend inkomen', `${b}.bedrag`, a.bedrag, { type: 'getal', render: true })}</div>
         <div style="margin-top:8px">${tekstvak('Motivatie en rekenkundige onderbouwing', `${b}.motivatie`, a.motivatie, { rijen: 6 })}</div>` : ''}</div>`;
   }).join('')}
     <h3 style="margin-top:14px">Totaal (alle hoofdbedrijven samen)</h3>` : '';

@@ -1,6 +1,7 @@
 // Fictieve demogegevens. Namen, adressen, KvK- en aanvraagnummers en bedragen zijn verzonnen;
 // overeenkomsten met bestaande personen of ondernemingen berusten op toeval.
 import { balansTotalen } from '../engine/financieel.js';
+import { renewiRecords } from './demo-renewi.js';
 
 /** Sluit de balans door het verschil op de opgegeven eigenvermogenpost te boeken. */
 function balans(posten, plug = 'evKapitaal') {
@@ -433,7 +434,7 @@ export function demoRecords() {
     { id: 'adv_demo_westland', type: 'advieskantoor', naam: 'Hypotheekhuis Voorbeeld', afm: '12000001', contactpersoon: 'J. van Leeuwen', email: 'info@hypotheekhuis.example', telefoon: '0100 000000', plaats: 'Naaldwijk', aangemaakt: nu },
     { id: 'adv_demo_vandijk', type: 'advieskantoor', naam: 'Van Dijk Financieel Advies (demo)', afm: '12000002', contactpersoon: 'E. van Dijk', email: 'advies@vandijk.example', telefoon: '0100 000001', plaats: 'Leiden', aangemaakt: nu },
     { id: 'adv_demo_rijnmond', type: 'advieskantoor', naam: 'Rijnmond Hypotheken (demo)', afm: '12000003', contactpersoon: 'K. Bos', email: 'kantoor@rijnmond.example', telefoon: '0100 000002', plaats: 'Rotterdam', aangemaakt: nu },
-    vanDalen(), jansen(), deVries(), bakker(), elAmrani(), visser(), mulder(), deWit(),
+    vanDalen(), jansen(), deVries(), bakker(), elAmrani(), visser(), mulder(), deWit(), ...renewiRecords(),
     { id: 'taak_demo_1', type: 'taak', titel: 'Btw-aangifte Q2 2026 opvragen', dossierId: 'dos_demo_elamrani', toegewezenAan: 'A. de Groot', deadline: '2026-10-07', status: 'open', door: 'A. de Groot', aangemaakt: nu },
     { id: 'taak_demo_2', type: 'taak', titel: '2e beoordeling uitvoeren', dossierId: 'dos_demo_devries', toegewezenAan: 'R. Smit', deadline: '2026-10-03', status: 'open', door: 'A. de Groot', aangemaakt: nu },
     { id: 'taak_demo_3', type: 'taak', titel: 'Google check en KvK-adrescheck vastleggen', dossierId: 'dos_demo_bakker', toegewezenAan: 'A. de Groot', deadline: '2026-10-05', status: 'open', door: 'A. de Groot', aangemaakt: nu },
