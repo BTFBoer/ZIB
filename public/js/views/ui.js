@@ -29,6 +29,20 @@ const ICONEN = {
   vink: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 12l3 3 5-6"/>',
   wissel: '<path d="M4 7h13l-3-3M20 17H7l3 3"/>',
   notitie: '<path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+  menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  filter: '<path d="M4 5h16l-6 7v6l-4 2v-8z"/>',
+  kolommen: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M10 4v16M15 4v16"/>',
+  sluit: '<path d="M6 6l12 12M18 6L6 18"/>',
+  map: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  pijl: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  omhoog: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+  inhoud: '<path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>',
+  uitklappen: '<path d="M7 9l5 5 5-5M7 15l5 5 5-5" transform="translate(0 -3)"/>',
+  inklappen: '<path d="M7 15l5-5 5 5M7 9l5-5 5 5" transform="translate(0 3)"/>',
+  formule: '<path d="M18 5h-5.5a2.5 2.5 0 0 0-2.5 2.5V17a2.500 2.500 0 0 1-2.500 2.500H6M7 11h7M14 14l5 5M19 14l-5 5"/>',
+  klok: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  afdruk: '<path d="M7 8V4h10v4M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="6"/>',
+  download: '<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>',
 };
 
 /** Klein lijnicoon (inline SVG, geen externe bestanden). */

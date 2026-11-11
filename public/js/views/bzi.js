@@ -10,7 +10,7 @@ import { DOSSIER_STATUSSEN, JAAR_STATUSSEN } from '../schema/fields.js';
 import { WINST_CORRECTIES, VERMOGENS_CORRECTIES, typesVoor } from '../schema/correcties.js';
 import { heeftBalans, heeftVW } from '../engine/financieel.js';
 import { pil, bedrag, veld, keuze, vink, melding, leeg, chip, kengetal, icoon, tekstvak } from './ui.js';
-import { ui, ordeJaren } from './uistate.js';
+import { ui, ordeJaren, ordeJarenOverzicht } from './uistate.js';
 import { FORMATS, NOTITIE_VELDEN, conclusieFormat } from './formats.js';
 import {
   paneelRC, paneelLeningDirectie, paneelZK, paneelLoondienst, paneelNul, rechtsvormOpties,
@@ -561,7 +561,7 @@ function stapBedrijf(d, r, ondId) {
       ${a?.aggBalans || kolommen.some((y) => a?.jaren?.[y]?.aggBalans || a?.jaren?.[y]?.aggVW) ? '<span class="dempen klein">Invoer met totaalposten. Voor een gedetailleerde balans of W&V gebruik je de ViiZ-weergave.</span>' : ''}
     </div>
     <div class="scroll"><table class="bzi-jaren" id="rooster"><thead>${kop}</thead><tbody>${body}${geld}</tbody></table></div>
-    ${isHoofd && soort === 'VPB' && d.soort === 'IKV' && a?.box2?.overwinst ? overwinstBlok(d, r, a) : ''}
+    ${isHoofd && soort === 'VPB' && d.soort === 'IKV' && a?.box2?.overwinst ? overwinstBlok(d, r, a, { invoer: true }) : ''}
     ${a ? `<details class="stappen" style="margin-top:14px"><summary>Voorwaarden en rekenstappen ${esc(o.naam)}</summary><div class="inhoud">
       <div class="voorwaarden">${a.checks.map((c) => `<div class="voorwaarde"><b>${esc(c.label)}</b><div>${pil(c.status)}</div><div class="tekst">${esc(c.tekst)}</div></div>`).join('')}</div>
     </div></details>` : ''}`;
@@ -622,7 +622,7 @@ function correctiesTekst(aj, lijstNaam) {
 }
 
 function samenvattingBedrijf(d, r, a, { hoofd = false, ph = null } = {}) {
-  const jaren = ordeJaren(r.C && Object.keys(a.jaren).map(Number).includes(r.C) ? [r.C, ...r.T] : [...r.T]);
+  const jaren = ordeJarenOverzicht(r.C && Object.keys(a.jaren).map(Number).includes(r.C) ? [r.C, ...r.T] : [...r.T]);
   const isVPB = a.soort === 'VPB';
   const mark = (y) => (y !== r.C && a.jaren[y]?.meegeteld ? icoon('check') : '');
   const svMin = solvNorm(r.kaderCfg, a.soort);

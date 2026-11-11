@@ -611,19 +611,19 @@ export const GELDSTROOM_SOORTEN = {
 /**
  * Rekenkundige onderbouwing voor een afwijkend inkomen (conclusie "Afwijkend inkomen"): van het
  * berekend inkomen in de rekentool naar het inkomen volgens het Woonbeleid, inclusief eventuele
- * overwinst na de dubbele balanstoets. Jaren van recent naar oud.
+ * overwinst na de dubbele balanstoets. Een overzicht: de jaren lopen van oud naar nieuw.
  */
 function onderbouwingAfwijkend(x) {
   const { h, T, bziInkomen, bziDividend, berekend, wI, beschikbaar, toets, voorAfslag, factor, categorie, prognose, b2, overwinst, overwinstMee, woonbeleidVoorAfslag } = x;
   const isVPB = h.soort === 'VPB';
   const lab = isVPB ? 'DGA-inkomen (na bijtelling)' : 'inkomen (saldo fiscale winst na correcties)';
-  const recent = [...T].reverse();
+  const chrono = [...T];
   const regels = [];
   regels.push(`Afwijkend inkomen ${h.naam}: ${eur(woonbeleidVoorAfslag)}`);
   regels.push(`Motivatie: het inkomen is vastgesteld volgens het Woonbeleid${overwinstMee > 0 ? ', inclusief het niet-uitgekeerde dividend (overwinst) na de dubbele balanstoets' : ''}. De rekentool rekent met het gemiddelde${overwinstMee > 0 ? ' en neemt geen niet-uitgekeerd dividend mee' : ''}.`);
   regels.push('Vaststelling:');
   regels.push(`- Berekend inkomen (rekentool): gemiddeld ${lab} ${eur(bziInkomen)}${isVPB ? ` + dividend ${eur(bziDividend)} (gemiddeld dividend, maximaal de gemiddelde nettowinst × belang)` : ''} = ${eur(berekend)}.`);
-  regels.push(`- ${isVPB ? 'DGA-inkomen' : 'Inkomen'} per jaar: ${recent.map((y) => `${y} ${eur(rond(h.jaren[y]?.inkomen.totaal ?? 0))}${beschikbaar.includes(y) ? '' : ' (niet meegeteld)'}`).join('; ')}.`);
+  regels.push(`- ${isVPB ? 'DGA-inkomen' : 'Inkomen'} per jaar: ${chrono.map((y) => `${y} ${eur(rond(h.jaren[y]?.inkomen.totaal ?? 0))}${beschikbaar.includes(y) ? '' : ' (niet meegeteld)'}`).join('; ')}.`);
   if (factor > 0 && factor < 1) {
     regels.push(`- Woonbeleid (${categorie.toLowerCase()}): ${Math.round(factor * 100)}% van het gemiddelde = ${eur(toets)}${prognose !== null ? `, maximaal de prognose ${eur(prognose)}` : ''} (vóór afslag ${eur(voorAfslag)}).`);
   } else if (factor === 1) {
@@ -631,12 +631,12 @@ function onderbouwingAfwijkend(x) {
     regels.push(`- Woonbeleid: laagste van het gemiddelde (${eur(bziInkomen)}) en het laatste boekjaar (${eur(last)}) = ${eur(Math.min(bziInkomen, last))}.`);
   }
   if (isVPB && b2?.holding) {
-    regels.push(`- Holdingroute (3.63): ontvangen dividend uit minderheidsdeelneming(en) ${recent.map((y) => `${y} ${eur(b2.holding.perJaar[y] ?? 0)}`).join('; ')}; laagste van het gemiddelde (${eur(b2.holding.gemiddelde)}) en het laatste jaar = ${eur(b2.holding.bedrag)}. Uitkering en winst van de holding tellen niet mee.`);
+    regels.push(`- Holdingroute (3.63): ontvangen dividend uit minderheidsdeelneming(en) ${chrono.map((y) => `${y} ${eur(b2.holding.perJaar[y] ?? 0)}`).join('; ')}; laagste van het gemiddelde (${eur(b2.holding.gemiddelde)}) en het laatste jaar = ${eur(b2.holding.bedrag)}. Uitkering en winst van de holding tellen niet mee.`);
   } else if (isVPB && b2) {
     regels.push(`- Uitgekeerd dividend: laagste van het gemiddelde en het laatste jaar, maximaal de gemiddelde nettowinst × belang = ${eur(b2.uitgekeerd)}.`);
     if (overwinst && overwinstMee > 0) {
       const ow = overwinst;
-      regels.push(`- Overwinst (${ow.winstLabel.toLowerCase()} -/- uitgekeerd dividend): ${recent.map((y) => `${y} ${eur(ow.ow[y] ?? 0)}`).join('; ')}; laagste van het gemiddelde (${eur(ow.gem)}) en het laatste jaar = ${eur(ow.basis)}.`);
+      regels.push(`- Overwinst (${ow.winstLabel.toLowerCase()} -/- uitgekeerd dividend): ${chrono.map((y) => `${y} ${eur(ow.ow[y] ?? 0)}`).join('; ')}; laagste van het gemiddelde (${eur(ow.gem)}) en het laatste jaar = ${eur(ow.basis)}.`);
       regels.push(`- Dubbele balanstoets (${ow.omschrijving}): maximaal ${eur(ow.dbt.max)} (solvabiliteit ${eur(ow.dbt.maxSolv ?? 0)}, liquiditeit ${eur(ow.dbt.maxLiq ?? 0)})${ow.owC !== null ? `; controlejaar maximaal ${eur(ow.owC)}` : ''}${ow.vrij !== null ? `; vrij uitkeerbare reserves ${eur(ow.vrij)}` : ''}.`);
       regels.push(`- Overwinst na dubbele balanstoets ${eur(ow.naDbt)} × belang ${pctTekst(ow.aandeel)} = ${eur(ow.bedrag)}.`);
     }

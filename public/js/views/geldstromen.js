@@ -6,13 +6,13 @@
 import { esc, fmt, isIngevuld } from '../util.js';
 import { organogramGraaf, GELDSTROOM_SOORTEN, geldstroomLabel } from '../engine/index.js';
 import { bedrag, keuze, icoon } from './ui.js';
-import { ordeJaren } from './uistate.js';
+import { ordeJaren, ordeJarenOverzicht } from './uistate.js';
 
 const SOORT_STRUCTUUR = { fee: 'Management fee', dividend: 'Intern dividend', loon: 'Loon DGA', winst: 'Winst (IB)', dividendDGA: 'Betaalbaar gesteld dividend / box 2' };
 
 export function geldstromenTabel(r, gs, { titel = 'Geldstromen binnen de structuur' } = {}) {
   if (!gs?.length) return '';
-  const jaren = ordeJaren(r.C ? [...r.T, r.C] : [...r.T]);
+  const jaren = ordeJarenOverzicht(r.C ? [...r.T, r.C] : [...r.T]);
   const cel = (x, soort) => {
     if (!x) return '';
     if (soort === 'loon' || soort === 'winst') return x.betaald ? esc(fmt.getal(x.betaald)) : '';

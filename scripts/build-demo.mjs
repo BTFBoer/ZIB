@@ -24,6 +24,10 @@ const fonts = `<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">`;
 const app = '<div id="app"><div class="pagina"><p class="dempen">ZIB wordt geladen…</p></div></div>';
+// De losse demo wordt ook als ingesloten pagina gebruikt (bijvoorbeeld gepubliceerd in een voorbeeldweergave).
+// In een ingesloten venster zijn afdrukken en downloaden geblokkeerd; ZIB schakelt dan zelf over op de
+// alternatieven (rapport downloaden via de viewer of tekst kopiëren).
+const INGESLOTEN = '(function () { try { return window.self !== window.top; } catch (e) { return true; } })()';
 
 const html = `<!doctype html>
 <html lang="nl">
@@ -38,7 +42,7 @@ ${fonts}
 </head>
 <body>
 ${app}
-<script>window.ZIB_DEMO = true;</script>
+<script>window.ZIB_DEMO = true; window.ZIB_ARTIFACT = ${INGESLOTEN};</script>
 <script>${js}</script>
 </body>
 </html>`;

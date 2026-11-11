@@ -7,20 +7,22 @@ import { BALANS_RIJEN, VW_RIJEN } from '../schema/fields.js';
 import { WINST_CORRECTIES, VERMOGENS_CORRECTIES } from '../schema/correcties.js';
 import { balansTotalen, vwTotalen, totalenJaar } from '../engine/financieel.js';
 import { tekstDuur } from '../engine/periods.js';
-import { pil, STATUS_TEKST } from './ui.js';
+import { kernPunten, toelichtingRijen } from '../toelichting.js';
+import { pil, STATUS_TEKST, icoon } from './ui.js';
 import { renderTrace } from './trace-view.js';
-import { inkomensTabel, kengetallenTabel, methodenTabel } from './dossier.js';
+import { inkomensTabel, kengetallenTabel, methodenTabel, ondernemingenMatrix, weergaveOpties, stip } from './dossier.js';
 import { CONTROLES } from './formats.js';
-import { ordeJaren } from './uistate.js';
+import { ui, ordeJarenOverzicht, ingeklapt } from './uistate.js';
 import { organogramSVG, organogramNotitie } from './organogram.js';
 import { geldstromenTabel } from './geldstromen.js';
 import { overwinstBlok } from './overwinst.js';
 
 const kv = (paren) => `<dl class="kv">${paren.filter(Boolean).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
 const pre = (t) => (t ? `<pre class="notitie">${esc(t)}</pre>` : '<p class="dempen">Niet ingevuld.</p>');
+const gevuld = (t) => String(t ?? '').trim() !== '';
 
 function financieleTabel(ond, r, soort) {
-  const jaren = ordeJaren(r.C ? [...r.T, r.C] : [...r.T]);
+  const jaren = ordeJarenOverzicht(r.C ? [...r.T, r.C] : [...r.T]);
   const rijen = soort === 'balans' ? BALANS_RIJEN : VW_RIJEN;
   const sectie = soort === 'balans' ? 'balans' : 'vw';
   const metAgg = jaren.some((y) => {
@@ -64,18 +66,143 @@ function belangTekst(d, r, o) {
   return delen.join('; ');
 }
 
-export function renderRapport(d, r) {
+const voorwaardenTabel = (checks) => `<div class="scroll"><table class="tabel"><tbody>${checks.map((c) => `<tr><td>${esc(c.label)}</td><td>${pil(c.status)}</td><td>${esc(c.tekst)}</td></tr>`).join('')}</tbody></table></div>`;
+
+/**
+ * Toelichting op de berekening van het toetsinkomen in drie kolommen (omschrijving, berekening, uitkomst):
+ * de stappen van de totaalberekening achter elkaar, zodat de uitkomst zonder de rekenstappen te volgen is.
+ */
+function toelichtingTabel(r) {
+  const secties = (r.trace?.secties || []).filter((s) => s.groep === 'inkomen');
+  if (!secties.length) return '';
+  const rijHTML = (x) => {
+    if (x.soort === 'groep') return `<tr class="groep"><td colspan="3">${esc(x.label)}</td></tr>`;
+    if (x.soort === 'tekst') return `<tr><td>${esc(x.label)}</td><td colspan="2">${esc(x.formule)}</td></tr>`;
+    if (x.soort === 'reeks') return `<tr class="reeks ${esc(x.stijl)}"><td>${esc(x.label)}</td><td class="num formule" colspan="2">${esc(x.formule)}</td></tr>`;
+    return `<tr class="${esc(x.stijl)}${x.sub ? ' sub' : ''}"><td>${esc(x.label)}</td><td class="num formule">${esc(x.formule)}</td><td class="num uitkomst">${esc(x.uitkomst)}</td></tr>`;
+  };
+  return `<h3>Toelichting berekening toetsinkomen</h3>${secties.map((s) => `
+    <p class="dempen klein">${esc(s.titel)}${s.richtlijn ? `. ${esc(s.richtlijn)}` : ''}</p>
+    <div class="scroll"><table class="tabel toelichting"><thead><tr><th>Omschrijving</th><th class="num">Berekening</th><th class="num">Uitkomst</th></tr></thead>
+      <tbody>${toelichtingRijen(s).map(rijHTML).join('')}</tbody></table></div>`).join('')}`;
+}
+
+const PUNT_MAX = 6;
+
+/** De kern bovenaan: de uitkomst, de belangrijkste gegevens en de aandachtspunten. */
+function kernBlok(d, r, kader, { hoofdstukVerwijzing = '' } = {}) {
+  const isNul = d.soort === 'NUL';
+  const a = d.aanvrager || {};
+  const f = d.fiat || {};
+  const ink = r.inkomen || {};
+  let label = 'Vastgesteld zakelijk inkomen';
+  let zin = '';
+  if (isNul) {
+    label = '0-verklaring';
+    zin = r.nul?.conclusie || '';
+  } else if (r.bron === 'geen') {
+    zin = 'Er kan geen zakelijk inkomen worden afgegeven.';
+  } else if (r.bron === 'afwijkend') {
+    label = 'Afwijkend inkomen (gemotiveerd)';
+    zin = `Berekend inkomen ${fmt.eur(r.berekend)}; afgegeven wordt het gemotiveerde afwijkende inkomen.`;
+  } else if (r.familie === 'ABN' && r.toetsinkomen !== r.berekend) {
+    zin = `Berekend inkomen (BZI). Toetsinkomen Woonbeleid ${fmt.eur(r.toetsinkomen)}.`;
+  } else if (num(ink.box2) > 0) {
+    zin = `Box 1 ${fmt.eur(ink.box1)} en box 2 ${fmt.eur(ink.box2)}.`;
+  }
+  const punten = kernPunten(d, r);
+  const zichtbaar = punten.slice(0, PUNT_MAX);
+  const rest = punten.length - zichtbaar.length;
+  const adres = [[a.straat, a.huisnummer].filter(Boolean).join(' '), [a.postcode, a.woonplaats].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  return `<section class="kern" id="rap-kern" aria-label="Kern van het rapport">
+    <div class="kern-uitkomst ${esc(r.status)}">
+      <div class="kern-label">${esc(label)}</div>
+      <div class="bedrag-groot">${esc(isNul ? '€ 0' : fmt.eur(r.vastgesteld))}</div>
+      <div class="kern-oordeel">${pil(r.status)}</div>
+      ${zin ? `<p>${esc(zin)}</p>` : ''}
+      <p class="dempen klein">Geldig voor bindende offertes uitgebracht tot en met ${esc(fmt.datumLang(r.geldigTot))}.</p>
+    </div>
+    <div class="kern-feiten">${kv([
+      ['Aanvrager', `<b>${esc(naamAanvrager(a))}</b>${a.geboortedatum ? `, geboren ${esc(fmt.datumLang(a.geboortedatum))}` : ''}`],
+      adres ? ['Adres', esc(adres)] : null,
+      ['Dossier', esc([d.nummer, SOORTEN[d.soort] || d.soort].filter(Boolean).join(' · '))],
+      ['Bestemd voor', esc(r.familie === 'ABN' ? (d.label || 'ABN AMRO') : kader.bestemdVoor)],
+      ['Toetskader', esc(`${kader.naam}, ${kader.versie}`)],
+      ['Toetsjaren', esc(`${r.T.join(', ')}${r.C ? `; controlejaar ${r.C}` : ''}`)],
+      ['Behandelaar', esc(d.behandelaar || '')],
+      ['Fiatteur', esc(f.tweede?.naam || d.fiatteur || '')],
+      ['Datum', esc(fmt.datumLang(r.datum))],
+    ])}</div>
+    <div class="kern-punten">
+      <h3>Aandachtspunten</h3>
+      ${zichtbaar.length ? `<ul class="punten">${zichtbaar.map((p) => `<li>${stip(p.status)}<span>${esc(p.tekst)}</span></li>`).join('')}</ul>
+        ${rest > 0 ? `<p class="dempen klein">En nog ${rest} ${rest === 1 ? 'punt' : 'punten'}${hoofdstukVerwijzing ? ` in ${esc(hoofdstukVerwijzing)}` : ''}.</p>` : ''}`
+    : `<p class="kern-geen">${stip('akkoord')}<span>Alle voorwaarden zijn akkoord en de berekening geeft geen aandachtspunten.</span></p>`}
+    </div>
+  </section>`;
+}
+
+/**
+ * Bouwt het rapport op als genummerde hoofdstukken. Kort = kern, inkomen, kengetallen, toelichting en conclusie;
+ * uitgebreid = daarnaast de vergelijking van toetskaders, geldstromen, alle voorwaarden en als bijlagen de rekenstappen en cijfers.
+ * @returns {{kern: string, hoofdstukken: {key: string, nr: string, titel: string, html: string, bijlage?: boolean}[], titel: string}}
+ */
+function bouwRapport(d, r, modus) {
+  const uitgebreid = modus === 'uitgebreid';
   const kader = r.kaderCfg || kaderVoor(d);
   const adv = get(d.advieskantoorId);
   const a = d.aanvrager || {};
   const n = d.notities || {};
   const isNul = d.soort === 'NUL';
   const f = d.fiat || {};
+  const afw = d.afwijkend || {};
+  const onds = d.ondernemingen || [];
+  const analyses = r.ondernemingen.filter((x) => isNul || x.meenemen || r.familie === 'ABN');
+  const hoofdstukken = [];
+  const voeg = (key, titel, html, extra = {}) => { if (gevuld(html)) hoofdstukken.push({ key, titel, html, ...extra }); };
 
-  const titel = isNul ? '0-verklaring ondernemer' : 'Inkomensverklaring ondernemer';
-  const bedragTekst = isNul ? '€ 0' : fmt.eur(r.vastgesteld);
+  // ---- 1. Inkomen (of de beoordeling bij een 0-verklaring) ---------------------------------
+  if (isNul) {
+    voeg('inkomen', 'Beoordeling 0-verklaring', `<p><b>${esc(r.nul.conclusie)}</b></p>${r.nul.nhgOpmerking ? `<p class="dempen">${esc(r.nul.nhgOpmerking)}</p>` : ''}
+      ${r.nul.perOnderneming.map((o) => `<h3>${esc(o.naam)} ${pil(o.status)}</h3>${voorwaardenTabel(o.checks)}`).join('')}
+      <h3>Zekerheden en verplichtingen</h3>${voorwaardenTabel(r.nul.zekerheden)}
+      ${r.nul.maandlastCorrectie ? `<p><b>Correctie op de toegestane financieringslast: € ${esc(fmt.getal(r.nul.maandlastCorrectie))} per maand.</b></p>` : ''}`);
+  } else {
+    const handmatig = afw.actief
+      ? kv([
+        ['Berekend inkomen', esc(fmt.eur(r.berekend))],
+        ['Afwijkend inkomen', esc(fmt.eur(num(afw.bedrag)))],
+        ['Motivatie', esc(afw.motivatie || '')],
+        ['Rekenkundige onderbouwing', esc(afw.onderbouwing || '')],
+        ['Bestendigheid', esc(afw.bestendigheid || '')],
+        ['Documentatie', esc(afw.documentatie || '')],
+      ])
+      : '<p>Geen handmatige wijzigingen.</p>';
+    const correctieRijen = [];
+    onds.forEach((o) => Object.entries(o.jaren || {}).forEach(([y, jd]) => {
+      (jd.winstCorrecties || []).forEach((c) => correctieRijen.push([o.naam, y, WINST_CORRECTIES[c.type]?.label || c.type, c.bedrag, c.toelichting]));
+      (jd.vermogensCorrecties || []).forEach((c) => correctieRijen.push([o.naam, y, VERMOGENS_CORRECTIES[c.type]?.label || c.type, c.bedrag, c.toelichting]));
+    }));
+    const correctieOverzicht = correctieRijen.length ? `<h3>Handmatige correcties</h3><div class="scroll"><table class="tabel"><thead><tr><th>Onderneming</th><th>Jaar</th><th>Soort</th><th class="num">Bedrag</th><th>Toelichting</th></tr></thead><tbody>
+      ${correctieRijen.map(([naam, y, t, b, tl]) => `<tr><td>${esc(naam)}</td><td>${esc(y)}</td><td>${esc(t)}</td><td class="num">${esc(fmt.eur(num(b)))}</td><td>${esc(tl || '')}</td></tr>`).join('')}</tbody></table></div>` : '';
+    const overwinstDeel = r.ondernemingen.filter((x) => x.box2?.overwinst
+      && (kader.box2?.model === 'NHG' ? ['route2', 'combinatie'].includes(d.instellingen?.box2Route) : x.box2.overwinstMeenemen))
+      .map((x) => `<h3>Overwinst en dubbele balanstoets: ${esc(x.naam)}</h3>${overwinstBlok(d, r, x, { bewerken: false })}`).join('');
+    const geldstromen = uitgebreid && r.inkomen?.geldstromen?.length ? geldstromenTabel(r, r.inkomen.geldstromen) : '';
+    voeg('inkomen', 'Inkomensvaststelling', `${inkomensTabel(d, r)}
+      ${toelichtingTabel(r)}
+      ${r.inkomen?.stappen?.length ? `<ul class="rapport-stappen">${r.inkomen.stappen.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}
+      <h3>Uitgangspunten van de berekening</h3>
+      <ul>${kader.inkomensberekening.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      <h3>Handmatige wijzigingen (expert judgement)</h3>${handmatig}
+      ${correctieOverzicht}
+      ${overwinstDeel}
+      ${uitgebreid ? methodenTabel(d, r) : ''}
+      ${geldstromen}`);
+  }
 
-  const bedrijven = (d.ondernemingen || []).map((o, i) => kv([
+  // ---- 2. Ondernemingen en structuur ---------------------------------------------------------
+  const bedrijven = onds.map((o, i) => kv([
     [`Onderneming ${i + 1}`, `<b>${esc(o.naam || '')}</b>`],
     ['Rechtsvorm', esc(RECHTSVORMEN[o.rechtsvorm]?.label || o.rechtsvorm)],
     ['Startdatum KvK', esc(fmt.datum(o.startdatum))],
@@ -83,186 +210,192 @@ export function renderRapport(d, r) {
     o.website ? ['Website', esc(o.website)] : null,
     ['SBI', esc(o.sbi || '').replace(/\n/g, '<br>')],
     o.rechtsvorm !== 'EZ' ? ['Belang', belangTekst(d, r, o)] : null,
-  ])).join('<div style="height:10px"></div>');
-
-  const maxOnttrekken = r.ondernemingen.filter((x) => x.maxOnttrekken !== undefined)
-    .map((x) => (x.maxOnttrekkenNvt ? `${esc(x.naam)}: n.v.t. (${esc(x.maxOnttrekkenNvt)})` : `${esc(x.naam)}: ${esc(fmt.eur(x.maxOnttrekken, 2))}`)).join('<br>');
-
-  const zakelijk = isNul
-    ? `<p><b>${esc(r.nul.conclusie)}</b></p>${r.nul.nhgOpmerking ? `<p class="dempen">${esc(r.nul.nhgOpmerking)}</p>` : ''}`
-    : r.bron === 'geen'
-      ? '<p><b>Er kan géén zakelijk inkomen worden afgegeven.</b></p>'
-      : `<p>Het vastgesteld zakelijk inkomen bedraagt <b>${esc(fmt.eur(r.vastgesteld, 2))}</b>${r.bron === 'afwijkend' ? ' (afwijkend inkomen, zie handmatige wijzigingen)' : ''}.</p>`;
-
-  const afw = d.afwijkend || {};
-  const handmatig = !isNul && afw.actief
-    ? kv([
-      ['Berekend inkomen', esc(fmt.eur(r.berekend))],
-      ['Afwijkend inkomen', esc(fmt.eur(num(afw.bedrag)))],
-      ['Motivatie', esc(afw.motivatie || '')],
-      ['Rekenkundige onderbouwing', esc(afw.onderbouwing || '')],
-      ['Bestendigheid', esc(afw.bestendigheid || '')],
-      ['Documentatie', esc(afw.documentatie || '')],
-    ])
-    : '<p>Geen handmatige wijzigingen.</p>';
-
-  const controles = n.controles || {};
-  const controleTabel = `<div class="scroll"><table class="tabel"><thead><tr><th>Controlepunt</th><th>Resultaat</th></tr></thead><tbody>
-    ${CONTROLES.map(([k, l]) => `<tr><td>${esc(l)}</td><td>${esc(controles[k] || 'Niet ingevuld')}</td></tr>`).join('')}</tbody></table></div>`;
-  const beoordeling = `<div class="scroll"><table class="tabel"><thead><tr><th>Controle</th><th>Tijdstip</th><th>Status</th><th>Behandelaar</th><th>Opmerkingen</th></tr></thead><tbody>
-    <tr><td>1e fiat</td><td>${esc(fmt.tijdstip(f.eerste?.datum))}</td><td>${f.eerste ? 'Gereed gemeld' : 'Open'}</td><td>${esc(f.eerste?.naam || d.behandelaar || '')}</td><td>${esc(f.eerste?.opmerking || '')}</td></tr>
-    <tr><td>2e fiat</td><td>${esc(fmt.tijdstip(f.tweede?.datum))}</td><td>${f.tweede?.resultaat === 'akkoord' ? 'Definitief akkoord' : f.tweede?.resultaat === 'niet_akkoord' ? 'Niet akkoord' : 'Open'}</td><td>${esc(f.tweede?.naam || '')}</td><td>${esc(f.tweede?.opmerking || '')}</td></tr>
-  </tbody></table></div>`;
-
-  const graaf = organogramGraaf(d);
-  const structuurDeel = (d.ondernemingen || []).length > 1 || (d.ondernemingen || []).some((o) => o.parentId) || (d.organogram?.knopen || []).length
-    ? `<h3>Structuur (organogram)</h3><div class="og-canvas rapport-og">${organogramSVG(graaf, { losstaand: true })}</div>
+  ])).join('<div class="kv-tussen"></div>');
+  const structuurDeel = onds.length > 1 || onds.some((o) => o.parentId) || (d.organogram?.knopen || []).length
+    ? `<h3>Structuur (organogram)</h3><div class="og-canvas rapport-og">${organogramSVG(organogramGraaf(d), { losstaand: true })}</div>
       <pre class="notitie">${esc(organogramNotitie(d))}</pre>` : '';
+  voeg('ondernemingen', onds.length === 1 ? 'Onderneming' : 'Ondernemingen en structuur', `${bedrijven || '<p class="dempen">Geen ondernemingen.</p>'}${structuurDeel}`);
 
-  const zk = zkLijst(d);
-  const verplichtingen = [
-    zk.length ? `<h3>Zakelijke kredieten en lease</h3><ul>${zk.map((x) => `<li>${esc(zkTekst(x))}${x.toelichting ? ` (${esc(x.toelichting)})` : ''}</li>`).join('')}</ul>` : '',
-    r.rc?.tekst ? `<h3>Rekening-courant directie</h3><p>${esc(r.rc.tekst)}</p>` : '',
-    r.leningDirectie?.maandlast ? `<h3>Lening directie</h3><p>${esc(r.leningDirectie.tekst)}${d.leningDirectie?.hypothecair ? ' Hypothecaire zekerheid (eigen woning).' : ''}${d.leningDirectie?.toelichting ? ` ${esc(d.leningDirectie.toelichting)}` : ''}</p>` : '',
-  ].join('');
-
-  const correctieOverzicht = (() => {
-    const rijen = [];
-    (d.ondernemingen || []).forEach((o) => Object.entries(o.jaren || {}).forEach(([y, jd]) => {
-      (jd.winstCorrecties || []).forEach((c) => rijen.push([o.naam, y, WINST_CORRECTIES[c.type]?.label || c.type, c.bedrag, c.toelichting]));
-      (jd.vermogensCorrecties || []).forEach((c) => rijen.push([o.naam, y, VERMOGENS_CORRECTIES[c.type]?.label || c.type, c.bedrag, c.toelichting]));
-    }));
-    if (!rijen.length) return '';
-    return `<h3>Handmatige correcties</h3><div class="scroll"><table class="tabel"><thead><tr><th>Onderneming</th><th>Jaar</th><th>Soort</th><th class="num">Bedrag</th><th>Toelichting</th></tr></thead><tbody>
-      ${rijen.map(([n, y, t, b, tl]) => `<tr><td>${esc(n)}</td><td>${esc(y)}</td><td>${esc(t)}</td><td class="num">${esc(fmt.eur(num(b)))}</td><td>${esc(tl || '')}</td></tr>`).join('')}</tbody></table></div>`;
-  })();
-
-  const geldstromen = r.inkomen?.geldstromen?.length ? geldstromenTabel(r, r.inkomen.geldstromen) : '';
-
-  const overwinstDeel = isNul ? '' : r.ondernemingen.filter((x) => x.box2?.overwinst
-    && (kader.box2?.model === 'NHG' ? ['route2', 'combinatie'].includes(d.instellingen?.box2Route) : x.box2.overwinstMeenemen))
-    .map((x) => `<h3>Overwinst en dubbele balanstoets: ${esc(x.naam)}</h3>${overwinstBlok(d, r, x, { bewerken: false })}`).join('');
-
-  const perOnderneming = r.ondernemingen.map((x) => {
-    const ond = (d.ondernemingen || []).find((o) => o.id === x.id) || {};
-    if (!isNul && !x.meenemen && r.familie !== 'ABN') return '';
-    return `<div class="paginabreuk"></div><h2>${esc(x.naam)}</h2>
+  // ---- 3. Kengetallen en voorwaarden --------------------------------------------------------
+  const perOnderneming = analyses.map((x) => {
+    const aandacht = x.checks.filter((c) => c.status !== 'akkoord');
+    const akkoord = x.checks.length - aandacht.length;
+    const voorwaarden = isNul ? '' : uitgebreid
+      ? `<h4>Voorwaarden</h4>${voorwaardenTabel(x.checks)}`
+      : `${aandacht.length ? `<h4>Voorwaarden die aandacht vragen</h4>${voorwaardenTabel(aandacht)}` : ''}
+        <p class="dempen klein">${aandacht.length ? `De overige ${akkoord} ${akkoord === 1 ? 'voorwaarde is' : 'voorwaarden zijn'} akkoord.` : `Alle ${akkoord} voorwaarden zijn akkoord.`}</p>`;
+    return `<h3>${esc(x.naam)} ${pil(x.status)}</h3>
       ${kv([
         ['Soort ondernemer', x.soort === 'VPB' ? 'Niet-IB (DGA)' : 'IB-ondernemer'],
         ['Rechtsvorm', esc(x.rechtsvormLabel)],
         ['Startdatum (KvK of activiteiten)', esc(fmt.datum(x.start))],
-        ['Berekeningsdatum', esc(fmt.datum(r.datum))],
         ['Aantal jaren ondernemer', esc(tekstDuur(x.duur))],
       ])}
-      <h3>Kengetallen, ratio's en voorwaarden</h3>${kengetallenTabel(x, r)}
-      ${isNul ? '' : `<h3>Voorwaarden</h3><table class="tabel"><tbody>${x.checks.map((c) => `<tr><td>${esc(c.label)}</td><td>${pil(c.status)}</td><td>${esc(c.tekst)}</td></tr>`).join('')}</tbody></table>`}
-      ${renderTrace(x.trace)}
-      <h3>Financiële gegevens</h3>${financieleTabel(ond, r, 'balans')}<div style="height:12px"></div>${financieleTabel(ond, r, 'vw')}`;
+      ${kengetallenTabel(x, r)}${voorwaarden}`;
   }).join('');
+  voeg('kengetallen', isNul ? 'Kengetallen' : 'Kengetallen en voorwaarden',
+    `${analyses.length > 1 ? ondernemingenMatrix(d, r, analyses, { links: false }) : ''}${perOnderneming}`);
 
-  const nulDeel = isNul ? `<h2>Beoordelingsverklaring</h2>
-    ${r.nul.perOnderneming.map((o) => `<h3>${esc(o.naam)} ${pil(o.status)}</h3><table class="tabel"><tbody>${o.checks.map((c) => `<tr><td>${esc(c.label)}</td><td>${pil(c.status)}</td><td>${esc(c.tekst)}</td></tr>`).join('')}</tbody></table>`).join('')}
-    <h3>Zekerheden en verplichtingen</h3><table class="tabel"><tbody>${r.nul.zekerheden.map((c) => `<tr><td>${esc(c.label)}</td><td>${pil(c.status)}</td><td>${esc(c.tekst)}</td></tr>`).join('')}</tbody></table>
-    ${r.nul.maandlastCorrectie ? `<p><b>Correctie op de toegestane financieringslast: € ${esc(fmt.getal(r.nul.maandlastCorrectie))} per maand.</b></p>` : ''}` : '';
-
-  const aandachtspunten = kv([
-    ['Datum afgifte', esc(fmt.datum(r.datum))],
-    ['Niveau', esc(d.niveau || 'Basis')],
-    ['Eerste fiatteur', esc(f.eerste?.naam || d.behandelaar || '')],
-    ['Geldig tot', esc(fmt.datum(r.geldigTot))],
-    ['KYC', n.kyc ? 'Ja' : 'Nee'],
-    [isNul ? '0-inkomen' : `Berekend inkomen${kader.nhg ? ' (NHG)' : ' (zonder NHG)'}`, esc(isNul ? '€ 0' : fmt.eur(r.berekend))],
-    !isNul && afw.actief ? ['Afwijkend inkomen', esc(fmt.eur(num(afw.bedrag)))] : null,
-    r.rc?.maandlast ? ['Maandlast R/C directie', esc(fmt.eur(r.rc.maandlast))] : null,
-  ]);
-
-  return `<article class="rapport" id="rapport">
-    <h1>${esc(titel)}</h1>
-    <div class="vertrouwelijk">Uitgebreide rapportage. Vertrouwelijk: uitsluitend bestemd voor intern gebruik.</div>
-
-    <h2>Samenvatting</h2>
-    <div class="raster-2">
-      <div>${kv([
-        ['Dossiernummer', esc(d.nummer || '')],
-        ['Bestemd voor', esc(r.familie === 'ABN' ? (d.label || 'ABN AMRO') : kader.bestemdVoor)],
-        ['Behandelaar', esc(d.behandelaar || '')],
-        ['Fiatteur', esc(f.tweede?.naam || d.fiatteur || '')],
-        ['Datum', esc(fmt.datumLang(r.datum))],
-        [isNul ? '0-verklaring' : 'Toetsinkomen', `<span class="bedrag-groot">${esc(bedragTekst)}</span> ${pil(r.status)}`],
-      ])}</div>
-      <div>${kv([
-        ['Aanvrager', `<b>${esc(naamAanvrager(a))}</b>`],
-        ['Geboortedatum', esc(fmt.datumLang(a.geboortedatum))],
-        ['Adres', esc([a.straat, a.huisnummer].filter(Boolean).join(' '))],
-        ['Postcode en woonplaats', esc([a.postcode, a.woonplaats].filter(Boolean).join(' '))],
-      ])}</div>
-    </div>
-
-    <h3>Bedrijfsgegevens</h3>${bedrijven || '<p class="dempen">Geen ondernemingen.</p>'}
-    ${structuurDeel}
-
-    <h3>Geldigheid</h3>${kv([
-      ['Datum vaststelling', esc(fmt.datumLang(r.datum))],
-      ['Geldig voor bindende offertes uitgebracht tot en met', esc(fmt.datumLang(r.geldigTot))],
-    ])}
-
-    ${isNul ? '' : `<h3>Inkomensvaststelling</h3>${inkomensTabel(d, r)}${methodenTabel(d, r)}`}
-    ${overwinstDeel}
-    ${geldstromen}
-    ${verplichtingen}
-    <h3>Maximaal te onttrekken aan de onderneming</h3>
-    <p class="dempen klein">Vlottende activa die kunnen worden onttrokken terwijl de onderneming nog aan de normen voor liquiditeit en solvabiliteit voldoet, op basis van de meest recente geanalyseerde balans.</p>
-    <p>${maxOnttrekken || 'n.v.t.'}</p>
-
-    <h3>Kerngegevens</h3>${kv([
-      ['Rapportnummer', esc(d.nummer || '')],
-      ['Advieskantoor', esc(adv?.naam || 'Niet vastgelegd')],
-      ['Ondernemer', esc(naamAanvrager(a))],
-      ['Soort aanvraag', esc(SOORTEN[d.soort] || d.soort)],
-      ['Gehanteerd toetskader', esc(`${kader.naam}, ${kader.versie}`)],
-      ['Status bron', esc(kader.bronStatus || '')],
-      kader.aangepast ? ['Aangepaste parameters', esc(Object.entries(kader.aangepast).map(([k, v]) => `${(PARAM_LABELS[k] || [k])[0]}: ${PARAM_LABELS[k]?.[1] === 'pct' ? `${String(Math.round(v * 1000) / 10).replace('.', ',')}%` : String(v).replace('.', ',')}`).join('; '))] : null,
-      ['Nationale Hypotheek Garantie', kader.nhg ? 'Ja' : 'Nee'],
-      ['Aantal ondernemingen met direct of indirect belang', String((d.ondernemingen || []).length)],
-      ['Ondernemingen', esc((d.ondernemingen || []).map((o) => o.naam).join(', '))],
-    ])}
-
-    <h2>Toelichting</h2>
-    <h3>Algemene informatie en organogram</h3>${pre(n.algemeen)}
-    <h3>Broncontroles</h3>${pre(n.broncontroles)}
-    <h3>KvK-adrescheck</h3>${pre(n.kvkCheck)}
-    <h3>Google check (know your customer)</h3>${pre(n.googleCheck)}
-    ${(d.ondernemingen || []).map((o) => (n.financieelOnderneming?.[o.id] ? `<h3>Financiële informatie ${esc(o.naam)}</h3>${pre(n.financieelOnderneming[o.id])}` : '')).join('')}
-
-    ${nulDeel}
-
-    <h2>Inkomen</h2>
-    ${isNul ? '' : `<ul>${kader.inkomensberekening.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
-      ${r.status !== 'niet_akkoord' ? '<p>Het hierboven vermelde inkomen is voldoende representatief als bestendig zakelijk inkomen.</p>' : ''}`}
-    <h3>Handmatige wijzigingen (expert judgement)</h3>${handmatig}
-    ${correctieOverzicht}
-    <h3>Zakelijk inkomen</h3>${zakelijk}
-    ${r.meldingen.length ? `<h3>Aandachtspunten uit de berekening</h3><ul>${r.meldingen.map((m) => `<li>${esc(STATUS_TEKST[m.niveau] || 'Info')}: ${esc(m.tekst)}</li>`).join('')}</ul>` : ''}
-
-    <h2>Controles en beoordeling</h2>
-    <h3>Maatschappijspecifieke controles</h3>${controleTabel}
-    <h3>Beoordeling inkomensvaststelling</h3>${beoordeling}
-
-    <h2>Dossieraantekeningen</h2>
-    <h3>Financiële informatie ondernemer in privé</h3>${pre(n.priveTekst)}
+  // ---- 4. Verplichtingen en onttrekking ------------------------------------------------------
+  const zk = zkLijst(d);
+  const maxOnttrekken = r.ondernemingen.filter((x) => x.maxOnttrekken !== undefined)
+    .map((x) => (x.maxOnttrekkenNvt ? `${esc(x.naam)}: n.v.t. (${esc(x.maxOnttrekkenNvt)})` : `${esc(x.naam)}: ${esc(fmt.eur(x.maxOnttrekken, 2))}`)).join('<br>');
+  voeg('verplichtingen', 'Verplichtingen en onttrekking', `
+    ${zk.length ? `<h3>Zakelijke kredieten en lease</h3><ul>${zk.map((x) => `<li>${esc(zkTekst(x))}${x.toelichting ? ` (${esc(x.toelichting)})` : ''}</li>`).join('')}</ul>` : ''}
+    ${r.rc?.tekst ? `<h3>Rekening-courant directie</h3><p>${esc(r.rc.tekst)}</p>` : ''}
+    ${r.leningDirectie?.maandlast ? `<h3>Lening directie</h3><p>${esc(r.leningDirectie.tekst)}${d.leningDirectie?.hypothecair ? ' Hypothecaire zekerheid (eigen woning).' : ''}${d.leningDirectie?.toelichting ? ` ${esc(d.leningDirectie.toelichting)}` : ''}</p>` : ''}
     ${r.rc?.maandlast || r.leningDirectie?.maandlast ? kv([
       r.rc?.maandlast ? ['Maandlast R/C directie', esc(fmt.eur(r.rc.maandlast))] : null,
       r.leningDirectie?.maandlast ? ['Maandlast lening directie', esc(fmt.eur(r.leningDirectie.maandlast, 2))] : null,
     ]) : ''}
-    <h3>Kredietbestemming en aflossing</h3>${pre(n.kredietbestemming)}
-    <h3>Conclusie</h3>${pre(n.conclusie)}
-    <h3>Bijlagen</h3>${pre(n.bijlagen)}
-    <h3>Aandachtspunten voor adviseur en acceptant</h3>${aandachtspunten}
-    <p class="dempen klein">Vraag altijd na of er nieuwere cijfers beschikbaar zijn of dat er noemenswaardige wijzigingen in de onderneming hebben plaatsgevonden.</p>
+    <h3>Maximaal te onttrekken aan de onderneming</h3>
+    <p class="dempen klein">Vlottende activa die kunnen worden onttrokken terwijl de onderneming nog aan de normen voor liquiditeit en solvabiliteit voldoet, op basis van de meest recente geanalyseerde balans.</p>
+    <p>${maxOnttrekken || 'n.v.t.'}</p>`);
 
-    ${perOnderneming}
-    ${isNul ? '' : `<div class="paginabreuk"></div><h2>Totaalberekening</h2>${renderTrace(r.trace)}`}
+  // ---- 5. Toelichting --------------------------------------------------------------------------
+  const notities = [
+    ['Algemene informatie en organogram', n.algemeen],
+    ['Broncontroles', n.broncontroles],
+    ['KvK-adrescheck', n.kvkCheck],
+    ['Google check (know your customer)', n.googleCheck],
+    ...onds.map((o) => [`Financiële informatie ${o.naam || 'onderneming'}`, n.financieelOnderneming?.[o.id]]),
+    ['Financiële informatie ondernemer in privé', n.priveTekst],
+    ['Kredietbestemming en aflossing', n.kredietbestemming],
+  ];
+  const nietIngevuld = notities.filter(([, v]) => !gevuld(v)).map(([l]) => l);
+  voeg('toelichting', 'Toelichting', `${notities.filter(([, v]) => gevuld(v)).map(([l, v]) => `<h3>${esc(l)}</h3>${pre(v)}`).join('')}
+    ${nietIngevuld.length ? `<p class="dempen klein niet-ingevuld">Niet ingevuld: ${esc(nietIngevuld.join('; '))}.</p>` : ''}`);
+
+  // ---- 6. Conclusie en beoordeling ------------------------------------------------------------
+  const zakelijk = isNul
+    ? `<p><b>${esc(r.nul.conclusie)}</b></p>${r.nul.nhgOpmerking ? `<p class="dempen">${esc(r.nul.nhgOpmerking)}</p>` : ''}`
+    : r.bron === 'geen'
+      ? '<p><b>Er kan géén zakelijk inkomen worden afgegeven.</b></p>'
+      : `<p>Het vastgesteld zakelijk inkomen bedraagt <b>${esc(fmt.eur(r.vastgesteld, 2))}</b>${r.bron === 'afwijkend' ? ' (afwijkend inkomen, zie handmatige wijzigingen)' : ''}.</p>
+        ${r.status !== 'niet_akkoord' ? '<p>Het hierboven vermelde inkomen is voldoende representatief als bestendig zakelijk inkomen.</p>' : ''}`;
+  const controles = n.controles || {};
+  voeg('conclusie', 'Conclusie en beoordeling', `
+    <h3>Zakelijk inkomen</h3>${zakelijk}
+    <h3>Conclusie</h3>${pre(n.conclusie)}
+    ${r.meldingen.length ? `<h3>Aandachtspunten uit de berekening</h3><ul>${r.meldingen.map((m) => `<li>${esc(STATUS_TEKST[m.niveau] || 'Info')}: ${esc(m.tekst)}</li>`).join('')}</ul>` : ''}
+    <h3>Aandachtspunten voor adviseur en acceptant</h3>${kv([
+      ['Datum afgifte', esc(fmt.datum(r.datum))],
+      ['Niveau', esc(d.niveau || 'Basis')],
+      ['Eerste fiatteur', esc(f.eerste?.naam || d.behandelaar || '')],
+      ['Geldig tot', esc(fmt.datum(r.geldigTot))],
+      ['KYC', n.kyc ? 'Ja' : 'Nee'],
+      [isNul ? '0-inkomen' : `Berekend inkomen${kader.nhg ? ' (NHG)' : ' (zonder NHG)'}`, esc(isNul ? '€ 0' : fmt.eur(r.berekend))],
+      !isNul && afw.actief ? ['Afwijkend inkomen', esc(fmt.eur(num(afw.bedrag)))] : null,
+      r.rc?.maandlast ? ['Maandlast R/C directie', esc(fmt.eur(r.rc.maandlast))] : null,
+    ])}
+    <p class="dempen klein">Vraag altijd na of er nieuwere cijfers beschikbaar zijn of dat er noemenswaardige wijzigingen in de onderneming hebben plaatsgevonden.</p>
+    <h3>Maatschappijspecifieke controles</h3>
+    <div class="scroll"><table class="tabel"><thead><tr><th>Controlepunt</th><th>Resultaat</th></tr></thead><tbody>
+      ${CONTROLES.map(([k, l]) => `<tr><td>${esc(l)}</td><td>${esc(controles[k] || 'Niet ingevuld')}</td></tr>`).join('')}</tbody></table></div>
+    <h3>Beoordeling inkomensvaststelling</h3>
+    <div class="scroll"><table class="tabel"><thead><tr><th>Controle</th><th>Tijdstip</th><th>Status</th><th>Behandelaar</th><th>Opmerkingen</th></tr></thead><tbody>
+      <tr><td>1e fiat</td><td>${esc(fmt.tijdstip(f.eerste?.datum))}</td><td>${f.eerste ? 'Gereed gemeld' : 'Open'}</td><td>${esc(f.eerste?.naam || d.behandelaar || '')}</td><td>${esc(f.eerste?.opmerking || '')}</td></tr>
+      <tr><td>2e fiat</td><td>${esc(fmt.tijdstip(f.tweede?.datum))}</td><td>${f.tweede?.resultaat === 'akkoord' ? 'Definitief akkoord' : f.tweede?.resultaat === 'niet_akkoord' ? 'Niet akkoord' : 'Open'}</td><td>${esc(f.tweede?.naam || '')}</td><td>${esc(f.tweede?.opmerking || '')}</td></tr>
+    </tbody></table></div>
+    <h3>Bijlagen</h3>${pre(n.bijlagen)}`);
+
+  // ---- 7. Verantwoording ------------------------------------------------------------------------
+  const algemeen = (r.trace?.secties || []).find((s) => s.groep === 'algemeen');
+  const uitgangspunten = algemeen ? toelichtingRijen(algemeen).filter((x) => x.soort === 'stap' && x.uitkomst) : [];
+  voeg('verantwoording', 'Verantwoording', `${kv([
+    ['Rapportnummer', esc(d.nummer || '')],
+    ['Advieskantoor', esc(adv?.naam || 'Niet vastgelegd')],
+    ['Ondernemer', esc(naamAanvrager(a))],
+    ['Soort aanvraag', esc(SOORTEN[d.soort] || d.soort)],
+    ['Gehanteerd toetskader', esc(`${kader.naam}, ${kader.versie}`)],
+    ['Status bron', esc(kader.bronStatus || '')],
+    kader.aangepast ? ['Aangepaste parameters', esc(Object.entries(kader.aangepast).map(([k, v]) => `${(PARAM_LABELS[k] || [k])[0]}: ${PARAM_LABELS[k]?.[1] === 'pct' ? `${String(Math.round(v * 1000) / 10).replace('.', ',')}%` : String(v).replace('.', ',')}`).join('; '))] : null,
+    ['Nationale Hypotheek Garantie', kader.nhg ? 'Ja' : 'Nee'],
+    ['Aantal ondernemingen met direct of indirect belang', String(onds.length)],
+    ['Ondernemingen', esc(onds.map((o) => o.naam).join(', '))],
+    ['Datum vaststelling', esc(fmt.datumLang(r.datum))],
+    ['Geldig voor bindende offertes uitgebracht tot en met', esc(fmt.datumLang(r.geldigTot))],
+  ])}
+    ${uitgangspunten.length ? `<h3>Toetsjaren en controlejaar</h3>${kv(uitgangspunten.map((x) => [x.label, esc(x.uitkomst)]))}` : ''}`);
+
+  // ---- Bijlagen (alleen uitgebreid): rekenstappen en cijfers ------------------------------------
+  if (uitgebreid) {
+    analyses.forEach((x) => {
+      const ond = onds.find((o) => o.id === x.id) || {};
+      voeg(`ond-${x.id}`, `${x.naam}: rekenstappen en cijfers`, `${renderTrace(x.trace)}
+        <h3>Financiële gegevens</h3>${financieleTabel(ond, r, 'balans')}<div class="kv-tussen"></div>${financieleTabel(ond, r, 'vw')}`, { bijlage: true });
+    });
+    if (!isNul) voeg('totaal', 'Totaalberekening', renderTrace(r.trace), { bijlage: true });
+  }
+
+  let nr = 0;
+  let letter = 0;
+  hoofdstukken.forEach((h) => {
+    if (h.bijlage) { h.nr = String.fromCharCode(65 + letter); letter += 1; } else { nr += 1; h.nr = String(nr); }
+  });
+  const verwijzing = ['kengetallen', 'conclusie'].map((k) => hoofdstukken.find((h) => h.key === k)?.nr).filter(Boolean);
+  return {
+    titel: isNul ? '0-verklaring ondernemer' : 'Inkomensverklaring ondernemer',
+    kern: kernBlok(d, r, kader, { hoofdstukVerwijzing: verwijzing.length ? `hoofdstuk ${verwijzing.join(' en ')}` : '' }),
+    hoofdstukken,
+  };
+}
+
+function hoofdstukHTML(h) {
+  const sleutel = `rap:${h.key}`;
+  const dicht = ingeklapt(sleutel, false);
+  const id = `rap-${h.key}`;
+  return `${h.bijlage ? '<div class="paginabreuk"></div>' : ''}<section class="hoofdstuk klap${dicht ? ' ingeklapt' : ''}${h.bijlage ? ' bijlage' : ''}" id="${esc(id)}" data-klap="${esc(sleutel)}">
+    <h2 class="hoofdstuk-kop"><button type="button" data-actie="klap" data-sleutel="${esc(sleutel)}" aria-expanded="${!dicht}" aria-controls="${esc(id)}-inhoud">
+      <span class="nr">${h.bijlage ? `Bijlage ${esc(h.nr)}` : esc(h.nr)}</span><span class="hoofdstuk-titel">${esc(h.titel)}</span>${icoon('open')}</button></h2>
+    <div class="klap-inhoud" id="${esc(id)}-inhoud">${h.html}</div></section>`;
+}
+
+/** Het rapport zelf (zonder werkbalk en inhoudsopgave), in de gekozen weergave. */
+export function renderRapport(d, r, modus = ui.rapportModus, gebouwd = bouwRapport(d, r, modus)) {
+  const { titel, kern, hoofdstukken } = gebouwd;
+  return `<article class="rapport" id="rapport">
+    <header class="rapport-kop">
+      <div class="rapport-soort">${esc(titel)}</div>
+      <h1>${esc(naamAanvrager(d.aanvrager))}</h1>
+      <div class="vertrouwelijk">${modus === 'uitgebreid' ? 'Uitgebreide rapportage' : 'Korte rapportage'}${d.nummer ? `, dossier ${esc(d.nummer)}` : ''}. Vertrouwelijk: uitsluitend bestemd voor intern gebruik.</div>
+    </header>
+    ${kern}
+    ${hoofdstukken.map(hoofdstukHTML).join('')}
   </article>`;
+}
+
+/** Rapport met werkbalk (kort of uitgebreid, formules, in- en uitklappen, afdrukken) en een inhoudsopgave die meeloopt. */
+export function renderRapportPagina(d, r) {
+  const modus = ui.rapportModus;
+  const gebouwd = bouwRapport(d, r, modus);
+  const { hoofdstukken } = gebouwd;
+  // In een ingesloten voorbeeldweergave (ZIB_ARTIFACT) kan de pagina niet afdrukken: download het rapport
+  // dan als HTML-bestand en druk dat af vanuit de browser.
+  const afdrukken = globalThis.ZIB_ARTIFACT
+    ? `<button class="knop" data-actie="rapport-download" title="Download het rapport als HTML-bestand en druk dat af vanuit de browser">${icoon('download')}Rapport downloaden</button>`
+    : `<button class="knop" data-actie="afdrukken">${icoon('afdruk')}Afdrukken of pdf</button>`;
+  const inhoud = [['rap-kern', '', 'Kern'], ...hoofdstukken.map((h) => [`rap-${h.key}`, h.nr, h.titel, h.bijlage])];
+  return `<div class="rapport-werkbalk geen-print">
+      <div class="segment" role="group" aria-label="Weergave van het rapport">
+        <button type="button" class="${modus === 'kort' ? 'actief' : ''}" aria-pressed="${modus === 'kort'}" data-actie="rapport-modus" data-modus="kort">Kort</button>
+        <button type="button" class="${modus === 'uitgebreid' ? 'actief' : ''}" aria-pressed="${modus === 'uitgebreid'}" data-actie="rapport-modus" data-modus="uitgebreid">Uitgebreid</button>
+      </div>
+      <span class="dempen klein rapport-modus-uitleg">${modus === 'kort'
+    ? 'Kern, inkomen, kengetallen en conclusie. Uitgebreid voegt de vergelijking van toetskaders, geldstromen en per onderneming de rekenstappen en cijfers toe.'
+    : 'Alles, met als bijlagen de rekenstappen, balans en winst- en verliesrekening per onderneming.'}</span>
+      <span class="vul"></span>
+      ${weergaveOpties({ formules: modus === 'uitgebreid' })}
+      ${afdrukken}
+      <button class="knop sec" data-actie="kopieer-notities">Kopieer dossiernotities</button>
+    </div>
+    <div class="rapport-wrap${ui.formules ? '' : ' zonder-formules'}"><div class="rapport-opmaak">
+      <nav class="rapport-inhoud geen-print" data-spy aria-label="Inhoud van het rapport">
+        <div class="rapport-inhoud-kop">Inhoud</div>
+        ${inhoud.map(([doel, nr, titel, bijlage]) => `<button type="button" data-actie="naar-sectie" data-doel="${esc(doel)}"${bijlage ? ' class="bijlage"' : ''}><span class="nr">${esc(nr)}</span><span>${esc(titel)}</span></button>`).join('')}
+      </nav>
+      ${renderRapport(d, r, modus, gebouwd)}
+    </div></div>`;
 }
 
 /** Platte tekst in de opbouw van de dossiernotities (om te plakken in een archief- of acceptatiesysteem). */
@@ -292,7 +425,7 @@ export function dossierNotitiesTekst(d, r) {
   if (n.googleCheck) { regels.push('Google check', n.googleCheck, ''); }
   regels.push("Ratio's en voorwaarden");
   r.ondernemingen.forEach((a) => {
-    const jaren = ordeJaren(r.C ? [...r.T, r.C] : [...r.T]);
+    const jaren = ordeJarenOverzicht(r.C ? [...r.T, r.C] : [...r.T]);
     regels.push(a.naam);
     regels.push(`KENGETALLEN\t${jaren.join('\t')}\tResultaat`);
     regels.push(`Winstgevendheid\t${jaren.map((y) => fmt.eur(y === r.C ? a.jaren[y]?.winst.NWcorExtr : a.jaren[y]?.winst.NWcor)).join('\t')}\t${STATUS_TEKST[a.checks.find((c) => c.key === 'winst')?.status] || ''}`);
@@ -339,7 +472,7 @@ export function conceptFinancieel(d, r, ondId) {
   const o = (d.ondernemingen || []).find((x) => x.id === ondId);
   const a = r.ondernemingen.find((x) => x.id === ondId);
   if (!o || !a) return '';
-  const jarenC = ordeJaren(r.C ? [...r.T, r.C] : [...r.T]);
+  const jarenC = ordeJarenOverzicht(r.C ? [...r.T, r.C] : [...r.T]);
   const ouder = (d.ondernemingen || []).find((x) => x.id === o.parentId);
   const kinderen = (d.ondernemingen || []).filter((x) => x.parentId === o.id || (x.extraParents || []).some((p) => p.id === o.id));
   const regels = [];

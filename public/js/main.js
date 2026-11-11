@@ -10,15 +10,17 @@ import {
 import { balk, banners, opslagStatusHTML, driveStatusHTML } from './views/layout.js';
 import { initDrive, synchroniseer, ontkoppel, beheerRechten, opDriveWijziging, drive } from './store/drive.js';
 import {
-  renderAanvragen, tabelAanvragen, filters, modaalNieuweKlant, modaalStatus, modaalHypotheeknummer, modaalTaken,
-  modaalKopieren, modaalVerwijderen, modaalEerdereAanvragen, modaalHerbeoordeling, modaalZoekAfgerond, samenvatting,
+  renderAanvragen, tabelAanvragen, rijenAanvragen, filterActief, zichtbareKolommen, filters, modaalNieuweKlant, modaalStatus,
+  modaalHypotheeknummer, modaalTaken, modaalKopieren, modaalVerwijderen, modaalEerdereAanvragen, modaalHerbeoordeling,
+  modaalZoekAfgerond, samenvatting,
 } from './views/aanvragen.js';
-import { renderDossier, kopVoor, calcWaarde, docAanwezig, NAAR_BZI, NAAR_VIIZ, roosterJaren, weergaveDossier } from './views/dossier.js';
+import { renderDossier, kopVoor, calcWaarde, docAanwezig, NAAR_BZI, NAAR_VIIZ, roosterJaren, weergaveDossier, TABS, tabsHTML } from './views/dossier.js';
 import { modaalCorrectie, correctieLijstHTML, modaalVaSamenstelling, modaalSalaris, MAANDEN_KORT } from './views/bzi.js';
 import {
-  renderDocumenten, renderAdvieskantoren, renderTaken, renderMeekijken, renderFAQ, renderHulp, renderToetskaders,
+  renderDocumenten, renderAdvieskantoren, renderMeekijken, renderFAQ, renderHulp, renderToetskaders,
   renderDownloads, renderTickets, renderTicket, renderMijnGegevens, renderLogin, renderEmail, emailFormulier,
 } from './views/paginas.js';
+import { renderTaken, rijenTaken, tabelTaken } from './views/taken.js';
 import { openModaal, sluitModaal, waardeUit, toast, downloadBestand, leeg, bevestig, vervangModaalInhoud, icoon } from './views/ui.js';
 import { FORMATS, FIAT_VRAGEN, magFiatteren } from './views/formats.js';
 import { dossierNotitiesTekst, conceptFinancieel, conceptAlgemeen } from './views/rapport.js';
@@ -27,7 +29,12 @@ import { WINST_CORRECTIES, VERMOGENS_CORRECTIES } from './schema/correcties.js';
 import { pasDetailToe, DOSSIER_STATUSSEN, AFGEROND, BALANS_RIJEN, VW_RIJEN } from './schema/fields.js';
 import { parseGrootboekTekst, verdeelGrootboek } from './schema/rekeningschema.js';
 import { RECHTSVORMEN, KADERS, kaderLabel } from './engine/kaders.js';
-import { ui, zetUitgebreid, zetPaginagrootte, toggleNotitie, zetNotitiesVerborgen, zetJaarVolgorde, zetOrganogramWeergave } from './views/uistate.js';
+import {
+  ui, zetUitgebreid, zetPaginagrootte, toggleNotitie, zetNotitiesVerborgen, zetJaarVolgorde, zetOrganogramWeergave,
+  zetKolommen, zetFormules, zetRapportModus, noteerRecent, zetKlap,
+} from './views/uistate.js';
+import { plakRooster } from './lijsten.js';
+import { openZoeken, sluitZoeken } from './views/zoeken.js';
 import { organogramSVG } from './views/organogram.js';
 
 const app = document.getElementById('app');
@@ -92,6 +99,7 @@ export function render({ behoudScroll = false } = {}) {
       const d = get(route.id);
       if (!d) { inhoud = leeg('Dit dossier bestaat niet (meer).', '<a class="knop" href="#/klanten">Naar aanvragen</a>'); break; }
       resultaat = bereken(d);
+      noteerRecent(d.id);
       inhoud = renderDossier(d, route.tab || (weergaveDossier(d) === 'bzi' ? 'algemeen' : 'klant'), route.ondId, resultaat);
       titel = `${d.nummer} ${naamAanvrager(d.aanvrager)}`;
       breed = weergaveDossier(d) === 'bzi';
@@ -99,8 +107,8 @@ export function render({ behoudScroll = false } = {}) {
     }
     case 'documenten': inhoud = renderDocumenten(); titel = 'Documenten'; break;
     case 'advieskantoren': inhoud = renderAdvieskantoren(); titel = 'Advieskantoren'; break;
-    case 'taken': inhoud = renderTaken(false); titel = 'Alle taken'; break;
-    case 'mijn-taken': inhoud = renderTaken(true); titel = 'Mijn taken'; break;
+    case 'taken': inhoud = renderTaken(false); titel = 'Alle taken'; breed = true; break;
+    case 'mijn-taken': inhoud = renderTaken(true); titel = 'Mijn taken'; breed = true; break;
     case 'hulp': inhoud = renderHulp(); titel = 'Hulp nodig?'; break;
     case 'meekijken': inhoud = renderMeekijken(); titel = 'Meekijken'; break;
     case 'faq': inhoud = renderFAQ(); titel = 'FAQ'; break;
@@ -115,6 +123,64 @@ export function render({ behoudScroll = false } = {}) {
   app.innerHTML = `${balk(MENU_KEY[route.pagina] || '')}${banners()}<main class="pagina${breed ? ' breed' : ''}" id="main">${inhoud}</main>`;
   document.title = `ZIB | ${titel}`;
   if (behoudScroll) window.scrollTo(0, y);
+  naRender();
+}
+
+// ---------------------------------------------------------------------------
+// Na het tekenen: het actieve tabblad in beeld en de inhoudsopgave die meeloopt
+// ---------------------------------------------------------------------------
+/** Zet een element in beeld binnen zijn eigen schuivende balk of lijst (zonder de pagina te verschuiven). */
+function toonInBalk(balkEl, el) {
+  if (!balkEl || !el) return;
+  if (balkEl.scrollWidth > balkEl.clientWidth) balkEl.scrollLeft = el.offsetLeft - (balkEl.clientWidth - el.offsetWidth) / 2;
+  if (balkEl.scrollHeight > balkEl.clientHeight) {
+    if (el.offsetTop < balkEl.scrollTop) balkEl.scrollTop = el.offsetTop;
+    else if (el.offsetTop + el.offsetHeight > balkEl.scrollTop + balkEl.clientHeight) balkEl.scrollTop = el.offsetTop + el.offsetHeight - balkEl.clientHeight;
+  }
+}
+
+let spyOpruimen = null;
+
+/** Markeert in een inhoudsopgave ([data-spy]) het onderdeel dat nu bovenaan in beeld staat. */
+function startSpy() {
+  if (spyOpruimen) spyOpruimen();
+  spyOpruimen = null;
+  const bak = document.querySelector('[data-spy]');
+  if (!bak) return;
+  const knoppen = [...bak.querySelectorAll('[data-doel]')];
+  const paren = knoppen.map((knop) => [knop, document.getElementById(knop.dataset.doel)]).filter(([, doel]) => doel);
+  if (!paren.length) return;
+  let gepland = false;
+  // De marge boven een onderdeel (ruimte voor de vaste balken) hangt af van de breedte: opnieuw meten na een formaatwijziging.
+  let marges = null;
+  const werkBij = () => {
+    gepland = false;
+    if (!marges) marges = paren.map(([, doel]) => parseFloat(getComputedStyle(doel).scrollMarginTop) || 0);
+    let actief = paren[0][0];
+    paren.forEach(([knop, doel], i) => {
+      if (doel.getBoundingClientRect().top - marges[i] - 12 <= 0) actief = knop;
+    });
+    // Helemaal onderaan de pagina is het laatste onderdeel aan de beurt, ook als het kort is.
+    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) actief = paren[paren.length - 1][0];
+    knoppen.forEach((knop) => {
+      const aan = knop === actief;
+      if (knop.classList.contains('actief') === aan) return;
+      knop.classList.toggle('actief', aan);
+      if (aan) { knop.setAttribute('aria-current', 'true'); toonInBalk(knop.parentElement, knop); } else knop.removeAttribute('aria-current');
+    });
+  };
+  const plan = () => { if (!gepland) { gepland = true; requestAnimationFrame(werkBij); } };
+  const opFormaat = () => { marges = null; plan(); };
+  window.addEventListener('scroll', plan, { passive: true });
+  window.addEventListener('resize', opFormaat, { passive: true });
+  werkBij();
+  spyOpruimen = () => { window.removeEventListener('scroll', plan); window.removeEventListener('resize', opFormaat); };
+}
+
+function naRender() {
+  const tabs = document.getElementById('dossiertabs');
+  toonInBalk(tabs, tabs?.querySelector('a.actief'));
+  startSpy();
 }
 
 const herberekenDossier = debounce(() => {
@@ -123,6 +189,12 @@ const herberekenDossier = debounce(() => {
   resultaat = bereken(d);
   const kop = document.getElementById('dossierkop');
   if (kop) kop.outerHTML = kopVoor(d, resultaat);
+  const tabs = document.getElementById('dossiertabs');
+  if (tabs) {
+    const links = tabs.scrollLeft;
+    tabs.outerHTML = tabsHTML(d, tabs.dataset.tab, tabs.dataset.ond, resultaat);
+    document.getElementById('dossiertabs').scrollLeft = links;
+  }
   document.querySelectorAll('[data-calc]').forEach((el) => {
     const w = calcWaarde(d, el.dataset.calc, resultaat);
     el.textContent = w === null || w === undefined ? '' : fmt.getal(w);
@@ -238,12 +310,47 @@ function verversTabel() {
   if (t) t.innerHTML = tabelAanvragen(route.afgerond);
 }
 
+/** Alleen de rijen en de paginering vernieuwen: de filterrij blijft staan, zodat je kunt doortypen. */
+function verversRijen() {
+  const body = document.getElementById('aanvragen-body');
+  if (!body) { verversTabel(); return; }
+  const { body: html, pager } = rijenAanvragen(route.afgerond);
+  body.innerHTML = html;
+  const p = document.getElementById('aanvragen-pager');
+  if (p) p.innerHTML = pager;
+  const wis = document.getElementById('filters-wissen');
+  if (wis) wis.hidden = !filterActief();
+}
+
+/** Filterrij onder de kolomkoppen (aanvragen en taken). Geeft true als het element een kolomfilter was. */
+function verwerkKolomfilter(el) {
+  if (el.matches('[data-kolomfilter]')) {
+    ui.aanvragen.kolomFilter[el.dataset.kolomfilter] = el.value;
+    ui.aanvragen.pagina = 1;
+    verversRijen();
+    return true;
+  }
+  if (el.matches('[data-takenfilter]')) {
+    ui.taken.filter[el.dataset.takenfilter] = el.value;
+    const body = document.getElementById('taken-body');
+    if (body) {
+      const { body: html, voet } = rijenTaken(route.pagina === 'mijn-taken');
+      body.innerHTML = html;
+      const v = document.getElementById('taken-voet');
+      if (v) v.innerHTML = voet;
+    }
+    return true;
+  }
+  return false;
+}
+
 document.addEventListener('input', (e) => {
   const el = e.target;
+  if (verwerkKolomfilter(el)) return;
   if (el.matches('[data-filter]')) {
     filters[el.dataset.filter] = el.type === 'checkbox' ? el.checked : el.value;
     ui.aanvragen.pagina = 1;
-    verversTabel();
+    verversRijen();
     return;
   }
   if (el.closest('#modaal [data-salaris]')) { toonSalarisUitkomst(); return; }
@@ -255,10 +362,11 @@ document.addEventListener('input', (e) => {
 
 document.addEventListener('change', (e) => {
   const el = e.target;
+  if (verwerkKolomfilter(el)) return;
   if (el.matches('[data-filter]')) {
     filters[el.dataset.filter] = el.type === 'checkbox' ? el.checked : el.value;
     ui.aanvragen.pagina = 1;
-    verversTabel();
+    verversRijen();
     return;
   }
   if (el.matches('[data-actie]') && (el.tagName === 'SELECT' || el.type === 'file' || el.type === 'checkbox')) {
@@ -308,7 +416,100 @@ document.addEventListener('click', (e) => {
   voerUit(el.dataset.actie, el, e);
 });
 
+// Stappen van de BZI-weergave (voor snelzoeken binnen het open dossier).
+const BZI_STAPPEN = [['algemeen', 'Algemeen'], ['bedrijven', 'Bedrijven'], ['boekhouders', 'Boekhouders'], ['verplichtingen', 'Geldstromen en verplichtingen'],
+  ['samenvatting', 'Samenvatting'], ['documenten', 'Documenten'], ['berekening', 'Rekenstappen'], ['bziinvoer', 'BZI-invoer (overzicht)'], ['rapport', 'Rapport'], ['fiat', 'Fiattering en historie']];
+
+function zoekenOpenen() {
+  const d = huidigDossier();
+  openZoeken({ dossier: d, tabs: d ? (weergaveDossier(d) === 'bzi' ? BZI_STAPPEN : TABS) : [], voerUit: (actie) => voerUit(actie, document.body, null) });
+}
+
+function sluitUitklap(behalve = null) {
+  document.querySelectorAll('details.uitklap[open]').forEach((x) => { if (x !== behalve) x.removeAttribute('open'); });
+}
+
+// Uitklapmenu's (Meer, account, menu op smal scherm) sluiten bij een klik erbuiten of op een keuze.
+document.addEventListener('click', (e) => {
+  const binnen = e.target.closest && e.target.closest('details.uitklap');
+  if (!binnen) sluitUitklap();
+  else if (e.target.closest('.uitklap-paneel a, .uitklap-paneel button:not([data-blijf])')) sluitUitklap();
+  else sluitUitklap(binnen);
+});
+
+// ---------------------------------------------------------------------------
+// Invoerroosters: met Enter en de pijltjes door een kolom, en een kolom of blok uit een spreadsheet plakken
+// ---------------------------------------------------------------------------
+const ROOSTER_INVOER = 'input.bedrag, td.invoer input[data-type="getal"]';
+const isRoosterInvoer = (el) => !!(el.matches && el.matches(ROOSTER_INVOER) && el.closest('table') && !el.closest('#modaal'));
+
+/** Het invoerveld in dezelfde kolom, in de eerstvolgende (of vorige) rij die daar een veld heeft. */
+function veldInKolom(el, richting) {
+  const cel = el.closest('td');
+  let rij = cel?.parentElement;
+  if (!rij) return null;
+  const kolom = cel.cellIndex;
+  for (;;) {
+    rij = richting > 0 ? rij.nextElementSibling : rij.previousElementSibling;
+    if (!rij) return null;
+    const doel = rij.cells?.[kolom]?.querySelector(ROOSTER_INVOER);
+    if (doel && !doel.disabled && doel.offsetParent !== null) return doel;
+  }
+}
+
+let plakWacht = [];
+
+/** Geplakte regels en kolommen verdelen over de invoervelden vanaf het veld waar de cursor staat; eerst tonen, dan pas overnemen. */
+function plakVoorstel(start, rooster) {
+  const startCel = start.closest('td');
+  const kolom = startCel.cellIndex;
+  const rijen = [];
+  for (let veld = start; veld && rijen.length < rooster.length; veld = veldInKolom(veld, 1)) rijen.push(veld.closest('tr'));
+  const doelen = [];
+  let overgeslagen = 0;
+  rooster.forEach((regel, i) => {
+    regel.forEach((tekst, j) => {
+      if (tekst === '') return;
+      const veld = rijen[i]?.cells?.[kolom + j]?.querySelector(ROOSTER_INVOER);
+      const waarde = parseBedrag(tekst);
+      if (!veld || veld.disabled || waarde === null) { overgeslagen += 1; return; }
+      doelen.push({ veld, waarde });
+    });
+  });
+  if (!doelen.length) { toast('Niets om te plakken: geen bedragen herkend of geen invoervelden op die plek.'); return; }
+  plakWacht = doelen;
+  const getal = (v) => fmt.getal(v, v % 1 ? 2 : 0);
+  openModaal('Plakken in het rooster',
+    `<p>${doelen.length} ${doelen.length === 1 ? 'bedrag' : 'bedragen'} vanaf <b>${esc(start.getAttribute('aria-label') || 'het gekozen veld')}</b>.${overgeslagen
+      ? ` ${overgeslagen} ${overgeslagen === 1 ? 'waarde is' : 'waarden zijn'} overgeslagen (geen bedrag, of geen invoerveld op die plek).` : ''}
+      Berekende totalen en tussenkoppen worden overgeslagen: controleer of de regels op de juiste post staan.</p>
+    <div class="scroll plak-voorbeeld"><table class="tabel compact"><thead><tr><th>Post</th><th class="num">Nu</th><th class="num">Wordt</th></tr></thead><tbody>
+      ${doelen.map(({ veld, waarde }) => {
+    const nu = parseBedrag(veld.value);
+    return `<tr${nu !== null && nu !== waarde ? ' class="gewijzigd"' : ''}><td>${esc(veld.getAttribute('aria-label') || '')}</td><td class="num">${nu === null ? '' : esc(getal(nu))}</td><td class="num"><b>${esc(getal(waarde))}</b></td></tr>`;
+  }).join('')}</tbody></table></div>`,
+    '<button class="knop" data-actie="plak-toepassen">Plakken</button>', { breed: true });
+}
+
+document.addEventListener('paste', (e) => {
+  const el = e.target;
+  if (!isRoosterInvoer(el) || !el.closest('#rooster')) return;
+  const rooster = plakRooster(e.clipboardData?.getData('text/plain'));
+  if (!rooster) return; // één waarde: gewoon plakken in het veld
+  e.preventDefault();
+  plakVoorstel(el, rooster);
+});
+
 document.addEventListener('keydown', (e) => {
+  const typend = e.target.matches && e.target.matches('input, textarea, select, [contenteditable="true"]');
+  if (isRoosterInvoer(e.target) && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'Enter' || e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    const doel = veldInKolom(e.target, e.key === 'ArrowUp' || (e.key === 'Enter' && e.shiftKey) ? -1 : 1);
+    if (doel) { e.preventDefault(); doel.focus(); doel.select(); }
+    return;
+  }
+  if ((e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey) && !e.altKey) { e.preventDefault(); zoekenOpenen(); return; }
+  if (e.key === '/' && !typend && !e.ctrlKey && !e.metaKey && !document.getElementById('modaal')) { e.preventDefault(); zoekenOpenen(); return; }
+  if (e.key === 'Escape') sluitUitklap();
   if (e.key === 'Escape') sluitModaal();
   if (e.key === 'Enter' && e.target.matches && e.target.matches('tr[data-actie]')) voerUit(e.target.dataset.actie, e.target, e);
   if (e.key === 'Enter' && e.target.matches && e.target.matches('#modaal input:not([type="checkbox"]):not([type="radio"])')) {
@@ -317,7 +518,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-window.addEventListener('hashchange', () => { sluitModaal(); render(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => { sluitModaal(); sluitZoeken(); render(); window.scrollTo(0, 0); });
 window.addEventListener('beforeunload', (e) => {
   if (heeftOnopgeslagen()) {
     bewaarAlles();
@@ -457,7 +658,58 @@ function grootboekVoorbeeldHTML(v, fouten) {
 // ---------------------------------------------------------------------------
 // Acties
 // ---------------------------------------------------------------------------
+/** Klapt een onderdeel in of uit in de pagina zelf en onthoudt de keuze. */
+function zetKlapDOM(bak, dicht) {
+  bak.classList.toggle('ingeklapt', dicht);
+  zetKlap(bak.dataset.klap, dicht);
+  bak.querySelectorAll(':scope > .klap-kop > button, :scope > .hoofdstuk-kop > button, :scope > button[data-actie="klap"]')
+    .forEach((knop) => knop.setAttribute('aria-expanded', String(!dicht)));
+}
+
 const ACTIES = {
+  'zoek-open'() { zoekenOpenen(); },
+
+  // ---- Berekening en rapport: in- en uitklappen, springen, formules, weergave -------------
+  klap(el) {
+    const bak = el.closest('[data-klap]');
+    if (bak) zetKlapDOM(bak, !bak.classList.contains('ingeklapt'));
+  },
+  'alles-klap'(el) {
+    const dicht = el.dataset.stand === 'in';
+    const scope = document.getElementById('tabinhoud') || document;
+    scope.querySelectorAll('[data-klap]').forEach((bak) => zetKlapDOM(bak, dicht));
+    scope.querySelectorAll('details.stappen').forEach((x) => { x.open = !dicht; });
+  },
+  'naar-sectie'(el) {
+    const doel = document.getElementById(el.dataset.doel);
+    if (!doel) return;
+    if (doel.matches('[data-klap].ingeklapt')) zetKlapDOM(doel, false);
+    const rustig = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    doel.scrollIntoView({ behavior: rustig ? 'auto' : 'smooth', block: 'start' });
+  },
+  formules(el) {
+    zetFormules(el.checked);
+    document.querySelectorAll('.berekening, .rapport-wrap').forEach((x) => x.classList.toggle('zonder-formules', !ui.formules));
+  },
+  'rapport-modus'(el) {
+    if (ui.rapportModus === el.dataset.modus) return;
+    zetRapportModus(el.dataset.modus);
+    render({ behoudScroll: true });
+  },
+  'plak-toepassen'() {
+    const doelen = plakWacht.filter(({ veld }) => document.body.contains(veld));
+    plakWacht = [];
+    sluitModaal();
+    let opnieuw = false;
+    doelen.forEach(({ veld, waarde }) => {
+      veld.value = veld.dataset.type === 'getal' ? String(waarde).replace('.', ',') : fmt.getal(waarde, waarde % 1 ? 2 : 0);
+      verwerkBinding(veld, false);
+      if (veld.dataset.render) opnieuw = true;
+    });
+    herberekenDossier.flush();
+    if (opnieuw) render({ behoudScroll: true });
+    toast(`${doelen.length} ${doelen.length === 1 ? 'bedrag' : 'bedragen'} geplakt.`);
+  },
   'open-dossier'(el) {
     location.hash = `#/dossier/${el.dataset.id}${el.dataset.tab ? `/${el.dataset.tab}` : ''}`;
   },
@@ -487,18 +739,34 @@ const ACTIES = {
   'toon-alle-klanten'() {
     Object.assign(filters, { zoek: '', kader: '', soort: '', status: '', mijn: false, spoed: false });
     ui.aanvragen.zoekAfgerond = null;
+    ui.aanvragen.kolomFilter = {};
+    ui.aanvragen.snel = '';
     ui.aanvragen.pagina = 1;
-    render();
+    render({ behoudScroll: true });
   },
-  'filter-maken'() {
-    ui.aanvragen.filterOpen = !ui.aanvragen.filterOpen;
+  snelfilter(el) {
+    ui.aanvragen.snel = ui.aanvragen.snel === el.dataset.snel ? '' : el.dataset.snel;
+    ui.aanvragen.pagina = 1;
+    render({ behoudScroll: true });
+  },
+  'kolom-toggle'(el) {
+    const huidig = zichtbareKolommen(route.afgerond).map((k) => k.k).filter((k) => k !== 'eerder');
+    const kol = el.dataset.kol;
+    const nieuw = el.checked ? [...new Set([...huidig, kol])] : huidig.filter((k) => k !== kol);
+    if (!nieuw.length) { el.checked = true; toast('Laat minstens één kolom staan.'); return; }
+    zetKolommen(nieuw);
+    verversTabel();
+    document.querySelector('[data-actie="kolommen-standaard"]')?.removeAttribute('disabled');
+  },
+  'kolommen-standaard'() {
+    zetKolommen(null);
     render({ behoudScroll: true });
   },
   sorteer(el) {
     const kol = el.dataset.kol;
-    const s = ui.aanvragen.sort;
+    const s = route.afgerond ? ui.aanvragen.sortAfgerond : ui.aanvragen.sort;
     if (s.kol === kol) s.richting = s.richting === 'asc' ? 'desc' : 'asc';
-    else { s.kol = kol; s.richting = /datum|uiterste|inkomen|spoed/i.test(kol) ? 'desc' : 'asc'; }
+    else { s.kol = kol; s.richting = /datumStatus|datumAanvraag|inkomen|spoed/i.test(kol) ? 'desc' : 'asc'; }
     verversTabel();
   },
   pagina(el) {
@@ -1061,10 +1329,11 @@ const ACTIES = {
     const o = ondVan(d, el.dataset.ond);
     if (!o) return;
     gbVoorbeeld = null;
-    const { jaren } = roosterJaren(d);
+    const { jaren, kandidaatC } = roosterJaren(d);
+    const laatsteJaar = Math.max(...jaren.filter((y) => y !== kandidaatC));
     openModaal(`Grootboek importeren: ${o.naam}`, `<p class="dempen">Plak een grootboek- of saldibalans (rekening; omschrijving; saldo of debet; credit) of kies een CSV-bestand. ZIB verdeelt de rekeningen volgens het decimale rekeningschema (zie Downloads) en toont eerst een voorbeeld.</p>
       <div class="raster-3" style="grid-template-columns:1fr 1fr 2fr">
-        <label class="veld"><span>Jaar</span><select name="jaar">${[...jaren].reverse().map((y) => `<option${y === jaren[jaren.length - 2] ? ' selected' : ''}>${y}</option>`).join('')}</select></label>
+        <label class="veld"><span>Jaar</span><select name="jaar">${jaren.map((y) => `<option${y === laatsteJaar ? ' selected' : ''}>${y}</option>`).join('')}</select></label>
         <label class="veld"><span>Rechtsvorm</span><input value="${esc(RECHTSVORMEN[o.rechtsvorm]?.label || o.rechtsvorm)}" disabled></label>
         <label class="veld"><span>Bestand (.csv of .txt)</span><input type="file" name="bestand" accept=".csv,.txt,text/csv,text/plain"></label>
       </div>
@@ -1198,11 +1467,20 @@ const ACTIES = {
   },
   'rapport-download'() {
     const d = huidigDossier();
-    const rapport = document.querySelector('.rapport');
-    if (!d || !rapport) return;
+    const bron = document.querySelector('.rapport');
+    if (!d || !bron) return;
+    // Het bestand bevat altijd het hele rapport in de gekozen weergave: alles uitgeklapt, zonder knoppen, in het lichte thema.
+    const rapport = bron.cloneNode(true);
+    rapport.querySelectorAll('.ingeklapt').forEach((x) => x.classList.remove('ingeklapt'));
+    rapport.querySelectorAll('.geen-print').forEach((x) => x.remove());
+    rapport.querySelectorAll('.hoofdstuk-kop > button').forEach((knop) => {
+      knop.querySelectorAll('.ico').forEach((x) => x.remove());
+      knop.replaceWith(...knop.childNodes);
+    });
+    const zonderFormules = bron.closest('.zonder-formules') ? ' zonder-formules' : '';
     const css = [...document.querySelectorAll('style')].map((x) => x.textContent).join('\n');
     const html = `<!doctype html>
-<html lang="nl">
+<html lang="nl" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1211,7 +1489,7 @@ const ACTIES = {
 <style>${css}</style>
 </head>
 <body>
-<div class="pagina">${rapport.outerHTML}</div>
+<div class="pagina${zonderFormules}">${rapport.outerHTML}</div>
 </body>
 </html>`;
     downloadBestand(`${d.nummer || 'dossier'}-rapport.html`, html, 'text/html');
@@ -1317,6 +1595,28 @@ const ACTIES = {
     sluitModaal();
     render({ behoudScroll: true });
   },
+  'taken-uitklap'(el) {
+    const id = el.dataset.id;
+    if (ui.taken.open.has(id)) ui.taken.open.delete(id); else ui.taken.open.add(id);
+    const t = document.getElementById('taken-tabel');
+    if (t) t.innerHTML = tabelTaken(route.pagina === 'mijn-taken');
+  },
+  'taken-sorteer'(el) {
+    const kol = el.dataset.kol;
+    const s = ui.taken.sort;
+    if (s.kol === kol) s.richting = s.richting === 'asc' ? 'desc' : 'asc';
+    else { s.kol = kol; s.richting = /aantal|spoed/.test(kol) ? 'desc' : 'asc'; }
+    const t = document.getElementById('taken-tabel');
+    if (t) t.innerHTML = tabelTaken(route.pagina === 'mijn-taken');
+  },
+  'taken-afgerond'(el) {
+    ui.taken.afgerond = !!el.checked;
+    render({ behoudScroll: true });
+  },
+  'taken-filters-wissen'() {
+    ui.taken.filter = {};
+    render({ behoudScroll: true });
+  },
   'taak-toggle'(el) {
     const t = get(el.dataset.id);
     if (!t) return;
@@ -1389,7 +1689,7 @@ const ACTIES = {
   },
   jaarvolgorde(el) {
     zetJaarVolgorde(el.value);
-    toast(el.value === 'oud' ? 'Jaarkolommen: oudste jaar links.' : 'Jaarkolommen: meest recente jaar links.');
+    toast(el.value === 'oud' ? 'Invoer: oudste jaar links. Overzichten blijven van oud naar nieuw.' : 'Invoer: meest recente jaar links. Overzichten blijven van oud naar nieuw.');
     render({ behoudScroll: true });
   },
   opslagvoorkeur(el) {

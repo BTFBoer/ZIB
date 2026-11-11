@@ -1,6 +1,6 @@
 import { esc, fmt } from '../util.js';
 import { pil } from './ui.js';
-import { ordeJaren } from './uistate.js';
+import { ordeJarenOverzicht } from './uistate.js';
 
 export function celWaarde(c) {
   if (!c) return '';
@@ -15,9 +15,9 @@ export function celWaarde(c) {
 }
 
 export function renderSectie(s) {
-  // Jaarkolommen in de gekozen volgorde (standaard het meest recente jaar links).
-  const kol = ordeJaren(s.kolommen || []);
-  const kop = `<tr><th>${esc(s.titel)}</th>${kol.map((k) => `<th class="num">${esc(s.kolomLabels?.[k] ?? k)}</th>`).join('')}${s.rijen.some((r) => r.trend) ? '<th>Trend</th>' : ''}</tr>`;
+  // Overzicht: jaarkolommen van oud naar nieuw.
+  const kol = ordeJarenOverzicht(s.kolommen || []);
+  const kop = `<tr><th>${esc(s.titel)}</th>${kol.map((k) => `<th class="num">${esc(s.kolomLabels?.[k] ?? (k === 'waarde' ? '' : k))}</th>`).join('')}${s.rijen.some((r) => r.trend) ? '<th>Trend</th>' : ''}</tr>`;
   const metTrend = s.rijen.some((r) => r.trend);
   const rijen = s.rijen.map((r) => {
     if (r.kop) return `<tr class="kopregel"><td colspan="${kol.length + 1 + (metTrend ? 1 : 0)}">${esc(r.label)}</td></tr>`;

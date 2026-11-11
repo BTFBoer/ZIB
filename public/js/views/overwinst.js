@@ -4,7 +4,7 @@
 import { esc, fmt } from '../util.js';
 import { DBT_KEUZES, naOnttrekking } from '../engine/onderneming.js';
 import { keuze, vink, pil, kengetal, melding } from './ui.js';
-import { ordeJaren } from './uistate.js';
+import { ordeJaren, ordeJarenOverzicht } from './uistate.js';
 
 const g = (x) => (x === null || x === undefined ? '' : fmt.getal(x));
 
@@ -34,9 +34,13 @@ function instellingen(d, a, ow) {
     </div></div>`;
 }
 
-/** Tabellen met overwinst per jaar en de balans na fictieve onttrekking. */
-export function overwinstTabellen(r, ow) {
-  const jaren = ordeJaren(Object.keys(ow.ow).map(Number));
+/**
+ * Tabellen met overwinst per jaar en de balans na fictieve onttrekking. In een overzicht lopen de jaren van oud naar
+ * nieuw; op een invoerpagina (`invoer`) volgen ze de jaarkolommen van de invoer, zodat de hele pagina één richting heeft.
+ */
+export function overwinstTabellen(r, ow, { invoer = false } = {}) {
+  const orde = invoer ? ordeJaren : ordeJarenOverzicht;
+  const jaren = orde(Object.keys(ow.ow).map(Number));
   const kop = (y) => `${y}${y === r.C ? ' (t/m, geëxtrapoleerd)' : ''}`;
   const t1 = `<div class="scroll"><table class="tabel compact samenvat"><thead><tr><th>Overwinst</th>${jaren.map((y) => `<th class="num">${esc(kop(y))}</th>`).join('')}</tr></thead><tbody>
     <tr><td>${esc(ow.winstLabel)}</td>${jaren.map((y) => `<td class="num">${g(ow.winst[y])}</td>`).join('')}</tr>
@@ -44,7 +48,7 @@ export function overwinstTabellen(r, ow) {
     <tr class="som"><td>Overwinst per jaar${ow.mee.length < 3 ? ' (meegetelde jaren in het gemiddelde)' : ''}</td>${jaren.map((y) => `<td class="num${y !== r.C && !ow.mee.includes(y) ? ' dempen' : ''}">${g(ow.ow[y])}</td>`).join('')}</tr>
   </tbody></table></div>`;
   const d = ow.dbt;
-  const dj = ordeJaren(d.jaren);
+  const dj = orde(d.jaren);
   const X = ow.naDbt;
   const t2 = dj.length ? `<div class="scroll"><table class="tabel compact samenvat"><thead><tr><th>Dubbele balanstoets</th>${dj.map((y) => `<th class="num">${esc(y === r.C ? `${y} (tussentijds)` : String(y))}</th>`).join('')}</tr></thead><tbody>
     ${d.opties.cumulatief ? `<tr><td>Fictieve onttrekking (aantal jaren)</td>${dj.map((y) => `<td class="num">${d.perJaar[y].k} ×</td>`).join('')}</tr>` : ''}
@@ -81,13 +85,13 @@ function uitkomst(r, ow) {
 }
 
 /** Volledig blok voor één (hoofd)bedrijf. */
-export function overwinstBlok(d, r, a, { bewerken = true, kort = false } = {}) {
+export function overwinstBlok(d, r, a, { bewerken = true, kort = false, invoer = false } = {}) {
   const ow = a.box2?.overwinst;
   if (!ow) return '';
   const isNHG = a.box2?.route !== undefined;
   const mee = isNHG ? ['route2', 'combinatie'].includes(d.instellingen?.box2Route) : !!a.box2?.overwinstMeenemen;
   const status = !mee ? pil('neutraal', 'Niet meegenomen') : ow.toegestaan ? pil('akkoord', `Meegenomen ${fmt.eur(ow.bedrag)}`) : pil('niet_akkoord', 'Voorwaarden niet akkoord');
-  const { t1, t2 } = overwinstTabellen(r, ow);
+  const { t1, t2 } = overwinstTabellen(r, ow, { invoer });
   if (kort) {
     return `<div class="bzi-blok overwinst"><h3>Overwinst en dubbele balanstoets ${status}</h3>
       <p class="dempen klein">${esc(ow.omschrijving)}.</p>

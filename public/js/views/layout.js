@@ -1,23 +1,39 @@
-import { esc, fmt } from '../util.js';
-import { state } from '../state.js';
+import { esc, fmt, todayISO } from '../util.js';
+import { state, lijst } from '../state.js';
 import { drive } from '../store/drive.js';
+import { icoon } from './ui.js';
 
 // Hoofdmenu in de volgorde van de rekensoftware. "Klanten" is het overzicht van de aanvragen.
-export const MENU = [
+// De dagelijkse onderdelen staan in de balk; de overige onder "Meer", zodat het menu ook op een laptop past.
+export const MENU_HOOFD = [
   ['#/klanten', 'Klanten', 'klanten'],
   ['#/documenten', 'Documenten', 'documenten'],
   ['#/advieskantoren', 'Advieskantoren', 'advieskantoren'],
   ['#/taken', 'Alle Taken', 'taken'],
   ['#/mijn-taken', 'Mijn Taken', 'mijn-taken'],
+  ['#/toetskaders', 'Toetskaders', 'toetskaders'],
+];
+export const MENU_MEER = [
   ['#/hulp', 'Hulp nodig?', 'hulp'],
   ['#/meekijken', 'Meekijken', 'meekijken'],
-  ['#/toetskaders', 'Toetskaders', 'toetskaders'],
   ['#/faq', 'FAQ', 'faq'],
   ['#/downloads', 'Downloads', 'downloads'],
   ['#/tickets', 'Tickets', 'tickets'],
-  ['#/e-mail', 'E-mail', 'e-mail', 'email-versturen'],
-  ['#/mijn-gegevens', 'Mijn gegevens', 'mijn-gegevens'],
+  ['#/e-mail', 'E-mail versturen', 'e-mail', 'email-versturen'],
 ];
+export const MENU_ACCOUNT = [
+  ['#/mijn-gegevens', 'Mijn gegevens', 'mijn-gegevens'],
+  ['#/log-uit', 'Log uit', 'log-uit', 'log-uit'],
+];
+export const MENU = [...MENU_HOOFD, ...MENU_MEER, ...MENU_ACCOUNT];
+
+/** Open taken van de aangemelde gebruiker: aantal en of er een verlopen is (voor het bolletje bij Mijn Taken). */
+export function mijnOpenTaken() {
+  const mijn = state.profiel?.naam || '';
+  const vandaag = todayISO();
+  const open = lijst('taak').filter((t) => t.status !== 'gereed' && mijn && t.toegewezenAan === mijn);
+  return { aantal: open.length, telaat: open.some((t) => t.deadline && t.deadline < vandaag) };
+}
 
 export function opslagStatusHTML() {
   const s = state.opslag;
@@ -44,20 +60,47 @@ export function driveStatusHTML() {
   return `<a class="opslagstatus drivestatus ${klasse}" href="#/downloads" title="${esc(titel)}" aria-label="${esc(titel)}"><i></i><span class="tekst">${esc(tekst)}</span></a>`;
 }
 
+function menuLink([href, label, key, actie], actief, extra = '') {
+  return `<a href="${href}" class="${key === actief ? 'actief' : ''}"${key === actief ? ' aria-current="page"' : ''}${actie ? ` data-actie="${actie}"` : ''}>${esc(label)}${extra}</a>`;
+}
+
 export function balk(actief) {
   const p = state.profiel;
-  const modus = state.modus === 'cloud' ? 'Cloud' : 'Lokaal';
+  const opslag = state.modus === 'cloud' ? 'Cloudopslag' : 'Lokale opslag (deze browser)';
+  const taken = mijnOpenTaken();
+  const teller = taken.aantal ? `<span class="menu-teller${taken.telaat ? ' te-laat' : ''}" title="${taken.aantal} open ${taken.aantal === 1 ? 'taak' : 'taken'}${taken.telaat ? ', waarvan verlopen' : ''}">${taken.aantal}</span>` : '';
+  const extra = (key) => (key === 'mijn-taken' ? teller : '');
+  const meerActief = MENU_MEER.some(([, , key]) => key === actief);
   return `<header class="balk"><div class="balk-binnen">
     <a class="woordmerk" href="#/klanten" title="Nieuwe en lopende aanvragen"><b>ZIB</b><span>Zakelijk inkomen</span></a>
     <nav class="menu" aria-label="Hoofdmenu">
-      ${MENU.map(([href, label, key, actie]) => `<a href="${href}" class="${key === actief ? 'actief' : ''}"${actie ? ` data-actie="${actie}"` : ''}>${esc(label)}</a>`).join('')}
-      <a href="#/log-uit" data-actie="log-uit">Log uit</a>
+      ${MENU_HOOFD.map((m) => menuLink(m, actief, extra(m[2]))).join('')}
+      <details class="uitklap menu-meer">
+        <summary class="${meerActief ? 'actief' : ''}">Meer${icoon('open')}</summary>
+        <div class="uitklap-paneel">${MENU_MEER.map((m) => menuLink(m, actief)).join('')}</div>
+      </details>
     </nav>
     <div class="balk-rechts">
+      <button type="button" class="zoekknop" data-actie="zoek-open" title="Zoek een dossier, pagina of actie (Ctrl+K)">${icoon('zoek')}<span>Zoeken</span><kbd>Ctrl K</kbd></button>
       <span id="opslagstatus">${opslagStatusHTML()}</span>
       <span id="drivestatus">${driveStatusHTML()}</span>
-      <span class="modus-label" title="${esc(state.adapter?.omschrijving || '')}">${modus}</span>
-      <span class="wie" title="${esc(p?.naam || '')}${p?.accreditatie ? ` (${esc(p.accreditatie)})` : ''}">${esc(p?.initialen || p?.naam || '')}</span>
+      <details class="uitklap account">
+        <summary title="${esc(p?.naam || 'Account')}" aria-label="Account van ${esc(p?.naam || 'gebruiker')}"><span class="wie">${esc(p?.initialen || (p?.naam || '?').slice(0, 2))}</span></summary>
+        <div class="uitklap-paneel rechts">
+          <div class="account-kop"><b>${esc(p?.naam || '')}</b><span>${esc([p?.accreditatie, opslag].filter(Boolean).join(' · '))}</span></div>
+          ${MENU_ACCOUNT.map((m) => menuLink(m, actief)).join('')}
+        </div>
+      </details>
+      <details class="uitklap menu-smal">
+        <summary aria-label="Menu" title="Menu">${icoon('menu')}</summary>
+        <div class="uitklap-paneel rechts">
+          ${MENU_HOOFD.map((m) => menuLink(m, actief, extra(m[2]))).join('')}
+          <hr>
+          ${MENU_MEER.map((m) => menuLink(m, actief)).join('')}
+          <hr>
+          ${MENU_ACCOUNT.map((m) => menuLink(m, actief)).join('')}
+        </div>
+      </details>
     </div>
   </div></header>`;
 }

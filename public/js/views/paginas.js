@@ -48,24 +48,6 @@ export function renderAdvieskantoren() {
 }
 
 // ---------------------------------------------------------------------------
-export function renderTaken(alleenMijn) {
-  const mijn = state.profiel?.naam || '';
-  const taken = lijst('taak').filter((t) => !alleenMijn || t.toegewezenAan === mijn)
-    .sort((a, b) => (a.status === b.status ? String(a.deadline).localeCompare(String(b.deadline)) : a.status === 'open' ? -1 : 1));
-  const vandaag = new Date().toISOString().slice(0, 10);
-  const rijen = taken.map((t) => {
-    const d = get(t.dossierId);
-    const telaat = t.status === 'open' && t.deadline && t.deadline < vandaag;
-    return `<tr><td><input type="checkbox" aria-label="Gereed"${t.status === 'gereed' ? ' checked' : ''} data-actie="taak-toggle" data-id="${esc(t.id)}"></td>
-      <td>${t.status === 'gereed' ? `<s>${esc(t.titel)}</s>` : `<b>${esc(t.titel)}</b>`}</td>
-      <td>${d ? `<a href="#/dossier/${esc(d.id)}">${esc(d.nummer)}</a> ${esc(naamAanvrager(d.aanvrager))}` : ''}</td>
-      <td>${esc(t.toegewezenAan || '')}</td><td class="nowrap">${telaat ? pil('niet_akkoord', fmt.datum(t.deadline)) : esc(fmt.datum(t.deadline))}</td>
-      <td><button class="knop link klein" data-actie="verwijder-record" data-id="${esc(t.id)}" data-vraag="Taak verwijderen?">Verwijderen</button></td></tr>`;
-  }).join('');
-  return `${paginakop(alleenMijn ? 'Mijn Taken' : 'Alle Taken', alleenMijn ? `Taken toegewezen aan ${esc(mijn || 'jou')}` : `${taken.length} taken`, '<button class="knop" data-actie="nieuwe-taak">Taak toevoegen</button>')}
-    <div class="paneel" style="padding:0">${rijen ? `<div class="scroll"><table class="tabel"><thead><tr><th></th><th>Taak</th><th>Dossier</th><th>Toegewezen aan</th><th>Deadline</th><th></th></tr></thead><tbody>${rijen}</tbody></table></div>` : leeg(alleenMijn ? 'Je hebt geen openstaande taken.' : 'Er zijn geen taken.')}</div>`;
-}
-
 // ---------------------------------------------------------------------------
 export function renderMeekijken() {
   const ds = lijst('dossier').filter((d) => d.status === 'beoordeling_2').sort((a, b) => String(a.gewijzigd).localeCompare(String(b.gewijzigd)));
@@ -133,7 +115,7 @@ const FAQ = [
   ['Hoe leg ik een STAK, certificaathouders of andere aandeelhouders vast?',
     'Bij het organogram (Bedrijven of Klantgegevens) voeg je partijen toe die niet in de berekening meetellen: personen, een STAK (met de bestuurder in de toelichting) of de holding van een medeaandeelhouder. Met lijnen leg je vast wie welk belang heeft; certificaten tekent ZIB gestippeld. Geeft een STAK certificaten uit voor meer vennootschappen, kies dan bij elke certificaathouder "Certificaten van": elke vennootschap krijgt met haar certificaathouders een eigen kleur. ZIB controleert of de belangen per vennootschap optellen tot 100%, toont het organogram grafisch en als tekst, en de partijen zijn te kiezen als tegenpartij bij de geldstromen (bijvoorbeeld een management fee aan de holding van een medeaandeelhouder). Eerdere structuren leg je vast als situatie; bij "Invoegen in notities" komen ze onder elkaar met de huidige situatie als laatste.'],
   ['Kan ik de volgorde van de jaarkolommen wijzigen?',
-    'Standaard staat het meest recente jaar links en het oudste jaar rechts, net als in de rekentool van de bank. In Mijn gegevens kies je eventueel de omgekeerde volgorde; dat geldt voor alle invoer- en overzichtstabellen, de rekenstappen en het rapport.'],
+    'In de invoer (balans, V&W, diversen, IB-aangifte, de stappen per bedrijf en BZI-invoer) staat het meest recente jaar links en het oudste jaar rechts, net als in de rekentool van de bank; in Mijn gegevens kies je voor de invoer eventueel de omgekeerde volgorde. Overzichten lopen altijd van oud naar nieuw: de inkomensvaststelling, kengetallen, rekenstappen, samenvatting, het rapport en de dossiernotities.'],
   ['Wat is het verschil tussen de BZI- en de ViiZ-weergave?',
     'Beide werken op hetzelfde dossier en dezelfde rekenkern. De BZI-weergave volgt de stappen van de rekentool van de bank: per bedrijf de totaalposten per jaar (omzet, nettowinst, eigen vermogen, balanstotaal, vlottende activa, kort vreemd vermogen), correcties via een pop-up en de samenvatting met solvabiliteits- en liquiditeitsruimte. De ViiZ-weergave heeft tabbladen met de volledige balans en W&V (quick-scan of uitgebreide modus), de IB-aangifte, de rekenstappen en het uitgebreide rapport. Zodra je in ViiZ een gedetailleerde balans of W&V invult, gebruikt de rekenkern die in plaats van de totaalposten.'],
   ['Wanneer telt een deelneming mee in het toetskader?',
@@ -210,11 +192,17 @@ export function renderHulp() {
         <div class="acties" style="margin-top:12px"><button class="knop" data-actie="hulp-verstuur">Ticket aanmaken</button></div>
       </div>
       <div class="paneel"><h2>Snel op weg</h2>
+        <p><b>Zoeken:</b> Ctrl+K (of de knop Zoeken) springt naar een dossier, een tabblad van het open dossier, een pagina of een actie. Zoek op naam, dossiernummer, aanvraagnummer, onderneming of KvK-nummer.</p>
+        <p><b>Lijsten:</b> filter per kolom in de rij onder de kolomkoppen, of met de snelfilters (te laat, binnen twee dagen, spoed, open taken, mijn dossiers). Met Kolommen kies je welke kolommen je ziet. Een rode uiterste datum is verstreken, een oranje valt binnen twee dagen.</p>
         <p><b>Nieuwe klant:</b> knop rechtsonder in de aanvragenlijst. Kies de soort aanvraag (met of zonder NHG, inkomensverklaring of 0-verklaring).</p>
+        <p><b>Voortgang:</b> de stip voor een tabblad laat zien of het compleet is (rond), aandacht vraagt (ruit), een fout bevat (vierkant) of nog leeg is (ring). Onder elk tabblad staan Vorige en Volgende om het dossier van links naar rechts te doorlopen.</p>
+        <p><b>Invoer:</b> met Enter en de pijltjes omhoog en omlaag loop je door een kolom. Een kolom of blok uit een spreadsheet plak je in één keer: ZIB toont eerst wat waar terechtkomt.</p>
+        <p><b>Volgorde van de jaren:</b> in de invoer staat het meest recente jaar links (van nieuw naar oud); overzichten zoals de berekening, de samenvatting en het rapport lopen van oud naar nieuw.</p>
         <p><b>ViiZ-weergave (standaard, ook voor ABN AMRO):</b> tabbladen Klantgegevens, Balans, V&W, Diversen, IB-aangifte, Berekening en BZI-invoer. Schakel in Balans en V&W naar de uitgebreide modus om posten open te klappen, of importeer een grootboek. Het tabblad BZI-invoer zet de uitkomst klaar voor de rekentool van de bank.</p>
         <p><b>BZI-weergave:</b> de stappen van de rekentool van de bank: Algemeen, Bedrijven, per bedrijf de cijfers per jaar met correcties, Boekhouders, Geldstromen en verplichtingen, Samenvatting. De notities staan rechts. Kies in Mijn gegevens of ABN AMRO-dossiers standaard in deze weergave openen.</p>
         <p><b>Overwinst:</b> per hoofdbedrijf in te stellen, met de dubbele balanstoets (Berekening of de stap van het hoofdbedrijf).</p>
-        <p><b>Rapport:</b> print of sla op als pdf; met "Kopieer dossiernotities" plak je de samenvatting in een ander systeem.</p>
+        <p><b>Berekening:</b> de balk bovenaan springt naar een onderdeel of onderneming. Formules in de rekenstappen zet je aan of uit; panelen klap je in via de kop. Bij drie of meer ondernemingen starten de ondernemingen die akkoord zijn ingeklapt.</p>
+        <p><b>Rapport:</b> Kort toont de kern (uitkomst, aandachtspunten, toelichting op de berekening, kengetallen en conclusie); Uitgebreid voegt de vergelijking van toetskaders, geldstromen en als bijlagen de rekenstappen en cijfers toe. De inhoudsopgave loopt mee. Print of sla op als pdf; met "Kopieer dossiernotities" plak je de samenvatting in een ander systeem.</p>
         <p><b>Beoordeling:</b> meld gereed voor de 2e beoordeling; een collega met de juiste accreditatie geeft akkoord via Meekijken.</p>
       </div>
     </div>`;
@@ -325,7 +313,7 @@ export function renderMijnGegevens() {
       <div class="paneel"><h2>Weergave</h2><div class="raster-3" style="grid-template-columns:1fr">
         <label class="veld"><span>Thema</span><select data-actie="thema"><option value="systeem"${thema === 'systeem' ? ' selected' : ''}>Volg systeem</option><option value="light"${thema === 'light' ? ' selected' : ''}>Licht</option><option value="dark"${thema === 'dark' ? ' selected' : ''}>Donker</option></select></label>
         ${keuze('ABN AMRO-dossiers openen in', 'weergaveABN', { viiz: 'ViiZ-weergave (volledige rekensoftware)', bzi: 'BZI-weergave (stappen van de rekentool van de bank)' }, p.weergaveABN || 'viiz', { rec: '__profiel', hint: 'Per dossier wissel je met de knoppen BZI / ViiZ in de kop.' })}
-        <label class="veld"><span>Volgorde jaarkolommen</span><select data-actie="jaarvolgorde"><option value="recent"${ui.jaarVolgorde !== 'oud' ? ' selected' : ''}>Meest recente jaar links, oudste rechts</option><option value="oud"${ui.jaarVolgorde === 'oud' ? ' selected' : ''}>Oudste jaar links, meest recente rechts</option></select><small class="dempen">Geldt voor alle invoer- en overzichtstabellen.</small></label>
+        <label class="veld"><span>Volgorde jaarkolommen in de invoer</span><select data-actie="jaarvolgorde"><option value="recent"${ui.jaarVolgorde !== 'oud' ? ' selected' : ''}>Van nieuw naar oud: meest recente jaar links (standaard)</option><option value="oud"${ui.jaarVolgorde === 'oud' ? ' selected' : ''}>Van oud naar nieuw: oudste jaar links</option></select><small class="dempen">Geldt voor de invoer: balans, V&amp;W, diversen, IB-aangifte, de stappen per bedrijf en BZI-invoer. Overzichten (inkomensvaststelling, kengetallen, rekenstappen, samenvatting en rapport) lopen altijd van oud naar nieuw.</small></label>
       </div></div>
       <div class="paneel"><h2>Opslag</h2>
         <p>Huidige opslag: <b>${esc(state.adapter?.omschrijving || '')}</b>${state.modus === 'cloud' ? ` (ingelogd als ${esc(state.me?.email || '')})` : ''}.</p>

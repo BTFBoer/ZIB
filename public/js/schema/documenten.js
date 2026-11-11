@@ -118,3 +118,9 @@ function num(v) {
   const x = Number(v);
   return Number.isFinite(x) ? x : 0;
 }
+
+/** Is een vereist document aanwezig? (op categorie, met het gevraagde aantal) */
+export function docAanwezig(docs, item) {
+  const n = docs.filter((x) => x.categorie === item.categorie).length;
+  return n >= (item.aantal || 1);
+}
