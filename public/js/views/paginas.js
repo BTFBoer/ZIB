@@ -232,7 +232,8 @@ function paneelDrive() {
   ].join('');
   return `<div class="paneel" id="drive"><div class="paginakop" style="margin:0 0 8px"><h2>Google Drive</h2>${status}</div>
     <p>ZIB bewaart je dossiers als bestand in de map <b>ZIB</b> in je Google Drive. Elke opslag is een nieuwe versie; de tien nieuwste blijven staan, oudere gaan naar de prullenbak (30 dagen terug te halen). Bij het openen haalt ZIB de nieuwste versie op en voegt die samen met wat in deze browser staat: per dossier wint de nieuwste wijziging. Na een wijziging slaat ZIB binnen ongeveer twintig seconden op.</p>
-    ${drive.bestand ? `<p class="dempen klein">Laatste versie: ${esc(drive.bestand)}${drive.versies ? ` · ${drive.versies} ${drive.versies === 1 ? 'versie' : 'versies'} in de map` : ''}</p>` : ''}
+    ${drive.bestand ? `<p class="dempen klein">Laatste versie: ${esc(drive.bestand)}${drive.versies ? ` · ${drive.versies} ${drive.versies === 1 ? 'versie' : 'versies'} in de map` : ''}${drive.versies > 10 && drive.opruimen !== 'geweigerd' ? '; de oudste gaan de komende keren naar de prullenbak tot er tien over zijn' : ''}</p>` : ''}
+    ${drive.opruimen === 'geweigerd' ? '<p class="dempen klein">Oude versies naar de prullenbak verplaatsen is voor deze pagina niet toegestaan; ze blijven in de map staan. Je gegevens zijn wel opgeslagen.</p>' : ''}
     ${drive.status === 'fout' ? melding('niet_akkoord', esc(drive.melding)) : ''}
     <div class="acties" style="margin-top:10px">${knoppen}</div>
     <div style="margin-top:12px">${melding('attentie', 'Alleen fictieve of geanonimiseerde dossiers: echte klantgegevens horen niet in een persoonlijke Google Drive.')}</div>

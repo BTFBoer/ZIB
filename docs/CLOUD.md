@@ -20,7 +20,8 @@ ZIB bevat de code voor de Cloudflare-route volledig: de API (`functions/`), het 
 
 De demo op claude.ai kan dossiers bewaren in je eigen Google Drive, via de Google Drive-koppeling van claude.ai. Op de pagina Downloads kies je **Google Drive koppelen** en sta je de koppeling toe.
 
-- ZIB maakt de map `ZIB` en zet daar bij elke opslag een nieuw bestand `ZIB-gegevens <tijd>.json` neer. De koppeling kan een bestaand bestand niet overschrijven; daarom zijn het versies. De tien nieuwste blijven staan, oudere gaan naar de prullenbak (30 dagen terug te halen).
+- ZIB maakt de map `ZIB` en zet daar bij elke opslag een nieuw bestand `ZIB-gegevens <tijd>.json` neer. De koppeling kan een bestaand bestand niet overschrijven; daarom zijn het versies. De tien nieuwste blijven staan, oudere gaan naar de prullenbak (30 dagen terug te halen): per keer opslaan hooguit tien, dus een achterstand loopt in een paar keer terug. Bestanden met een andere naam in de map laat ZIB met rust.
+- De zoekfunctie van de koppeling geeft haar antwoord in pagina's en standaard op relevantie. ZIB vraagt daarom om de laatst gewijzigde versie eerst en leest alle pagina's, zodat de nieuwste versie altijd wordt gevonden.
 - Na een wijziging slaat ZIB binnen ongeveer twintig seconden op. Bij het openen haalt ZIB de nieuwste versie op en voegt die samen met wat in de browser staat: per dossier wint de nieuwste wijziging, ook een verwijdering.
 - Geüploade documenten (pdf's) gaan niet mee; die blijven in de browser.
 - Werk je op twee apparaten tegelijk aan hetzelfde dossier, dan wint de laatste opslag. Gebruik het als persoonlijke opslag voor één gebruiker.

@@ -6,15 +6,23 @@
 // ("ZIB-gegevens <tijd>.json"); de tien nieuwste blijven staan, oudere gaan naar de prullenbak.
 // Bij het ophalen voegt ZIB de nieuwste versie samen met wat in deze browser staat: per record
 // wint de nieuwste wijziging. Daarna slaat ZIB automatisch op, kort na elke wijziging.
+//
+// De zoekfunctie van de koppeling geeft haar antwoord in pagina's en zonder sortering op relevantie.
+// ZIB vraagt daarom om de laatst gewijzigde versie eerst en leest alle pagina's (zie verzamelVersies):
+// zo is de nieuwste versie altijd gevonden en ruimt ZIB ook echt op tot de tien nieuwste.
 import { state, exporteer, importeer, opWijziging } from '../state.js';
-import { samenvoegen, vingerafdruk, versieNaam, base64NaarTekst } from './samenvoegen.js';
+import { samenvoegen, vingerafdruk, versieNaam, base64NaarTekst, verzamelVersies, teVerwijderen } from './samenvoegen.js';
 
 export const DRIVE_SERVER = 'Google Drive';
 export const DRIVE_TOOLS = ['search_files', 'create_file', 'download_file_content', 'trash_file'];
 const MAP = 'ZIB';
 const PREFIX = 'ZIB-gegevens';
 const BEWAAR = 10;
+const MAX_OPRUIMEN = 10; // per synchronisatie hooguit zoveel oude versies naar de prullenbak
+const OPRUIM_MS = 8000; // en niet langer dan dit, zodat een volgende opslag niet hoeft te wachten
 const MAX_TEKST = 900 * 1024; // ruim onder de invoerlimiet van 1 MiB per aanroep
+// Opruimen is niet toegestaan of geweigerd: in deze sessie niet opnieuw vragen.
+const OPRUIMEN_GEWEIGERD = new Set(['approval_required', 'not_in_manifest', 'blocked_by_policy', 'consent_required']);
 
 const FOUTTEKST = {
   needs_reauth: 'Verbind Google Drive opnieuw in claude.ai (Instellingen → Connectors).',
@@ -44,6 +52,7 @@ export const drive = {
   laatst: null, // Date van de laatste geslaagde synchronisatie
   bestand: '',
   versies: 0,
+  opruimen: '', // 'geweigerd' als oude versies niet naar de prullenbak mogen
   mapUrl: '',
   uitgezet: false, // in deze browser ontkoppeld
 };
@@ -52,6 +61,7 @@ let mcp = null;
 let rechten = null;
 let mapId = '';
 let laatsteAfdruk = '';
+let opruimenGeweigerd = false;
 let timer = null;
 let lopend = null;
 let importerend = false;
@@ -148,12 +158,13 @@ async function zorgVoorMap() {
   drive.mapUrl = `https://drive.google.com/drive/folders/${encodeURIComponent(mapId)}`;
 }
 
+/** Alle versies in de map, nieuwste eerst (alle pagina's van de zoekfunctie, niet alleen de eerste). */
 async function versies() {
-  const r = await roep('search_files', {
-    query: `parentId = '${mapId}' and title contains '${PREFIX}'`, excludeContentSnippets: true, pageSize: 50,
-  }, { lezen: true });
-  return (r?.files || []).filter((f) => f && f.id && String(f.title || '').startsWith(PREFIX))
-    .sort((a, b) => String(b.title).localeCompare(String(a.title)) || String(b.createdTime || '').localeCompare(String(a.createdTime || '')));
+  const { versies: lijst } = await verzamelVersies(
+    (invoer) => roep('search_files', invoer, { lezen: true }),
+    { mapId, prefix: PREFIX },
+  );
+  return lijst;
 }
 
 async function lees(id) {
@@ -182,10 +193,28 @@ async function schrijf(records) {
   return { id: f.id, title: f.title || title, createdTime: f.createdTime || nu.toISOString() };
 }
 
+/**
+ * Verplaatst oude versies naar de prullenbak; de tien nieuwste blijven staan. Oudste eerst en een
+ * begrensd aantal per keer: een achterstand loopt in de volgende synchronisaties verder terug.
+ * Geeft het aantal verplaatste versies terug.
+ */
 async function ruimOp(lijst) {
-  for (const f of lijst.slice(BEWAAR)) {
-    try { await roep('trash_file', { fileId: f.id }); } catch { /* de volgende keer opnieuw */ }
+  if (opruimenGeweigerd) return 0;
+  const start = Date.now();
+  let weg = 0;
+  for (const f of teVerwijderen(lijst, BEWAAR, MAX_OPRUIMEN)) {
+    if (Date.now() - start > OPRUIM_MS) break;
+    try {
+      await roep('trash_file', { fileId: f.id });
+      weg += 1;
+    } catch (e) {
+      // Bij de eerste fout stoppen: niet toegestaan blijft de rest van de sessie zo, iets anders
+      // (bijvoorbeeld een storing) lost een volgende synchronisatie op.
+      if (OPRUIMEN_GEWEIGERD.has(e?.code)) { opruimenGeweigerd = true; drive.opruimen = 'geweigerd'; }
+      break;
+    }
   }
+  return weg;
 }
 
 function fout(e) {
@@ -227,14 +256,15 @@ export function synchroniseer() {
         const nieuw = await schrijf(samen);
         lijst.unshift(nieuw);
         titel = nieuw.title;
-        await ruimOp(lijst);
       }
+      // De gegevens staan veilig; daarna pas opruimen. Een fout daarbij maakt de opslag niet ongedaan.
+      const weg = await ruimOp(lijst);
       laatsteAfdruk = afdruk;
       drive.status = 'ok';
       drive.toestemming = 'granted';
       drive.laatst = new Date();
       drive.bestand = titel;
-      drive.versies = Math.min(lijst.length, BEWAAR);
+      drive.versies = lijst.length - weg;
       drive.uitgezet = false;
       lsSet('zib.drive.aan', '1');
       lsDel('zib.drive.uit');
