@@ -14,7 +14,7 @@ import {
   modaalHypotheeknummer, modaalTaken, modaalKopieren, modaalVerwijderen, modaalEerdereAanvragen, modaalHerbeoordeling,
   modaalZoekAfgerond, samenvatting,
 } from './views/aanvragen.js';
-import { renderDossier, kopVoor, calcWaarde, docAanwezig, NAAR_BZI, NAAR_VIIZ, roosterJaren, weergaveDossier, TABS, tabsHTML } from './views/dossier.js';
+import { renderDossier, kopVoor, calcWaarde, docAanwezig, NAAR_BZI, NAAR_VIIZ, roosterJaren, weergaveDossier, TABS, tabsHTML, renderAnalyseKaderKeuzes } from './views/dossier.js';
 import { modaalCorrectie, correctieLijstHTML, modaalVaSamenstelling, modaalSalaris, MAANDEN_KORT } from './views/bzi.js';
 import { bziVerschil, maakBziCsv } from './views/bziinvoer.js';
 import {
@@ -46,6 +46,7 @@ import { leesKernbedrag, leesKerncijfers } from './schema/kernimport.js';
 import { initBroncijfersImport, laadPriveStart } from './broncijfers-import.js';
 import { biedBrowseroverdrachtAan } from './browseroverdracht.js';
 import { renderBronarchief } from './views/bronarchief.js';
+import { initRekenAnalyse, herstelRekenAnalyse } from './views/rekenanalyse.js';
 
 const app = document.getElementById('app');
 let route = { pagina: 'aanvragen' };
@@ -438,6 +439,7 @@ function naRender() {
   const tabs = document.getElementById('dossiertabs');
   toonInBalk(tabs, tabs?.querySelector('a.actief'));
   startSpy();
+  if (route.pagina === 'dossier' && ['berekening', 'samenvatting'].includes(route.tab)) herstelRekenAnalyse(huidigDossier());
 }
 
 const herberekenDossier = debounce(() => {
@@ -569,6 +571,15 @@ function verwerkBinding(el, magRenderen) {
   }
   if (doel.soort === 'dossier') {
     werkDossierconceptBij(doel.obj);
+    if (el.closest('[data-analyse-invoer]')) {
+      laatsteBerekening = null;
+      const uitkomsten = document.getElementById('rekenresultaten');
+      if (uitkomsten) uitkomsten.dataset.verouderd = 'true';
+      for (const status of app.querySelectorAll('[data-rekenstatus], [data-analyse-status]')) {
+        status.textContent = 'Invoer gewijzigd. Klik op Berekenen om de vergelijking bij te werken.';
+      }
+      return;
+    }
     if (el.hasAttribute('data-rekenkeuze')) {
       laatsteBerekening = null;
       const uitkomst = document.getElementById('rekenresultaten');
@@ -2347,6 +2358,7 @@ function voerUit(actie, el, e) {
     history.replaceState({ ...history.state, zibRouteIndex: geschiedenisNummer }, '');
     render();
     if (globalThis.ZIB_LOCAL_PRIVATE || globalThis.ZIB_HOSTED) initBroncijfersImport(() => render());
+    initRekenAnalyse(huidigDossier, renderAnalyseKaderKeuzes);
     if (!globalThis.ZIB_LOCAL_PRIVATE && !globalThis.ZIB_HOSTED) initDrive();
   } catch (e) {
     console.error(e);

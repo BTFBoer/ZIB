@@ -94,6 +94,32 @@ test('ING stuurt starters naar NHG en telt DGA-winst alleen met onderbouwing mee
   assert.equal(ing.bereken(dga).bedrag, 90000);
 });
 
+test('ING toetst de ondernemersduur van de aanvrager en houdt een gezamenlijke loonindicatie herkenbaar', () => {
+  const dossier = proef({ soort: 'VPB' });
+  const jong = { ...dossier.analyses[0], id: 'jong', start: '2025-12-31', jaren: {} };
+  dossier.analyses.push(jong);
+  dossier.dossier.ondernemingen.push({ id: 'jong', rechtsvorm: 'BV', startdatum: jong.start });
+  dossier.dossier.ib = Object.fromEntries(T.map((jaar, i) => [jaar, { dgaGezamenlijk: {
+    loon: [50000, 60000, 70000][i], bijtelling: 0, van: `${jaar}-01-01`, tot: `${jaar}-12-31`,
+  } }]));
+  for (const jaar of T) delete dossier.analyses[0].jaren[jaar].ibOnd.loon;
+  const r = ing.bereken(dossier);
+  assert.equal(r.bedrag, 60000);
+  assert.ok(r.stappen.some((stap) => stap.label.includes('indicatief gezamenlijk arbeidsinkomen')));
+  assert.ok(r.checks.some((punt) => punt.tekst.includes('toedeling per werkgever')));
+  assert.ok(!r.documenten.some((stuk) => stuk.categorie === 'geconsolideerde_jaarrekening'));
+  dossier.dossier.ondernemingen.push({ id: 'dochter', rechtsvorm: 'BV', parentId: 'ond', aandeelPct: 100 });
+  assert.ok(ing.bereken(dossier).documenten.some((stuk) => stuk.categorie === 'geconsolideerde_jaarrekening'));
+  assert.ok(ing.bereken(dossier).documenten.some((stuk) => stuk.categorie === 'organogram'));
+
+  delete dossier.analyses[0].start;
+  assert.match(ing.bereken(dossier).checks[0].tekst, /hoeveel volledige boekjaren de aanvrager/);
+  dossier.invoer.ondernemersduur = 'drie';
+  assert.equal(ing.bereken(dossier).bedrag, 60000);
+  dossier.analyses[0].jaren[2023].ibOnd.loon = 50000;
+  assert.equal(ing.bereken(dossier).bedrag, null, 'geen onverdeelde loonreeks bij gedeeltelijk overlappende bedragen');
+});
+
 test('ING houdt rekening-courant als last apart en past de 3%-ondergrens toe', () => {
   const fixture = proef({ soort: 'VPB', inkomen: [60000, 60000, 60000], invoer: { rcJaarlast: 600 } });
   fixture.dossier.rc = { saldo: 20000, limiet: 40000 };

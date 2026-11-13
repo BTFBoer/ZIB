@@ -91,11 +91,14 @@ export function renderInkomenTabel(d, r) {
   const i = r.inkomen;
   const C = r.C;
   const jaren = C ? [...r.T, C] : r.T;
+  const analyse = r.inkomensanalyse;
   const analyses = r.ondernemingen || [];
   const perOnd = new Map((i?.perOnderneming || []).map((o) => [o.id, o]));
   const ontbreekt = rekenInvoerStatus(d, r);
+  const bronDga = (jaar) => d.ib?.[jaar]?.dgaGezamenlijk;
+  const heeftBronDga = analyse && jaren.some((jaar) => heeftBedrag(bronDga(jaar)?.loon));
   const dga = i?.dgaGezamenlijk;
-  const kader = r.inkomensanalyse ? 'Inkomensanalyse' : r.kaderCfg.kort;
+  const kader = analyse ? 'Ingevoerde bedragen' : r.kaderCfg.kort;
   const basisOpen = !r.beleid && [...ontbreekt.dossier, ...ontbreekt.ondernemingen.flatMap((o) => o.punten)].some((punt) => punt.blokkeert);
   const kaderbedrag = r.inkomensanalyse ? null : r.soort === 'NUL' ? 0 : r.beleid ? r.beleid.bewijs ? r.beleid.bedrag : null : basisOpen ? null : r.toetsinkomen;
   const indicatie = r.beleid?.indicatie;
@@ -108,22 +111,38 @@ export function renderInkomenTabel(d, r) {
     const open = ontbreekt.ondernemingen.find((o) => o.id === a.id)?.punten.some((punt) => punt.blokkeert);
     return { a, posten, bedrag: bedrijfsinkomen(r, a, p, posten, open) };
   });
+  const invoerBedrag = (a, y) => {
+    const j = a.jaren?.[y];
+    if (!j?.actief) return null;
+    if (a.soort !== 'VPB') {
+      if (heeftBedrag(j.ibOnd?.sfw)) return Number(j.ibOnd.sfw);
+      return j.heeftResultaatinvoer ? j.winst.NW : null;
+    }
+    const loon = heeftBedrag(j.ibOnd?.loon) ? Number(j.ibOnd.loon)
+      : heeftBedrag(j.vwRuw?.salarisDGA) ? Number(j.vwRuw.salarisDGA) : null;
+    const dividend = heeftBedrag(j.ibOnd?.dividend) ? Number(j.ibOnd.dividend)
+      : !a.isDeelneming && heeftBedrag(j.geldstroom?.dividendPriveBruto) ? Number(j.geldstroom.dividendPriveBruto) * j.aandeel : null;
+    return samen(loon, dividend);
+  };
   const rijen = gegevens.map(({ a, posten, bedrag }) => {
     const duur = a.start && Number.isFinite(a.maandenOndernemer) ? `${fmt.getal(a.maandenOndernemer)} maanden ondernemer` : '';
     return `<tr><th scope="row"><a href="${esc(kerninvoerPad(d, 'berekening', a.id))}">${esc(a.naam)}${icoon('rechts')}</a>
       <small>${esc([a.rechtsvormKort, duur, a.geconsolideerd ? 'Geconsolideerd' : '', a.meenemen === false ? 'Buiten het inkomen' : ''].filter(Boolean).join(' · '))}</small></th>
-      ${jaren.map((y) => geldcel(posten.jaarBedrag(y))).join('')}${geldcel(posten.gemiddeld)}${C ? geldcel(posten.extrapolatie) : ''}${geldcel(bedrag)}${voorwaarden ? `<td>${pil(a.status)}</td>` : ''}</tr>`;
+      ${jaren.map((y) => geldcel(analyse ? invoerBedrag(a, y) : posten.jaarBedrag(y))).join('')}${analyse ? '' : `${geldcel(posten.gemiddeld)}${C ? geldcel(posten.extrapolatie) : ''}${geldcel(bedrag)}${voorwaarden ? `<td>${pil(a.status)}</td>` : ''}`}</tr>`;
   }).join('');
   const dgaRij = dga ? `<tr><th scope="row">Gezamenlijk DGA-loon<small>Voor alle eigen vennootschappen</small></th>
     ${jaren.map((y) => geldcel(dga.perJaar?.[y]?.inkomen)).join('')}${geldcel(dga.berekend)}${C ? geldcel(dga.perJaar?.[C]?.geëxtrapoleerd) : ''}
     ${geldcel(dga.inUitkomst ? dga.toetsinkomen : null)}${voorwaarden ? `<td>${dga.inUitkomst ? '' : pil('attentie', 'Ter beoordeling')}</td>` : ''}</tr>` : '';
+  const bronDgaRij = heeftBronDga ? `<tr><th scope="row">Gezamenlijk bruto DGA-loon<small>Op aanvragerniveau</small></th>${jaren.map((y) => geldcel(heeftBedrag(bronDga(y)?.loon) ? Number(bronDga(y).loon) : null)).join('')}</tr>
+    <tr><th scope="row">Bijtelling gezamenlijk DGA-loon</th>${jaren.map((y) => geldcel(heeftBedrag(bronDga(y)?.bijtelling) ? Number(bronDga(y).bijtelling) : null)).join('')}</tr>` : '';
   const persoon = (y) => {
+    if (analyse) return samen(...['voorStart', 'naast', 'uitkeringen', 'row'].map((k) => heeftBedrag(d.ib?.[y]?.[k]) ? Number(d.ib[y][k]) : null));
     if (r.familie === 'ABN') return heeftBedrag(d.ib?.[y]?.row) ? Number(d.ib[y].row) : null;
     if (['voorStart', 'naast', 'uitkeringen', 'row'].some((k) => heeftBedrag(d.ib?.[y]?.[k]))) return i?.persoonlijk?.[y]?.totaal;
     return null;
   };
   const persoonRij = jaren.some((y) => Number.isFinite(persoon(y))) ? `<tr><th scope="row">Overig box 1 inkomen</th>${jaren.map((y) => geldcel(persoon(y))).join('')}
-    ${geldcel(gem(r.T.map(persoon)))}${C ? geldcel(null) : ''}${geldcel(i?.row)}${voorwaarden ? '<td></td>' : ''}</tr>` : '';
+    ${analyse ? '' : `${geldcel(gem(r.T.map(persoon)))}${C ? geldcel(null) : ''}${geldcel(i?.row)}${voorwaarden ? '<td></td>' : ''}`}</tr>` : '';
   const jaartotaal = (y) => {
     if (r.inkomensanalyse || r.soort === 'NUL') return null;
     if (r.beleid) return r.beleid.perJaar?.[y];
@@ -135,19 +154,18 @@ export function renderInkomenTabel(d, r) {
   const somGemiddeld = !basisOpen && !r.inkomensanalyse && jaartotalen.some(Number.isFinite) ? i?.gemiddelde : null;
   const somExtr = C && !basisOpen && !r.inkomensanalyse && Number.isFinite(jaartotaal(C)) ? i?.controleExtr : null;
   const totaal = r.inkomensanalyse ? LEEG : Number.isFinite(kaderbedrag) ? geld(kaderbedrag) : 'Nog te beoordelen';
-  const aantal = r.T.length + (C ? 2 : 0) + (voorwaarden ? 4 : 3);
+  const aantal = analyse ? jaren.length + 1 : r.T.length + (C ? 2 : 0) + (voorwaarden ? 4 : 3);
   const extraTotaal = (label, v) => `<tr><th scope="row" colspan="${aantal - (voorwaarden ? 2 : 1)}">${esc(label)}</th>${geldcel(v)}${voorwaarden ? '<td></td>' : ''}</tr>`;
   return `<div class="scroll"><table class="tabel reken-tabel reken-inkomenstabel uitkomsten-tabel" aria-label="Inkomen per onderneming" data-uitkomstentabel>
     <thead><tr><th scope="col" rowspan="2">Onderneming</th><th scope="colgroup" colspan="${aantal - 1}" class="reken-tabelkop">${esc(kader)}</th></tr><tr>
-    ${r.T.map((y) => kolom(y)).join('')}${C ? kolom(C, 'Gerealiseerd') : ''}${kolom('Gemiddelde', 'Na jaarlijkse correcties')}${C ? kolom(C, 'Geëxtrapoleerd') : ''}
-    ${kolom('Jaarinkomen', 'Na toetsing')}${voorwaarden ? kolom('Voorwaarden') : ''}</tr></thead>
-    <tbody>${dgaRij}${rijen}${persoonRij}${!analyses.length && !persoonRij ? `<tr><td colspan="${aantal}">Geen ondernemingen opgenomen.</td></tr>` : ''}</tbody>
-    <tfoot><tr class="totaal"><th scope="row">Toetsinkomen totaal</th>${jaartotalen.map((v) => geldcel(v)).join('')}${geldcel(somGemiddeld)}${C ? geldcel(somExtr) : ''}
+    ${r.T.map((y) => kolom(y)).join('')}${C ? kolom(C, 'Gerealiseerd') : ''}${analyse ? '' : `${kolom('Gemiddelde', 'Na jaarlijkse correcties')}${C ? kolom(C, 'Geëxtrapoleerd') : ''}${kolom('Jaarinkomen', 'Na toetsing')}${voorwaarden ? kolom('Voorwaarden') : ''}`}</tr></thead>
+    <tbody>${dgaRij}${bronDgaRij}${rijen}${persoonRij}${!analyses.length && !persoonRij && !bronDgaRij ? `<tr><td colspan="${aantal}">Geen ondernemingen opgenomen.</td></tr>` : ''}</tbody>
+    ${analyse ? '' : `<tfoot><tr class="totaal"><th scope="row">Toetsinkomen totaal</th>${jaartotalen.map((v) => geldcel(v)).join('')}${geldcel(somGemiddeld)}${C ? geldcel(somExtr) : ''}
     <td class="num reken-uitkomstbedrag"><strong>${esc(totaal)}</strong></td>${voorwaarden ? '<td></td>' : ''}</tr>
     ${Number.isFinite(indicatie) && indicatie !== kaderbedrag ? extraTotaal('Berekende indicatie', indicatie) : ''}
     ${Number.isFinite(abnModel?.bedrag) ? extraTotaal(`ABN AMRO · ${abnModel.methode === 'verticaal' ? 'Verticaal' : 'Horizontaal'} · ${abnModel.bron === 'bronbestand' ? 'Bronbedrag' : 'Herberekend'}`, abnModel.bedrag) : ''}
     ${Number.isFinite(vastgesteld) && Number.isFinite(kaderbedrag) && vastgesteld !== kaderbedrag ? extraTotaal('Vastgesteld inkomen', vastgesteld) : ''}
-    </tfoot></table></div>`;
+    </tfoot>`}</table></div>`;
 }
 
 function renderBedrijfsinkomen(d, r, a) {
@@ -224,10 +242,12 @@ export function renderOndernemingInkomen(d, r, a) {
 }
 
 export function renderRekenUitkomst(d, r) {
+  const analyse = r.inkomensanalyse;
   const regels = !r.inkomensanalyse && r.soort !== 'NUL' ? r.kaderCfg.inkomensberekening || [] : [];
-  return `<section class="reken-paneel uitkomsten" aria-label="Uitkomsten per onderneming">
+  return `<section class="reken-paneel uitkomsten" aria-label="${analyse ? 'Invoer per onderneming' : 'Uitkomsten per onderneming'}">
+    ${analyse ? `<details class="stappen reken-uitklap"><summary>Invoer per onderneming en aanvrager</summary><div class="reken-uitklap-inhoud"><p class="reken-neutraal">De tabel toont de bekende bedragen uit het dossier. De toetsinkomens staan bij de afzonderlijke kaders.</p>${renderInkomenTabel(d, r)}</div></details>` : `
     <div class="reken-paneel-kop"><div><h2 id="rekenresultaten-titel" tabindex="-1">Inkomen</h2><p class="reken-neutraal">Open een onderneming voor de uitsplitsing van het inkomen en de rekenstappen.</p></div></div>
-    ${renderInkomenTabel(d, r)}${regels.length ? `<details class="stappen reken-uitklap"><summary>Inkomensberekening volgens ${esc(r.kaderCfg.kort)}</summary><ul>${regels.map((tekst) => `<li>${esc(tekst)}</li>`).join('')}</ul></details>` : ''}</section>
+    ${renderInkomenTabel(d, r)}${regels.length ? `<details class="stappen reken-uitklap"><summary>Inkomensberekening volgens ${esc(r.kaderCfg.kort)}</summary><ul>${regels.map((tekst) => `<li>${esc(tekst)}</li>`).join('')}</ul></details>` : ''}`}</section>
     ${(r.ondernemingen || []).length ? `<section class="reken-paneel" aria-labelledby="reken-ratios-titel"><div class="reken-paneel-kop"><h2 id="reken-ratios-titel">Ratio’s en voorwaarden</h2></div>
     ${r.beleid || r.inkomensanalyse ? '<p class="reken-neutraal">De jaarcijfers en ratio’s staan hieronder. De voorwaarden voor het gekozen toetskader staan bij Fiattering.</p>' : ''}
     ${r.ondernemingen.map((a, n) => `<details class="stappen reken-uitklap reken-bedrijfblok"${n === 0 ? ' open' : ''}><summary>${esc(a.naam)}</summary>

@@ -185,3 +185,28 @@
 .reken-bedrijfblok summary { color: var(--accenttekst); }
 .reken-bedrijfblok > .reken-paneel-kop + .scroll { margin-top: 8px; }
 .reken-bronnentabel { margin-top: 8px; }
+
+.reken-analysetabel:has([data-analyse-open]) { min-width: 570px; }
+.reken-analyse-open.knop { margin-top: 5px; margin-left: -6px; }
+.reken-analyse-open .ico { width: 13px; height: 13px; }
+.reken-analyse-open[aria-expanded="true"] .ico { transform: rotate(180deg); }
+.reken-analysetabel .reken-analyse-uitklaprij > td {
+  padding: 10px;
+  background: var(--mint-zacht);
+}
+.reken-analyse-detail { border: 1px solid var(--lijn); border-radius: var(--radius); padding: 14px; background: var(--vlak); }
+.reken-analyse-detailkop { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin-bottom: 9px; }
+.reken-analyse-detailkop h4 { margin: 0; font-size: 16px; }
+.reken-analyse-detailkop p { margin-top: 3px; }
+.reken-analyse-detailtabel { min-width: 0; }
+.reken-analyse-detailtabel thead th { white-space: normal; }
+.reken-analyse-detailtabel td { overflow-wrap: anywhere; }
+.reken-analyse-detailtabel td.num { white-space: nowrap; }
+.reken-analyse-bron { margin: 8px 0; color: var(--grijs); font-size: 13px; }
+.reken-analyse-bron a { margin-left: 4px; }
+.reken-analyse-regels { margin: 7px 0 0; padding-left: 18px; }
+[data-verouderd] [data-analyse-status] { color: var(--att); }
+
+@media print {
+  .reken-analyse-open, .reken-analyse-herbereken { display: none; }
+}

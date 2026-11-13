@@ -4,12 +4,12 @@ import { bedrag, keuze, veld, vink, pil } from './ui.js';
 
 const bronnenLink = (url) => /^https:\/\//i.test(url || '') ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Beleidsbron openen</a>` : '';
 
-export function beleidInvoer(d, r) {
+export function beleidInvoer(d, r, { analyse = false } = {}) {
   const p = r.kaderCfg.beleid;
   if (!p) return '';
   const invoer = d.beleidsinvoer?.[p.id] || {};
   const pad = `beleidsinvoer.${p.id}`;
-  const render = { render: true };
+  const render = { render: !analyse };
   const extra = (p.extraVelden || []).map(({ key, label, type, opties, hint, standaard }) => {
     const bind = `${pad}.${key}`;
     const waarde = invoer[key] ?? standaard;
@@ -18,7 +18,7 @@ export function beleidInvoer(d, r) {
     if (type === 'bedrag') return `<label class="veld"><span>${esc(label)}</span>${bedrag(bind, waarde, { ...render, label })}${hint ? `<small>${esc(hint)}</small>` : ''}</label>`;
     return veld(label, bind, waarde, { ...render, type, hint });
   }).join('');
-  return `<section id="beleid-invoer" class="paneel beleid-invoer">
+  return `<section ${analyse ? 'data-analyse-invoer' : 'id="beleid-invoer"'} class="paneel beleid-invoer">
     <div class="paginakop"><div><h2>${esc(p.kort)} · beleid en bewijs</h2><p class="dempen">${esc(r.beleid?.versie || p.versie)} · ${esc(METHODE_LABEL[r.beleid?.methode || p.methode])}</p></div>${bronnenLink(r.beleid?.bronUrl || p.bronUrl)}</div>
     ${extra ? `<div class="raster-3">${extra}</div>` : ''}
     ${d.soort !== 'NUL' && (r.beleid?.methode === 'extern' || p.ikvOptioneel) ? `<h3>Inkomensverklaring of bankbeoordeling${r.beleid?.methode === 'extern' ? '' : ' (optioneel)'}</h3>

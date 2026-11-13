@@ -608,6 +608,17 @@ test('Lening directie: annuïteit en contractuele termijn', () => {
   assert.equal(berekenLeningDirectie({ hoofdsom: 100000, rente: 3, looptijdMnd: 360, termijn: 450 }).maandlast, 450);
 });
 
+test('Een contractuele termijn zonder hoofdsom blijft zichtbaar en vraagt een leningovereenkomst', () => {
+  const d = { soort: 'IKV', kader: 'ABN', berekeningsdatum: '2026-09-01', leningDirectie: { termijn: 305.75 } };
+  const r = bereken(d);
+  assert.equal(r.leningDirectie.maandlast, 305.75);
+  assert.equal(r.leningDirectie.hoofdsom, null);
+  assert.equal(r.leningDirectie.berekend, null);
+  assert.match(r.leningDirectie.tekst, /€ 305,75 per maand\. Hoofdsom nog te verifiëren/);
+  assert.ok(r.documenten.some((x) => x.categorie === 'leningovereenkomst' && x.verplicht));
+  assert.equal(berekenLeningDirectie({ termijn: '' }).maandlast, 0);
+});
+
 test('DGA-inkomen lopend jaar uit de salarisstrook', () => {
   const s = salarisPeriode({ maandsalaris: 5000, vakantiegeldPct: 8, maanden: 6 });
   assert.equal(s.jaar, 64800);

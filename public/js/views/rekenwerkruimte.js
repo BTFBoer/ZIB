@@ -3,6 +3,7 @@ import { heeftBedrag, heeftResultaatVoorBelasting } from '../engine/financieel.j
 import { esc, fmt } from '../util.js';
 import { icoon, pil } from './ui.js';
 import { kerninvoerPad } from './kerninvoer.js';
+import { analyseUitklapKnop, analyseUitklapRij } from './rekenanalyse.js';
 import { renderInkomenTabel, renderOndernemingInkomen, renderRekenUitkomst } from './rekenuitkomst.js';
 import { renderRekenBronvergelijking, renderRekenkeuzes } from './rekenkeuzes.js';
 import { renderTrace } from './trace-view.js';
@@ -123,14 +124,20 @@ function persoonlijkeCijfers(d, jaren, C) {
 function analyseUitkomst(d, x) {
   if (x.fout) return ['Niet te berekenen', ''];
   if (x.beleid) {
-    if (x.beleid.bewijs && Number.isFinite(x.beleid.bedrag)) return [bedrag(x.beleid.bedrag), 'Op basis van bewijsstuk'];
-    if (Number.isFinite(x.beleid.indicatie)) return [bedrag(x.beleid.indicatie), 'Indicatie'];
+    if (x.beleid.bewijs && Number.isFinite(x.beleid.bedrag)) return [bedrag(x.beleid.bedrag), x.status === 'niet_akkoord' ? 'Bronbedrag · voorwaarden niet akkoord' : 'Op basis van bewijsstuk'];
+    if (Number.isFinite(x.beleid.indicatie)) return [bedrag(x.beleid.indicatie), x.beleid.methode === 'extern' ? 'Indicatie · bewijsstuk of bankbeoordeling nodig' : 'Indicatie'];
+    if (x.id === 'VENN' && x.status === 'niet_akkoord') return ['Buiten het kader', 'Voorwaarden niet akkoord'];
     const voorbeeld = oefenVoorbeeld(d, x.id);
     if (voorbeeld) return [bedrag(voorbeeld.bedrag), 'Fictieve oefenverklaring'];
-    return ['Nog te bepalen', x.beleid.methode === 'extern' ? 'Bewijsstuk of bankbeoordeling nodig' : ''];
+    return ['Nog te bepalen', x.beleid.methode === 'extern' ? (x.id === 'RABO' ? 'IKV of bankbeoordeling nodig' : 'Bewijsstuk of bankbeoordeling nodig') : 'Invoer aanvullen'];
+  }
+  if (Number.isFinite(x.abnVaststelling?.bedrag) && (x.invoerBlokkeert || !Number.isFinite(x.toetsinkomen))) {
+    const methode = x.abnVaststelling.methode === 'verticaal' ? 'verticaal' : 'horizontaal';
+    return [fmt.eur(x.abnVaststelling.bedrag, 2), `ABN-bronmodel · ${methode} · toetsinkomen open`];
   }
   if (x.invoerBlokkeert) return ['Nog te bepalen', 'Invoer aanvullen'];
-  return [bedrag(x.toetsinkomen), x.bron === 'geen' ? 'Vastgesteld inkomen € 0' : 'Berekend toetsinkomen'];
+  if (!Number.isFinite(x.toetsinkomen)) return ['Nog te bepalen', 'Toetsinkomen open'];
+  return [bedrag(x.toetsinkomen), x.bron === 'geen' ? 'Geen inkomen afgegeven' : 'Berekend toetsinkomen'];
 }
 
 export function analyseBedragVoorDossier(d, uitkomst) {
@@ -138,7 +145,7 @@ export function analyseBedragVoorDossier(d, uitkomst) {
   return herkomst === 'Berekend toetsinkomen' || !herkomst ? waarde : `${waarde} · ${herkomst}`;
 }
 
-function analyseRij(d, x, compact) {
+function analyseRij(d, x, compact, uitklap) {
   const [waarde, herkomst] = analyseUitkomst(d, x);
   const oordeel = x.fout ? pil('attentie', 'Rekenfout') : resultaatOordeel(x.status, x.beleid, x.invoerBlokkeert);
   const details = x.fout ? [x.fout] : [...new Set([...(x.nok || []), ...(x.toelichtingen || []), ...(x.stappen || [])])];
@@ -146,24 +153,28 @@ function analyseRij(d, x, compact) {
   const overige = details.slice(1);
   const uitleg = `${kernreden ? `<p class="reken-kernreden">${esc(kernreden)}</p>` : ''}
     ${overige.length ? `<details class="stappen reken-analyse-uitleg"><summary>Overige aandachtspunten</summary><ul>${overige.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></details>` : ''}`;
-  const box1 = !x.beleid && x.invoerBlokkeert ? BEDRAG_LEEG : bedrag(x.box1);
-  const box2 = !x.beleid && x.invoerBlokkeert ? BEDRAG_LEEG : bedrag(x.box2);
-  return `<tr data-analysekader="${esc(x.id)}"><th scope="row">${esc(x.kort)}<small>${esc(x.versie || '')}</small></th>
-    ${compact ? '' : `<td>${oordeel}</td>`}<td class="num">${esc(box1)}</td><td class="num">${esc(box2)}</td>
-    <td class="num"><strong>${esc(waarde)}</strong>${herkomst ? `<small>${esc(herkomst)}</small>` : ''}</td>${compact ? '' : `<td>${uitleg}</td>`}</tr>`;
+  const model = herkomst.startsWith('ABN-bronmodel') ? x.abnBronVergelijking : null;
+  const horizontaal = model && x.abnVaststelling?.methode === 'horizontaal';
+  const box1 = horizontaal ? fmt.eur(model.dga, 2) : !x.beleid && x.invoerBlokkeert ? BEDRAG_LEEG : bedrag(x.box1);
+  const box2 = horizontaal ? fmt.eur(model.uitgekeerd + model.nietUitgekeerd, 2) : !x.beleid && x.invoerBlokkeert ? BEDRAG_LEEG : bedrag(x.box2);
+  const toelichting = horizontaal ? '<small>Bronmodel</small>' : x.beleid && !x.beleid.bewijs && (Number.isFinite(x.box1) || Number.isFinite(x.box2)) ? '<small>Indicatie</small>' : '';
+  return `<tr data-analysekader="${esc(x.id)}"><th scope="row">${esc(x.kort)}<small>${esc(x.versie || '')}</small>${uitklap ? analyseUitklapKnop(d, x.id, x.kort) : ''}</th>
+    ${compact && !uitklap ? '' : `<td>${oordeel}</td>`}<td class="num">${esc(box1)}${toelichting}</td><td class="num">${esc(box2)}${toelichting}</td>
+    <td class="num"><strong>${esc(waarde)}</strong>${herkomst ? `<small>${esc(herkomst)}</small>` : ''}</td>${compact ? '' : `<td>${uitleg}</td>`}</tr>${uitklap ? analyseUitklapRij(d, x.id, compact ? 5 : 6) : ''}`;
 }
 
-export function renderAnalyseTabel(d, uitkomsten = vergelijkKaders(d), { compact = false } = {}) {
+export function renderAnalyseTabel(d, uitkomsten = vergelijkKaders(d), { compact = false, uitklap = false } = {}) {
   return `<div class="scroll" data-inkomensanalyse><table class="tabel reken-tabel reken-analysetabel">
-      <thead><tr><th scope="col">Toetskader</th>${compact ? '' : '<th scope="col">Oordeel</th>'}<th scope="col" class="num">Box 1</th><th scope="col" class="num">Box 2</th><th scope="col" class="num">Jaarinkomen</th>${compact ? '' : '<th scope="col">Onderbouwing</th>'}</tr></thead>
-      <tbody>${uitkomsten.map((x) => analyseRij(d, x, compact)).join('')}</tbody>
+      <thead><tr><th scope="col">Toetskader</th>${compact && !uitklap ? '' : '<th scope="col">Oordeel</th>'}<th scope="col" class="num">Box 1</th><th scope="col" class="num">Box 2</th><th scope="col" class="num">Jaarinkomen</th>${compact ? '' : '<th scope="col">Onderbouwing</th>'}</tr></thead>
+      <tbody>${uitkomsten.map((x) => analyseRij(d, x, compact, uitklap)).join('')}</tbody>
     </table></div>`;
 }
 
-function analysePaneel(d, uitkomsten, compact) {
-  return `<section class="reken-paneel" id="reken-analyse" aria-labelledby="reken-analysetitel">
-    <div class="reken-paneel-kop"><h3 id="reken-analysetitel">Uitkomsten per toetskader</h3><span class="reken-neutraal">${uitkomsten.length} toetskaders</span></div>
-    ${renderAnalyseTabel(d, uitkomsten, { compact })}
+function analysePaneel(d, uitkomsten, compact, uitklap = false) {
+  const titel = uitklap ? 'rekenresultaten-titel' : 'reken-analysetitel';
+  return `<section class="reken-paneel" id="reken-analyse" aria-labelledby="${titel}">
+    <div class="reken-paneel-kop"><div><h3 id="${titel}"${uitklap ? ' tabindex="-1"' : ''}>Uitkomsten per toetskader</h3>${uitklap ? '<p class="reken-neutraal" data-analyse-status>Open de rekenwaarden per toetskader voor de keuzes, invoercellen en rekenstappen.</p>' : ''}</div><span class="reken-neutraal">${uitkomsten.length} toetskaders</span></div>
+    ${renderAnalyseTabel(d, uitkomsten, { compact, uitklap })}
   </section>`;
 }
 
@@ -191,8 +202,9 @@ export function renderOndernemingBerekening(d, r, a, { details = '', weergave = 
 }
 
 export function renderRekenwerkruimte(d, r, { berekend = false } = {}) {
+  const analyse = r.inkomensanalyse && berekend;
   return `<div class="berekening rekenwerkruimte${ui.formules ? '' : ' zonder-formules'}">
     ${renderRekenkeuzes(d, r, berekend)}
-    ${berekend ? `<div id="rekenresultaten" class="rekenwerkruimte">${renderRekenUitkomst(d, r)}${r.inkomensanalyse ? analysePaneel(d, vergelijkKaders(d), true) : renderRekenBronvergelijking(d, r)}</div>` : ''}
+    ${berekend ? `<div id="rekenresultaten" class="rekenwerkruimte">${analyse ? analysePaneel(d, vergelijkKaders(d), true, true) : ''}${renderRekenUitkomst(d, r)}${analyse ? '' : renderRekenBronvergelijking(d, r)}</div>` : ''}
   </div>`;
 }

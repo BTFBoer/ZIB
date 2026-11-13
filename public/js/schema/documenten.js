@@ -9,6 +9,7 @@ export const CATEGORIEEN = {
   ib_aanslag: 'IB-aanslag',
   vgi: 'Verklaring geregistreerd inkomen (Belastingdienst)',
   jaarrekening: 'Jaarrekening',
+  geconsolideerde_jaarrekening: 'Geconsolideerde jaarrekening',
   tussentijds: 'Tussentijdse cijfers (balans en W&V)',
   ob_aangifte: 'Aangifte omzetbelasting',
   prognose: 'Prognose (RA/AA)',

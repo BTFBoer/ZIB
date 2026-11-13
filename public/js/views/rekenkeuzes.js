@@ -25,8 +25,8 @@ export function renderRekenkeuzes(d, r, toonUitkomst) {
   const regels = [
     ['Toetsjaren', esc(r.T.join(' · '))],
     ['Controlejaar', `${kies('reken-controlejaar', 'instellingen.controlejaar', String(controleAan), [['true', 'Aan'], ['false', 'Uit']], { kenmerk: 'data-reken-controlejaar', uit: gesloten })}${controleToelichting}`, 'reken-controlejaar'],
-    ['Oudste toetsjaar vervangen', heeftVervanging ? `${kies('reken-vervanging', vervangPad, String(vervang), jaNee, { kenmerk: 'data-reken-vervanging', uit: gesloten || !controleAan })}${vervangToelichting}` : 'Niet van toepassing', 'reken-vervanging'],
-    ['Vaststellingsmethode', heeftMethode ? kies('reken-methode', 'instellingen.abnVaststelling', methode, [...(!d.abnGroep ? [['standaard', 'Standaard volgens Woonbeleid']] : []), ['horizontaal', 'Horizontaal'], ['verticaal', 'Verticaal']], { uit: gesloten }) : 'Volgens het gekozen toetskader', 'reken-methode'],
+    ['Oudste toetsjaar vervangen', r.inkomensanalyse ? 'In te stellen bij de toepasselijke toetskaders' : heeftVervanging ? `${kies('reken-vervanging', vervangPad, String(vervang), jaNee, { kenmerk: 'data-reken-vervanging', uit: gesloten || !controleAan })}${vervangToelichting}` : 'Niet van toepassing', 'reken-vervanging'],
+    ['Vaststellingsmethode', r.inkomensanalyse ? 'Per toetskader' : heeftMethode ? kies('reken-methode', 'instellingen.abnVaststelling', methode, [...(!d.abnGroep ? [['standaard', 'Standaard volgens Woonbeleid']] : []), ['horizontaal', 'Horizontaal'], ['verticaal', 'Verticaal']], { uit: gesloten }) : 'Volgens het gekozen toetskader', 'reken-methode'],
   ];
   return `<section class="reken-paneel reken-algemeen" aria-labelledby="reken-algemeen-titel"${r.inkomensanalyse ? ' data-inkomensanalyse' : ` data-beoordelingskader="${esc(r.kader)}"`}>
     <div class="reken-paneel-kop"><div><h2 id="reken-algemeen-titel">Algemene rekenkeuzes</h2><p class="reken-neutraal">${esc(r.inkomensanalyse ? 'Inkomensanalyse' : [r.kaderCfg.kort, r.kaderVersie].filter(Boolean).join(' · '))}</p></div></div>

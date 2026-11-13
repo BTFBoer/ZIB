@@ -437,7 +437,7 @@ function kaderKeuzes(d, kader, inst) {
 }
 
 // Instelbare parameters van het kader (per dossier)
-function kaderParameters(d, kader) {
+function kaderParameters(d, kader, { render = true } = {}) {
   const over = d.instellingen?.kaderParams?.[kader.id] || {};
   const basis = KADERS[kader.id];
   const velden = kader.instelbaar.map((pad) => {
@@ -446,11 +446,43 @@ function kaderParameters(d, kader) {
     const stdTekst = eenheid === 'pct' ? `${String(Math.round(std * 1000) / 10).replace('.', ',')}%` : String(std).replace('.', ',');
     const raw = over[pad] ?? leesPad(over, pad);
     return veld(`${label}${eenheid === 'pct' ? ' (%)' : ''}`, `instellingen.kaderParams.${kader.id}.${pad}`, raw ?? '',
-      { type: eenheid === 'pct' ? 'pct' : 'getal', render: true, placeholder: stdTekst, hint: `Standaard ${stdTekst}` });
+      { type: eenheid === 'pct' ? 'pct' : 'getal', render, placeholder: stdTekst, hint: `Standaard ${stdTekst}` });
   }).join('');
   const aantal = Object.keys(kader.aangepast || {}).length;
   return `<details class="stappen" style="margin-top:14px"${aantal ? ' open' : ''}><summary>Parameters ${esc(kader.kort)}${aantal ? ` (${aantal} aangepast)` : ' (standaard)'}</summary>
     <div class="inhoud"><p class="dempen klein">Laat een veld leeg voor de standaardwaarde. Aangepaste parameters staan in de rekenstappen en het rapport.</p><div class="raster-3">${velden}</div></div></details>`;
+}
+
+export function renderAnalyseKaderKeuzes(d, id) {
+  const kader = kaderVoor(id, d.instellingen);
+  if (kader.beleid || !Object.hasOwn(KADERS, id)) return '';
+  const algemeen = d.instellingen || {};
+  const lokaal = algemeen.analyseKaders?.[id] || {};
+  const inst = { ...algemeen, ...lokaal };
+  const prefix = `instellingen.analyseKaders.${id}`;
+  const velden = [];
+  if (kader.vervangenVanaf && id === 'NHG') velden.push(vink('Oudste toetsjaar vervangen', `${prefix}.vervangOudsteJaar`, !!inst.vervangOudsteJaar));
+  if (kader.box2?.model === 'NHG') velden.push(keuze('Box 2-route', `${prefix}.box2Route`, {
+    route1: 'Uitgekeerd dividend', route2: 'Niet-uitgekeerde winst', combinatie: 'Combinatie', geen: 'Geen box 2',
+  }, inst.box2Route || 'route1'));
+  if (id === 'ABN') {
+    velden.push(vink('Uitgekeerd dividend meenemen', `${prefix}.abnDividend.uitgekeerd`, (lokaal.abnDividend?.uitgekeerd ?? algemeen.abnDividend?.uitgekeerd) !== false));
+    velden.push(keuze('ABN AMRO-bronmethode', `${prefix}.abnVaststelling`, { standaard: 'Standaard Woonbeleid', horizontaal: 'Horizontaal', verticaal: 'Verticaal' }, inst.abnVaststelling || (d.abnGroep ? 'horizontaal' : 'standaard')));
+  }
+  if (['ASN', 'KNAB', 'OPT'].includes(id)) velden.push(vink('Relevant voorafgaand dienstverband', `${prefix}.relevantDienstverband`, !!inst.relevantDienstverband));
+  if (id === 'ASN') velden.push(vink('Trackrecord bij dezelfde onderneming bevestigd', `${prefix}.trackrecordZelfdeOnderneming`, !!inst.trackrecordZelfdeOnderneming));
+  if (kader.beletRegel || kader.incidentRegel) {
+    const belet = { ...algemeen.belet, ...lokaal.belet };
+    velden.push(vink(kader.incidentRegel ? 'Incidenteel jaar toepassen' : 'Beletperiode toepassen', `${prefix}.belet.actief`, !!belet.actief));
+    const { T } = bepaalJaren({ ...d, kader: id, metNhg: false, soort: 'IKV' });
+    velden.push(keuze('Jaar van het belet', `${prefix}.belet.jaar`, T.map((y) => String(y)), belet.jaar, { type: 'getal', leeg: 'Kies' }));
+    velden.push(veld('Oorzaak', `${prefix}.belet.oorzaak`, belet.oorzaak));
+    velden.push(tekstvak('Motivatie en stukken', `${prefix}.belet.motivatie`, belet.motivatie, { rijen: 2 }));
+  }
+  if (!velden.length && !kader.instelbaar?.length) return '';
+  return `<section class="paneel beleid-invoer" data-analyse-invoer><h3>Rekenkeuzes ${esc(kader.kort)}</h3>
+    ${velden.length ? `<div class="raster-3">${velden.join('')}</div>` : ''}
+    ${kader.instelbaar?.length ? kaderParameters(d, kader, { render: false }) : ''}</section>`;
 }
 
 function ondernemingKaart(d, o, i, r) {
@@ -929,9 +961,21 @@ function renderBroncontroles(d) {
     </div><div class="acties">${vink('Dossier voorleggen aan KYC', 'notities.kyc', !!n.kyc)}</div></div>`;
 }
 
+function renderOpenOnderbouwing(d) {
+  const perOnderneming = d.notities?.openOnderbouwingPerOnderneming || {};
+  const ondernemingen = d.ondernemingen || [];
+  return `<section class="paneel" id="fiat-open-onderbouwing" aria-labelledby="fiat-open-titel">
+    <h2 id="fiat-open-titel">Openstaande onderbouwing</h2>
+    ${tekstvak('Dossierbreed', 'notities.openOnderbouwingDossier', d.notities?.openOnderbouwingDossier, { rijen: 7, hint: 'Leg vast welke stukken of aansluitingen nog nodig zijn voor de beoordeling.' })}
+    ${ondernemingen.map((o) => `<details class="stappen"${perOnderneming[o.id] ? ' open' : ''}>
+      <summary>${esc(o.naam || 'Onderneming')}</summary><div class="inhoud">${tekstvak(`Nog nodig · ${o.naam || 'Onderneming'}`, `notities.openOnderbouwingPerOnderneming.${o.id}`, perOnderneming[o.id], { rijen: 5 })}</div>
+    </details>`).join('')}
+  </section>`;
+}
+
 function tabFiat(d, r, docs) {
   const uitkomsten = renderUitkomstentabel(d, r, { controles: true });
-  const controles = `${renderBroncontrole(d, r)}${renderRekenInvoercontroles(d, rekenInvoerStatus(d, r))}${renderFiatBeoordeling(d, r, docs, { broncontroles: renderBroncontroles(d) })}`;
+  const controles = `${renderOpenOnderbouwing(d)}${renderBroncontrole(d, r)}${renderRekenInvoercontroles(d, rekenInvoerStatus(d, r))}${renderFiatBeoordeling(d, r, docs, { broncontroles: renderBroncontroles(d) })}`;
   if (r.inkomensanalyse) {
     return `${uitkomsten}<section class="paneel"><p>Kies en bewaar één toetskader bij <a href="${dossierPad(d, 'klant')}">Klantgegevens</a> om een inkomensbeoordeling te fiatteren.</p></section>${controles}`;
   }

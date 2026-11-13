@@ -1,12 +1,17 @@
 import { fmt, isIngevuld, gemiddelde, num, rond } from '../util.js';
 import { balansOntbreekt, heeftBedrag, heeftResultaatVoorBelasting, nhgInkomenBeschikbaar, voorraadTotaal } from './financieel.js';
-import { addMonthsISO, opOfNa } from './periods.js';
+import { addMonthsISO, days360, opOfNa } from './periods.js';
 import { g, laagsteF, lijstF } from './trace.js';
+import { bronDgaGezamenlijk } from './abn-aanvrager.js';
 
 const VENN_2025 = 'https://www.vennhypotheken.nl/wp-content/uploads/Kredietgids-Oktober-2025.pdf';
 const VENN_APRIL = 'https://www.zelfhypotheekafsluiten.nl/Uploads/geldverstrekkers/2026/09/venn-hypotheek-kredietgids-april-2026.pdf';
 const VENN_JULI = 'https://www.zelfhypotheekafsluiten.nl/Uploads/geldverstrekkers/2026/09/venn-hypotheek-kredietgids-juli-2026.pdf';
 const ING_2026 = 'https://hypotheekcompany.nl/wp-content/uploads/2026/05/ING-Hypotheken-Acceptatiebeleid-1-juni-2026.pdf';
+const ING_STUKKEN = [
+  { categorie: 'ib_aangifte', naam: 'Ingediende IB-aangiften', wanneer: 'Drie boekjaren bij gevestigde ondernemers. Bij starters volgt de stukkenlijst het NHG-kader.', aantal: 3 },
+  { categorie: 'jaarrekening', naam: 'Jaarrapporten met balans en winst-en-verliesrekening', wanneer: 'Voor de DGA-toets en beoordeling van bestendigheid en balanspositie', aantal: 3 },
+];
 const aanwezig = (waarde) => isIngevuld(waarde) && Number.isFinite(Number(waarde));
 const aftrek = (j) => Math.abs(num(j?.ibOnd?.bijtelling));
 const check = (status, tekst) => ({ status, tekst });
@@ -282,15 +287,41 @@ function ingRekeningCourant(dossier, invoer, stappen, checks) {
   return { maandlast, saldo: num(saldo), tekst };
 }
 
+function ingDgaLoonreeks(dossier, jaren, dga) {
+  const bron = jaren.map((jaar) => bronDgaGezamenlijk(dossier, jaar));
+  if (!bron.every((regel, i) => regel && aanwezig(regel.loon) && num(regel.loon) >= 0 && aanwezig(regel.bijtelling)
+    && num(regel.bijtelling) === 0 && regel.van === `${jaren[i]}-01-01` && regel.tot === `${jaren[i]}-12-31`)) return null;
+  const ingevuldPerOnderneming = jaren.some((jaar) => dga.some((a) => aanwezig(a.jaren[jaar]?.ibOnd?.loon)));
+  return ingevuldPerOnderneming ? null : bron.map((regel) => num(regel.loon));
+}
+
 function berekenIng({ dossier, analyses, ctx, nhg, invoer = {} }) {
   const stappen = [];
   const checks = [];
   const mee = analyses.filter((a) => a.meenemen !== false && !a.geconsolideerd && !a.isDeelneming);
   const rc = ingRekeningCourant(dossier, invoer, stappen, checks);
-  const resultaat = (bedrag, extra = {}) => ({ bedrag, stappen, checks, rc, ...extra });
+  const deelnemingen = (dossier.ondernemingen || []).filter((o) => o.rechtsvorm === 'BV' || o.rechtsvorm === 'NV');
+  const vereistConsolidatie = deelnemingen.length > 2 && deelnemingen.some((o) =>
+    (o.parentId && Number(o.aandeelPct) === 100) || o.extraParents?.some((p) => p.id && Number(p.pct) === 100));
+  const documenten = vereistConsolidatie ? [...ING_STUKKEN,
+    { categorie: 'organogram', naam: 'Organogram met aandelenbelangen', wanneer: 'Bij een meervoudige bv-structuur met een 100%-deelneming (§2.3.2)' },
+    { categorie: 'geconsolideerde_jaarrekening', naam: 'Geconsolideerde jaarrekening', wanneer: 'Bij een meervoudige bv-structuur met een 100%-deelneming (§2.3.2)' },
+  ] : ING_STUKKEN;
+  const resultaat = (bedrag, extra = {}) => ({ bedrag, stappen, checks, rc, documenten, ...extra });
   if (!mee.length) return resultaat(null);
   const T = ctx.T;
-  const starter = invoer.ondernemersduur === 'starter' || (invoer.ondernemersduur !== 'drie' && mee.some((a) => a.start && a.start > `${T[0]}-12-31`));
+  const startdata = mee.map((a) => a.start).filter(Boolean);
+  const duurVastgelegd = ['starter', 'drie'].includes(invoer.ondernemersduur);
+  const gevestigd = mee.some((a) => a.start && (a.start <= `${T[0]}-01-01` || T.every((jaar) => {
+    const periode = a.jaren?.[jaar];
+    return periode?.van >= a.start && periode.tot && periode.tot <= ctx.datum && days360(periode.van, periode.tot) === 360;
+  })));
+  if (!duurVastgelegd && !gevestigd && startdata.length !== mee.length && invoer.nhg !== true) {
+    checks.push(check('attentie', 'Onderbouw hoeveel volledige boekjaren de aanvrager ondernemer is. Vul de ontbrekende startdatums of het aantal afgesloten boekjaren in.'));
+    return resultaat(null);
+  }
+  const starter = duurVastgelegd ? invoer.ondernemersduur === 'starter' : !gevestigd;
+  if (duurVastgelegd) stappen.push(stap('Ondernemersduur van de aanvrager', starter ? 'Minder dan drie afgesloten boekjaren volgens dossierinvoer' : 'Drie of meer afgesloten boekjaren volgens dossierinvoer', null));
   if (invoer.nhg === true || starter) {
     if (starter) checks.push(check('info', 'ING volgt het NHG-toetskader bij minder dan drie boekjaren als ondernemer (§2.3.3).'));
     const bedrag = geefNhg(nhg, stappen, checks);
@@ -322,12 +353,13 @@ function berekenIng({ dossier, analyses, ctx, nhg, invoer = {} }) {
     if (dga.some((a) => T.some((y) => !aanwezig(a.jaren[y]?.ibOnd?.loon) || !a.jaren[y]?.heeftBalans || !a.jaren[y]?.heeftResultaatinvoer))) {
       checks.push(check('attentie', 'Onderbouw het DGA-inkomen met het fiscale arbeidsinkomen en de jaarrapporten (balans en resultaat) over alle drie boekjaren.'));
     }
-    const deelnemingen = (dossier.ondernemingen || []).filter((o) => o.rechtsvorm === 'BV' || o.rechtsvorm === 'NV');
-    if (deelnemingen.length > 2 && deelnemingen.some((o) => o.parentId && Number(o.aandeelPct) === 100)) {
+    if (vereistConsolidatie) {
       checks.push(check('attentie', 'Voeg bij de meervoudige bv-structuur met een 100%-deelneming het organogram en de geconsolideerde jaarrekening toe.'));
     }
     const lonen = T.map((y) => dga.map((a) => a.jaren[y]?.ibOnd?.loon));
-    const totaalLoon = lonen.every((j) => j.every(aanwezig)) ? lonen.map((j) => j.reduce((som, w) => som + num(w), 0)) : null;
+    const perWerkgever = lonen.every((j) => j.every(aanwezig)) ? lonen.map((j) => j.reduce((som, w) => som + num(w), 0)) : null;
+    const gezamenlijk = perWerkgever === null ? ingDgaLoonreeks(dossier, T, dga) : null;
+    const totaalLoon = perWerkgever ?? gezamenlijk;
     const loonHandmatig = aanwezig(invoer.arbeidsinkomenDga) && num(invoer.arbeidsinkomenDga) >= 0;
     if (!loonHandmatig && totaalLoon === null) {
       checks.push(check('attentie', 'Vul het arbeidsinkomen uit de eigen onderneming over drie jaren in of leg het onderbouwde bestendige jaarbedrag vast.'));
@@ -336,8 +368,10 @@ function berekenIng({ dossier, analyses, ctx, nhg, invoer = {} }) {
     const loon = loonHandmatig ? num(invoer.arbeidsinkomenDga) : Math.max(0, Math.min(gemiddelde(totaalLoon), totaalLoon[2]));
     if (loonHandmatig) stappen.push(stap('DGA · arbeidsinkomen', `100% × ${g(loon)} (onderbouwd jaarbedrag)`, loon));
     else {
+      if (gezamenlijk) checks.push(check('attentie', 'De gezamenlijke loonreeks is alleen gebruikt als rekenindicatie. Controleer de IB-aangiften, toedeling per werkgever en bestendigheid.'));
       stappen.push(stap('DGA · gemiddelde arbeidsinkomsten', lijstF(totaalLoon, 3), gemiddelde(totaalLoon)));
-      stappen.push(stap('DGA · indicatief arbeidsinkomen', `100% × laagste van driejaarsgemiddelde en laatste jaar. Laat de bestendigheid beoordelen.`, loon));
+      stappen.push(stap(gezamenlijk ? 'DGA · indicatief gezamenlijk arbeidsinkomen' : 'DGA · indicatief arbeidsinkomen',
+        '100% × laagste van driejaarsgemiddelde en laatste jaar. Laat de bestendigheid beoordelen.', loon));
       if (!ib.length) perJaar = Object.fromEntries(T.map((y, i) => [y, totaalLoon[i]]));
     }
     box1 += loon;
@@ -401,11 +435,7 @@ export const VENN_ING = [
       'Voor starters met minder dan drie boekjaren volgt ING NHG. ING accepteert ook een inkomensverklaring van een geaccepteerde rekenexpert.',
       'Rekening-courant directie vanaf € 17.500: werkelijke jaarlast, minimaal 3% van de limiet. Een lagere werkelijke last vereist aantoonbare aflossingsruimte.',
     ],
-    documenten: [
-      { categorie: 'ib_aangifte', naam: 'Ingediende IB-aangiften', wanneer: 'Drie boekjaren bij gevestigde ondernemers. Bij starters volgt de stukkenlijst het NHG-kader.', aantal: 3 },
-      { categorie: 'jaarrekening', naam: 'Jaarrapporten met balans en winst-en-verliesrekening', wanneer: 'Voor de DGA-toets en beoordeling van bestendigheid en balanspositie', aantal: 3 },
-      { categorie: 'organogram', naam: 'Organogram en geconsolideerde jaarrekening', wanneer: 'Verplicht bij een meervoudige bv-structuur met 100%-deelneming', verplicht: false },
-    ],
+    documenten: ING_STUKKEN,
     extraVelden: [
       { key: 'ondernemersduur', label: 'Afgesloten boekjaren als ondernemer', type: 'keuze', standaard: 'auto', opties: { auto: 'Afleiden uit startdatum', starter: 'Minder dan drie', drie: 'Drie of meer' } },
       { key: 'arbeidsinkomenDga', label: 'Onderbouwd arbeidsinkomen DGA per jaar', type: 'bedrag', hint: 'Arbeidsinkomen uit de eigen onderneming, vastgesteld aan de hand van de drie IB-aangiften en jaarrapporten.' },

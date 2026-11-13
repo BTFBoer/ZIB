@@ -5,7 +5,7 @@ import { dertigProcentToets, totaalASN, totaalKNAB, totaalOPT } from './totaal.j
 import { beoordeelNul, zkLijst } from './nulverklaring.js';
 import { Trace, cel, g, p, lijstF, laagsteF } from './trace.js';
 import { documentenlijst } from '../schema/documenten.js';
-import { balansOntbreekt, heeftResultaatinvoer, totalenJaar } from './financieel.js';
+import { balansOntbreekt, heeftBedrag, heeftResultaatinvoer, totalenJaar } from './financieel.js';
 import { num, rond, rond2, gemiddelde, isIngevuld, todayISO, naamAanvrager } from '../util.js';
 import { toetsBeleidsprofiel } from './beleid.js';
 import { rekenInvoerStatus } from './reken-invoer.js';
@@ -70,15 +70,19 @@ export function annuiteit(hoofdsom, rentePct, maanden) {
 /** Lening van de BV aan de DGA (lening directie): maandlast in privé. */
 export function berekenLeningDirectie(ld = {}) {
   const hoofdsom = num(ld.hoofdsom);
-  if (!hoofdsom) return { maandlast: 0, tekst: '' };
-  const vast = isIngevuld(ld.termijn) ? num(ld.termijn) : null;
+  const vast = heeftBedrag(ld.termijn) && num(ld.termijn) >= 0 ? num(ld.termijn) : null;
+  if (!hoofdsom) {
+    if (!(vast > 0)) return { maandlast: 0, tekst: '' };
+    return { maandlast: vast, berekend: null, hoofdsom: null,
+      tekst: `Contractuele termijn ${fmtCent(vast)} per maand. Hoofdsom nog te verifiëren.` };
+  }
   const berekend = rond2(annuiteit(hoofdsom, ld.rente, ld.looptijdMnd));
   const maandlast = vast ?? berekend;
   const rente = String(num(ld.rente)).replace('.', ',');
   return {
     maandlast, berekend, hoofdsom,
     tekst: vast !== null
-      ? `Contractuele termijn ${g(vast)} per maand (berekende annuïteit ${fmtCent(berekend)}).`
+      ? `Contractuele termijn ${fmtCent(vast)} per maand${num(ld.looptijdMnd) > 0 ? ` (berekende annuïteit ${fmtCent(berekend)})` : ''}.`
       : `Annuïteit ${g(hoofdsom)} tegen ${rente}% over ${num(ld.looptijdMnd)} maanden = ${fmtCent(berekend)} per maand.`,
   };
 }
@@ -1213,7 +1217,8 @@ export function bereken(dossier, opties = {}) {
     starter: inkomen?.perOnderneming?.some((o) => o.factor && o.factor < 1) || !!inkomen?.starter,
     beroepsregister: onds.some((o) => ['medisch_juridisch', 'fysiotherapeut'].includes(o.beroepsgroep)),
     rc: num(dossier.rc?.saldo) > 0 || analyses.some((a) => num(a.jaren[T3]?.balans?.vordDGAKort) > 0),
-    leningDirectie: num(dossier.leningDirectie?.hoofdsom) > 0 || analyses.some((a) => num(a.jaren[T3]?.balans?.fvaDGA) > 0),
+    leningDirectie: num(dossier.leningDirectie?.hoofdsom) > 0 || num(dossier.leningDirectie?.termijn) > 0
+      || analyses.some((a) => num(a.jaren[T3]?.balans?.fvaDGA) > 0),
     zk: zk.length > 0,
     dividend: heeftVPB && T.some((y) => onds.some((o) => num(dossier.ib?.[y]?.perOnd?.[o.id]?.dividend) > 0)),
     deelnemingen: st.links.length > 0,
@@ -1266,15 +1271,25 @@ export function bereken(dossier, opties = {}) {
  * Hetzelfde dossier volgens alle kaders naast elkaar (zonder handmatig afwijkend inkomen), met per kader de
  * uitkomst, het oordeel en de belangrijkste redenen.
  */
-export function vergelijkKaders(dossier, ids = KADER_VOLGORDE) {
-  const basis = {
+export function vergelijkDossierVoorKader(dossier, id) {
+  const instellingen = dossier.instellingen || {};
+  const analyse = dossier.soort === 'ANALYSE' ? instellingen.analyseKaders?.[id] : null;
+  return {
     ...dossier,
+    kader: id,
+    metNhg: false,
+    soort: dossier.soort === 'ANALYSE' ? 'IKV' : dossier.soort,
+    ...(analyse ? { instellingen: { ...instellingen, ...analyse,
+      abnDividend: { ...instellingen.abnDividend, ...analyse.abnDividend }, belet: { ...instellingen.belet, ...analyse.belet } } } : {}),
     afwijkend: undefined,
     ondernemingen: (dossier.ondernemingen || []).map((o) => ({ ...o, afwijkend: undefined })),
   };
+}
+
+export function vergelijkKaders(dossier, ids = KADER_VOLGORDE) {
   return ids.map((id) => {
     try {
-      const invoerDossier = { ...basis, kader: id, metNhg: false, soort: basis.soort === 'ANALYSE' ? 'IKV' : basis.soort };
+      const invoerDossier = vergelijkDossierVoorKader(dossier, id);
       const r = bereken(invoerDossier);
       // Eerst de concrete voorwaarden per onderneming, daarna de meldingen op dossierniveau.
       const nok = [
@@ -1285,6 +1300,7 @@ export function vergelijkKaders(dossier, ids = KADER_VOLGORDE) {
       const invoer = rekenInvoerStatus(invoerDossier, r);
       const invoerBlokkeert = invoer.dossier.some((punt) => punt.blokkeert)
         || invoer.ondernemingen.some((o) => o.punten.some((punt) => punt.blokkeert));
+      const abn = r.inkomen?.abnBronVergelijking;
       return {
         id, kort: r.kaderCfg.kort, naam: r.kaderNaam, versie: r.kaderVersie, nhg: r.kaderCfg.nhg,
         status: r.status, bron: r.bron, berekend: r.berekend, toetsinkomen: r.toetsinkomen, vastgesteld: r.vastgesteld,
@@ -1292,6 +1308,9 @@ export function vergelijkKaders(dossier, ids = KADER_VOLGORDE) {
           bedrag: r.beleid.bedrag, indicatie: r.beleid.indicatie, methode: r.beleid.methode, bewijs: !!r.beleid.bewijs,
         } : null,
         box1: r.inkomen?.box1 ?? null, box2: r.inkomen?.box2 ?? null, stappen: r.inkomen?.stappen || [], nok: [...new Set(nok)].slice(0, 6),
+        ...(r.inkomen?.abnVaststelling ? { abnVaststelling: r.inkomen.abnVaststelling } : {}),
+        ...(abn ? { abnBronVergelijking: { dga: abn.dga, uitgekeerd: abn.uitgekeerd, nietUitgekeerd: abn.nietUitgekeerd,
+          horizontaal: abn.horizontaal, verticaal: abn.verticaal } } : {}),
         invoerBlokkeert,
         toelichtingen: [...new Set(r.meldingen.filter((m) => ['attentie', 'niet_akkoord'].includes(m.niveau)).map((m) => m.tekst))],
         attenties: r.meldingen.filter((m) => m.niveau === 'attentie').length, T: r.T, C: r.C, starter: r.inkomen?.starter || null,

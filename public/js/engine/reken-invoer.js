@@ -210,7 +210,12 @@ export function rekenInvoerStatus(d, r) {
       if (!gevuld(p.verhuurInOnderneming)) beleidsveld('verhuurInOnderneming', 'Controleer of de gebruikte cijfers huurinkomsten bevatten.');
     }
     if (kader === 'ING' && !nhgBasis) {
-      for (const o of actief.filter((x) => !x.parentId)) {
+      const hoofden = actief.filter((x) => !x.parentId);
+      if (!['starter', 'drie'].includes(p.ondernemersduur) && hoofden.some((o) => !analyseJaar(o, T3)?.actief || !analyses.get(o.id)?.start)
+        && !hoofden.some((o) => analyses.get(o.id)?.start && analyses.get(o.id).start <= `${T[0]}-01-01`)) {
+        beleidsveld('ondernemersduur', 'Leg vast of de aanvrager drie volledige boekjaren ondernemer is.', { blokkeert: true });
+      }
+      for (const o of hoofden) {
         if (vpb(o)) {
           ibBedrag(o, 'loon', T, 'Neem het fiscale arbeidsinkomen uit de IB-aangiften over.', !heeftBedrag(p.arbeidsinkomenDga));
           resultaat(o, T, 'De jaarrapporten onderbouwen de bestendigheid van het DGA-inkomen.');
