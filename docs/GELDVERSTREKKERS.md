@@ -1,6 +1,8 @@
 # Geldverstrekkerprofielen in ZIB
 
-Kies het profiel bij **Nieuwe aanvraag** of **Klantgegevens**. Vul daarna de zichtbare beleidsvelden in. **Berekening** toont de voorlopige uitkomst, stappen, aandachtspunten en de gekozen bronversie. **Documenten** volgt de route, bijvoorbeeld de aanvraag via een intermediair of de verplichte inkomensverklaring.
+Kies het profiel bij **Nieuwe aanvraag** of **Klantgegevens** en gebruik **Opslaan** om een wijziging te bewaren. Berekening, Notities, Rapport en Fiattering volgen het opgeslagen kader. Bij een aanvraag met NHG geldt het NHG-toetskader. Kies **Inkomensanalyse** om de uitkomsten van alle kaders naast elkaar te zien.
+
+Vul de zichtbare beleidsvelden in. **Berekening** toont de voorlopige uitkomst, stappen, aandachtspunten en de gekozen bronversie. **Documenten** volgt de route, bijvoorbeeld de aanvraag via een intermediair of de verplichte inkomensverklaring.
 
 | Profiel | Wat ZIB doet |
 |---|---|
@@ -16,4 +18,4 @@ Kies het profiel bij **Nieuwe aanvraag** of **Klantgegevens**. Vul daarna de zic
 
 Per profiel vermeldt de pagina **Toetskaders** de bron en versie. De productmatrix van augustus 2024 is historisch. De bronversie en de datum van een geregistreerd bewijsstuk blijven zichtbaar in het rapport. De applicatie behandelt een ontbrekend bedrag apart van een opgegeven nul en kent geen hypotheek toe.
 
-Oefendossiers **ZIB-2026-0110 t/m 0113** gebruiken dezelfde fictieve cijfers voor Venn, ING, Rabobank en NIBC. Voeg ze aan een bestaande lokale testbrowser toe via **Mijn gegevens → Demodossiers laden**.
+Oefendossiers **ZIB-2026-0110 t/m 0113** gebruiken dezelfde fictieve cijfers voor Venn, ING, Rabobank en NIBC. Open ze via **Aanvragen → Oefendossiers**. In de demo verschijnen ontbrekende oefendossiers ook na het vernieuwen van de pagina.

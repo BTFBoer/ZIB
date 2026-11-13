@@ -451,7 +451,13 @@ export const PARAM_LABELS = {
 export const SOORTEN = {
   IKV: 'Inkomensverklaring',
   NUL: '0-verklaring',
+  ANALYSE: 'Inkomensanalyse',
 };
+
+/** Het NHG-vinkje is dossierbreed. Oudere dossiers bewaarden het bij het bankprofiel. */
+export function dossierMetNhg(dossier) {
+  return dossier?.kader === 'NHG' || (typeof dossier?.metNhg === 'boolean' ? dossier.metNhg : dossier?.beleidsinvoer?.[dossier.kader]?.nhg === true);
+}
 
 export function soortOndernemer(rechtsvorm) {
   return RECHTSVORMEN[rechtsvorm]?.soort || 'IB';
@@ -486,11 +492,12 @@ export function leesPad(obj, pad) {
  * kader als instelbaar aanmerkt, binnen redelijke grenzen).
  */
 export function kaderVoor(idOfDossier, instellingen) {
-  const id = typeof idOfDossier === 'string' ? idOfDossier : idOfDossier?.kader;
+  const id = typeof idOfDossier === 'string' ? idOfDossier
+    : idOfDossier?.soort === 'ANALYSE' || dossierMetNhg(idOfDossier) ? 'NHG' : idOfDossier?.kader;
   const basis = KADERS[id] || KADERS.NHG;
   const inst = instellingen ?? (typeof idOfDossier === 'object' ? idOfDossier?.instellingen : null) ?? {};
   const over = inst.kaderParams?.[basis.id];
-  if (basis.beleid) return { ...basis, nhg: idOfDossier?.beleidsinvoer?.[basis.id]?.nhg === true };
+  if (basis.beleid) return basis;
   if (!over || !basis.instelbaar?.length) return basis;
   const k = { ...basis };
   let gewijzigd = false;

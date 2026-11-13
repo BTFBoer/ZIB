@@ -429,7 +429,7 @@ function deWit() {
   };
 }
 
-function beleidVoorbeelden() {
+export function beleidVoorbeelden() {
   const sjabloon = jansen();
   return [
     ['VENN', 'Venn', '0110', { bronVersie: '2026-07', sector: 'toegestaan', faillissement: 'nee', verhuurInOnderneming: 'nee' }],

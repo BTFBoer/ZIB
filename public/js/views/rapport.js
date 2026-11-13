@@ -1,7 +1,7 @@
 import { esc, fmt, naamAanvrager, num, isIngevuld } from '../util.js';
 import { get, lijst } from '../state.js';
 import { RECHTSVORMEN, SOORTEN, kaderVoor, PARAM_LABELS } from '../engine/kaders.js';
-import { organogramGraaf } from '../engine/index.js';
+import { organogramGraaf, vergelijkKaders } from '../engine/index.js';
 import { zkLijst, zkTekst } from '../engine/nulverklaring.js';
 import { BALANS_RIJEN, VW_RIJEN } from '../schema/fields.js';
 import { WINST_CORRECTIES, VERMOGENS_CORRECTIES } from '../schema/correcties.js';
@@ -11,7 +11,7 @@ import { docAanwezig } from '../schema/documenten.js';
 import { kernPunten, toelichtingRijen } from '../toelichting.js';
 import { pil, STATUS_TEKST, icoon } from './ui.js';
 import { renderTrace } from './trace-view.js';
-import { inkomensTabel, kengetallenTabel, methodenTabel, ondernemingenMatrix, weergaveOpties, stip } from './dossier.js';
+import { analyseBedrag, inkomensTabel, kengetallenTabel, methodenTabel, ondernemingenMatrix, weergaveOpties, stip } from './dossier.js';
 import { CONTROLES } from './formats.js';
 import { ui, ordeJarenOverzicht, ingeklapt } from './uistate.js';
 import { organogramSVG, organogramNotitie } from './organogram.js';
@@ -133,7 +133,7 @@ function kernBlok(d, r, kader) {
   const puntenLijst = (items) => `<ul class="punten">${items.map((p) => `<li>${stip(p.status)}<span><b>${esc(STATUS_TEKST[p.status])}:</b> ${esc(p.tekst)}</span></li>`).join('')}</ul>`;
   const status = f.tweede?.resultaat === 'akkoord' ? 'Tweede fiat geregistreerd' : f.tweede?.resultaat === 'niet_akkoord' ? 'Tweede fiat niet akkoord' : f.eerste ? 'Wacht op tweede fiat' : 'Concept · nog te beoordelen';
   const adres = [[a.straat, a.huisnummer].filter(Boolean).join(' '), [a.postcode, a.woonplaats].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-  return `<section class="kern" id="rap-kern" aria-label="Kern van het rapport">
+  return `<section class="kern" id="rap-kern" aria-label="Kern van het rapport" data-beoordelingskader="${esc(r.kader)}">
     <div class="kern-uitkomst ${esc(r.status)}">
       <div class="kern-label">${esc(label)}</div>
       <div class="bedrag-groot">${esc(isNul ? '€ 0' : r.beleid ? r.beleid.bedrag === null ? 'Nog te bepalen' : fmt.eur(r.beleid.bedrag) : r.bron === 'geen' ? 'Geen inkomen' : fmt.eur(r.vastgesteld))}</div>
@@ -145,7 +145,7 @@ function kernBlok(d, r, kader) {
       ['Aanvrager', `<b>${esc(naamAanvrager(a))}</b>${a.geboortedatum ? `, geboren ${esc(fmt.datumLang(a.geboortedatum))}` : ''}`],
       adres ? ['Adres', esc(adres)] : null,
       ['Dossier', esc([d.nummer, SOORTEN[d.soort] || d.soort].filter(Boolean).join(' · '))],
-      ['Bestemd voor', esc(r.familie === 'ABN' ? (d.label || 'ABN AMRO') : kader.bestemdVoor)],
+      ['Bestemd voor', esc(kader.bestemdVoor)],
       ['Toetskader', esc(`${kader.naam}, ${r.kaderVersie}`)],
       ['Toetsjaren', esc(`${r.T.join(', ')}${r.C ? `; controlejaar ${r.C}` : ''}`)],
       ['Behandelaar', esc(d.behandelaar || '')],
@@ -163,10 +163,35 @@ function kernBlok(d, r, kader) {
 
 /**
  * Bouwt het rapport op als genummerde hoofdstukken. Kort = kern, inkomen, kengetallen, toelichting en conclusie;
- * uitgebreid = daarnaast de vergelijking van toetskaders, geldstromen, alle voorwaarden en als bijlagen de rekenstappen en cijfers.
+ * uitgebreid = daarnaast geldstromen, alle voorwaarden en als bijlagen de rekenstappen en cijfers.
  * @returns {{kern: string, hoofdstukken: {key: string, nr: string, titel: string, html: string, bijlage?: boolean}[], titel: string}}
  */
 function bouwRapport(d, r, modus) {
+  if (r.inkomensanalyse) {
+    const n = d.notities || {};
+    const toelichting = [
+      ['Algemene informatie en organogram', n.algemeen],
+      ...(d.ondernemingen || []).map((o) => [`Financiële informatie ${o.naam || 'onderneming'}`, n.financieelOnderneming?.[o.id]]),
+      ['Financiële informatie ondernemer in privé', n.priveTekst],
+      ['Kredietbestemming en aflossing', n.kredietbestemming],
+      ['Conclusie', n.conclusie],
+      ['Bijlagen', n.bijlagen],
+    ].filter(([, waarde]) => gevuld(waarde));
+    const hoofdstukken = [{ key: 'inkomen', nr: '1', titel: 'Uitkomsten per toetskader', html: methodenTabel(d, r, { kop: false }) }];
+    if (toelichting.length) hoofdstukken.push({
+      key: 'toelichting', nr: '2', titel: 'Toelichting',
+      html: toelichting.map(([label, waarde]) => `<h3>${esc(label)}</h3>${pre(waarde)}`).join(''),
+    });
+    return {
+      titel: 'Rapport inkomensanalyse',
+      kern: `<section class="kern" id="rap-kern" aria-label="Kern van het rapport">${kv([
+        ['Dossier', esc(d.nummer || '')],
+        ['Datum analyse', esc(fmt.datumLang(r.datum))],
+        ['Behandelaar', esc(d.behandelaar || '')],
+      ])}</section>`,
+      hoofdstukken,
+    };
+  }
   const uitgebreid = modus === 'uitgebreid';
   const kader = r.kaderCfg || kaderVoor(d);
   const adv = get(d.advieskantoorId);
@@ -174,7 +199,7 @@ function bouwRapport(d, r, modus) {
   const n = d.notities || {};
   const isNul = d.soort === 'NUL';
   const f = d.fiat || {};
-  const afw = d.afwijkend || {};
+  const afw = r.beleid ? {} : d.afwijkend || {};
   const onds = d.ondernemingen || [];
   const analyses = r.ondernemingen.filter((x) => isNul || x.meenemen || r.familie === 'ABN');
   const hoofdstukken = [];
@@ -182,7 +207,7 @@ function bouwRapport(d, r, modus) {
 
   // ---- 1. Inkomen (of de beoordeling bij een 0-verklaring) ---------------------------------
   if (isNul) {
-    voeg('inkomen', 'Beoordeling 0-verklaring', `<p><b>${esc(r.nul.conclusie)}</b></p>${r.nul.nhgOpmerking ? `<p class="dempen">${esc(r.nul.nhgOpmerking)}</p>` : ''}
+    voeg('inkomen', 'Beoordeling 0-verklaring', `<p><b>${esc(r.nul.conclusie)}</b></p>${r.kader === 'NHG' ? '<p class="dempen">Het NHG-toetskader voorziet niet in een nulverklaring. De kengetallen zijn beoordeeld op basis van de NHG-normen.</p>' : ''}
       ${r.nul.perOnderneming.map((o) => `<h3>${esc(o.naam)} ${pil(o.status)}</h3>${voorwaardenTabel(o.checks)}`).join('')}
       <h3>Zekerheden en verplichtingen</h3>${voorwaardenTabel(r.nul.zekerheden)}
       ${r.nul.maandlastCorrectie ? `<p><b>Correctie op de toegestane financieringslast: € ${esc(fmt.getal(r.nul.maandlastCorrectie))} per maand.</b></p>` : ''}`);
@@ -216,7 +241,6 @@ function bouwRapport(d, r, modus) {
       <h3>Handmatige wijzigingen (expert judgement)</h3>${handmatig}
       ${correctieOverzicht}
       ${overwinstDeel}
-      ${uitgebreid ? methodenTabel(d, r) : ''}
       ${geldstromen}`);
   }
 
@@ -287,7 +311,7 @@ function bouwRapport(d, r, modus) {
 
   // ---- 6. Conclusie en beoordeling ------------------------------------------------------------
   const zakelijk = isNul
-    ? `<p><b>${esc(r.nul.conclusie)}</b></p>${r.nul.nhgOpmerking ? `<p class="dempen">${esc(r.nul.nhgOpmerking)}</p>` : ''}`
+    ? `<p><b>${esc(r.nul.conclusie)}</b></p>`
     : r.beleid ? `<p>${r.beleid.bedrag === null ? 'Het toetsinkomen moet nog worden vastgesteld.' : `${r.beleid.bewijs ? 'Uitkomst op basis van bewijsstuk' : 'Voorlopige rekenindicatie'}: <b>${esc(fmt.eur(r.beleid.bedrag))}</b>.`} Leg de beoordeling volgens de route van de geldverstrekker vast.</p>`
     : r.bron === 'geen'
       ? '<p><b>Er kan géén zakelijk inkomen worden afgegeven.</b></p>'
@@ -397,15 +421,15 @@ export function renderRapportPagina(d, r) {
   const afdrukken = globalThis.ZIB_ARTIFACT ? '' : `<button class="knop" data-actie="afdrukken">${icoon('afdruk')}Afdrukken of pdf</button>`;
   const inhoud = [['rap-kern', '', 'Kern'], ...hoofdstukken.map((h) => [`rap-${h.key}`, h.nr, h.titel, h.bijlage])];
   return `<div class="rapport-werkbalk geen-print">
-      <div class="segment" role="group" aria-label="Weergave van het rapport">
+      ${r.inkomensanalyse ? '' : `<div class="segment" role="group" aria-label="Weergave van het rapport">
         <button type="button" class="${modus === 'kort' ? 'actief' : ''}" aria-pressed="${modus === 'kort'}" data-actie="rapport-modus" data-modus="kort">Kort</button>
         <button type="button" class="${modus === 'uitgebreid' ? 'actief' : ''}" aria-pressed="${modus === 'uitgebreid'}" data-actie="rapport-modus" data-modus="uitgebreid">Uitgebreid</button>
       </div>
       <span class="dempen klein rapport-modus-uitleg">${modus === 'kort'
-    ? 'Kern, inkomen, kengetallen en conclusie. Uitgebreid voegt de vergelijking van toetskaders, geldstromen en per onderneming de rekenstappen en cijfers toe.'
-    : 'Alles, met als bijlagen de rekenstappen, balans en winst- en verliesrekening per onderneming.'}</span>
+    ? 'Kern, inkomen, kengetallen en conclusie. Uitgebreid voegt geldstromen en per onderneming de rekenstappen en cijfers toe.'
+    : 'Alles, met als bijlagen de rekenstappen, balans en winst- en verliesrekening per onderneming.'}</span>`}
       <span class="vul"></span>
-      ${weergaveOpties({ formules: modus === 'uitgebreid' })}
+      ${r.inkomensanalyse ? '' : weergaveOpties({ formules: modus === 'uitgebreid' })}
       ${afdrukken}
       <button class="knop sec" data-actie="rapport-download" title="Download het complete rapport als zelfstandig HTML-bestand">${icoon('download')} HTML downloaden</button>
       <button class="knop sec" data-actie="kopieer-notities">Kopieer dossiernotities</button>
@@ -423,10 +447,18 @@ export function renderRapportPagina(d, r) {
 export function dossierNotitiesTekst(d, r) {
   const n = d.notities || {};
   const regels = [];
-  const kader = kaderVoor(d);
+  if (r.inkomensanalyse) {
+    regels.push('Inkomensanalyse', `Aanvrager\t${naamAanvrager(d.aanvrager)}`, '', 'Uitkomsten per toetskader');
+    for (const x of vergelijkKaders(d)) regels.push(`${x.kort}\t${analyseBedrag(x)}\t${STATUS_TEKST[x.status] || ''}`);
+    if (n.algemeen) regels.push('', 'Toelichting', n.algemeen);
+    if (n.conclusie) regels.push('', 'Conclusie', n.conclusie);
+    return regels.join('\n');
+  }
+  const kader = r.kaderCfg || kaderVoor(d);
   regels.push('Algemeen');
   regels.push(`Aanvrager\t${naamAanvrager(d.aanvrager)}`);
-  regels.push(`Soort aanvraag\t${SOORTEN[d.soort]} ${kader.nhg ? 'met NHG' : `zonder NHG (${kader.kort})`}`);
+  regels.push(`Soort aanvraag\t${SOORTEN[d.soort] || d.soort}`);
+  regels.push(`Toetskader\t${kader.kort}, ${r.kaderVersie}`);
   regels.push(`Aantal ondernemingen\t${(d.ondernemingen || []).length}`);
   regels.push('');
   regels.push('Onderneming(en)');
@@ -463,7 +495,7 @@ export function dossierNotitiesTekst(d, r) {
     kader.inkomensberekening.forEach((x) => regels.push(`- ${x}`));
     regels.push('');
     regels.push('Handmatige wijzigingen (expert / professional judgement)');
-    regels.push(d.afwijkend?.actief ? `Afwijkend inkomen ${fmt.eur(num(d.afwijkend.bedrag))}: ${d.afwijkend.motivatie || ''}` : 'Geen handmatige wijzigingen.');
+    regels.push(!r.beleid && d.afwijkend?.actief ? `Afwijkend inkomen ${fmt.eur(num(d.afwijkend.bedrag))}: ${d.afwijkend.motivatie || ''}` : 'Geen handmatige wijzigingen.');
     regels.push('');
     regels.push('Zakelijk inkomen');
     regels.push(r.beleid ? r.beleid.bedrag === null ? 'Toetsinkomen nog te bepalen.' : `${r.beleid.bewijs ? 'Uitkomst op basis van bewijsstuk' : 'Voorlopige rekenindicatie'}: ${fmt.eur(r.beleid.bedrag)}; ter beoordeling.`

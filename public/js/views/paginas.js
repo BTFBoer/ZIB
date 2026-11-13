@@ -90,7 +90,7 @@ export function emailFormulier({ aan = '', bcc = '', onderwerp = '', bericht = '
 // ---------------------------------------------------------------------------
 const FAQ = [
   ['Welke toetskaders zitten in ZIB?',
-    'Je kiest het toetskader per dossier bij Klantgegevens. Onder Toetskaders zie je per geldverstrekker de bron en of ZIB een indicatie berekent, NHG gebruikt of om een verklaring vraagt. Onder Berekening kun je de routes vergelijken.'],
+    'Je kiest en bewaart het toetskader per dossier bij Klantgegevens. Met NHG geldt het NHG-toetskader. Kies Inkomensanalyse als je de uitkomsten van alle geldverstrekkers naast elkaar wilt zien. Onder Toetskaders vind je de bron en de rekenroute per geldverstrekker.'],
   ['Wat is het Optimaal toetskader en waarom zo?',
     'Een poging om het inkomen zo eerlijk en realistisch mogelijk te bepalen: wat de ondernemer werkelijk verdient en duurzaam kan onttrekken, zonder de toevalligheden van één kader. Een DGA met zeggenschap telt loon plus zijn aandeel in de winst na Vpb (dividend komt uit dezelfde winst en telt niet nog eens), maar alleen voor zover die winst na een dubbele balanstoets en uit vrije reserves uitkeerbaar is. Recente jaren wegen zwaarder (1-2-3, maximaal 10% boven het gemiddelde en maximaal het laatste jaar). Een lager lopend jaar weegt mee naar rato van de lengte van de periode, sterke schommelingen kosten een afslag, en dividend uit een minderheidsbelang telt alleen met een trackrecord en tot de winst van de deelneming. Starters met relevante ervaring krijgen geen afslag. De parameters zijn per dossier instelbaar.'],
   ['Wat is de holdingroute (ABN AMRO 3.63)?',
@@ -227,7 +227,7 @@ export function renderHulp() {
         <p><b>BZI-weergave:</b> de stappen van de rekentool van de bank: Algemeen, Bedrijven, per bedrijf de cijfers per jaar met correcties, Boekhouders, Geldstromen en verplichtingen, Samenvatting. De notities staan rechts. Kies in Mijn gegevens of ABN AMRO-dossiers standaard in deze weergave openen.</p>
         <p><b>Overwinst:</b> per hoofdbedrijf in te stellen, met de dubbele balanstoets (Berekening of de stap van het hoofdbedrijf).</p>
         <p><b>Berekening:</b> de balk bovenaan springt naar een onderdeel of onderneming. Formules in de rekenstappen zet je aan of uit; panelen klap je in via de kop. Bij drie of meer ondernemingen starten de ondernemingen die akkoord zijn ingeklapt.</p>
-        <p><b>Rapport:</b> Kort toont de kern (uitkomst, aandachtspunten, toelichting op de berekening, kengetallen en conclusie); Uitgebreid voegt de vergelijking van toetskaders, geldstromen en als bijlagen de rekenstappen en cijfers toe. De inhoudsopgave loopt mee. Print of sla op als pdf; met "Kopieer dossiernotities" plak je de samenvatting in een ander systeem.</p>
+        <p><b>Rapport</b> Kort toont de uitkomst, de aandachtspunten, de berekening, de kengetallen en de conclusie. Uitgebreid voegt de geldstromen, rekenstappen en cijfers toe. Bij Inkomensanalyse toont het rapport de uitkomsten per toetskader. Je kunt het rapport afdrukken of opslaan als pdf. Met "Kopieer dossiernotities" plak je de samenvatting in een ander systeem.</p>
         <p><b>Beoordeling:</b> meld gereed voor de 2e beoordeling; een collega met de juiste accreditatie geeft akkoord via Meekijken.</p>
       </div>
     </div>`;

@@ -88,6 +88,29 @@ export class LocalAdapter {
     return recs.length;
   }
 
+  /** Voeg voorbeelden toe, met behoud van bestaande en verwijderde dossiers. */
+  voegOntbrekendeToe(records) {
+    const bewaard = { ...(this.persistent ? lees(KEY, this.data) : this.data) };
+    const nummers = new Set(Object.values(bewaard)
+      .filter((r) => r.type === 'dossier' && !r.deleted)
+      .map((r) => r.nummer));
+    const toegevoegd = [];
+    for (const rec of records) {
+      if (Object.hasOwn(bewaard, rec.id)) continue;
+      if (rec.type === 'dossier' && rec.nummer) {
+        if (nummers.has(rec.nummer)) continue;
+        nummers.add(rec.nummer);
+      }
+      bewaard[rec.id] = rec;
+      toegevoegd.push(rec);
+    }
+    if (toegevoegd.length && this.persistent && !schrijf(KEY, bewaard)) {
+      throw new Error('De browseropslag is vol of geblokkeerd.');
+    }
+    this.data = bewaard;
+    return toegevoegd;
+  }
+
   async wisAlles() {
     this.data = {};
     this.versies = {};

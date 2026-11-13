@@ -18,6 +18,7 @@ import {
 import { paneelOrganogram } from './organogram.js';
 import { paneelGeldstromen, geldstromenTabel } from './geldstromen.js';
 import { overwinstBlok } from './overwinst.js';
+import { renderDossierbeleid } from './dossierbeleid.js';
 
 const MAANDEN_KORT = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
 
@@ -76,6 +77,13 @@ function navKnoppen(d, stap, ondId) {
 // Schil
 // ---------------------------------------------------------------------------
 export function bziKop(d, r) {
+  if (r.inkomensanalyse) {
+    return `<div class="bzi-kop" id="dossierkop">
+      <div class="bzi-kop-naam"><b>${esc(naamAanvrager(d.aanvrager))}</b>
+        <span class="dempen">${esc(d.nummer || '')}</span> ${pil('neutraal', 'Inkomensanalyse')}</div>
+      ${weergaveSchakelaar(d)}
+    </div>`;
+  }
   const isNul = d.soort === 'NUL';
   const ink = r.inkomen;
   const ph = ink?.perHoofdbedrijf || [];
@@ -223,12 +231,13 @@ function stapAlgemeen(d, r) {
   const advOpties = lijst('advieskantoor').sort((x, y) => x.naam.localeCompare(y.naam)).map((x) => [x.id, x.naam]);
   return `<h1>Algemeen</h1>
     <div class="bzi-blok">
+      <h3>Geldverstrekker en toetskader</h3>
+      ${renderDossierbeleid(d)}
       <h3>Lening</h3>
       <div class="bzi-rij">
         ${keuze(null, 'label', ['ABN AMRO', 'Florius', 'Moneyou', 'Overig'], d.label || 'ABN AMRO')}
         ${keuze(null, 'afdeling', ['FMD', 'IMV', 'RV'], d.afdeling || 'IMV')}
         <input value="${esc(d.leningnummer || '')}" data-bind="leningnummer" data-type="tekst" placeholder="Hypotheekaanvraagnummer" aria-label="Hypotheekaanvraagnummer">
-        <label class="check"><input type="checkbox" data-actie="bzi-nhg"${d.kader === 'NHG' ? ' checked' : ''}><span>NHG</span></label>
       </div>
       <div class="bzi-rij">
         <label class="check"><input type="checkbox"${d.bestaandeRelatie ? ' checked' : ''} data-bind="bestaandeRelatie" data-type="bool" data-render="1"><span>Bestaande relatie</span></label>

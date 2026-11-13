@@ -829,6 +829,7 @@ function totaalABN(dossier, analyses, ctx, trace, st) {
 export function bereken(dossier, opties = {}) {
   const { kader, datum, jaarNu, T, T3, C } = bepaalJaren(dossier);
   const inst = dossier.instellingen || {};
+  const inkomensanalyse = dossier.soort === 'ANALYSE';
   const soort = dossier.soort === 'NUL' ? 'NUL' : 'IKV';
   let vervanging = !!kader.vervangenVanaf && kader.familie === 'NHG' && soort === 'IKV' && !!inst.vervangOudsteJaar && !!C;
   const profielIKV = kader.beleid && soort === 'IKV';
@@ -1181,7 +1182,8 @@ export function bereken(dossier, opties = {}) {
     kaderNaam: kader.naam,
     kaderVersie: beleid?.versie || kader.versie,
     kaderCfg: kader,
-    soort,
+    soort: inkomensanalyse ? 'ANALYSE' : soort,
+    inkomensanalyse,
     datum,
     jaarNu,
     geldigTot: P.geldigTot(datum, kader.geldigheidMaanden),
@@ -1197,8 +1199,8 @@ export function bereken(dossier, opties = {}) {
     toets30: kader.dertigProcentRegel ? dertigProcentToets(dossier.loondienst, kader) : null,
     status,
     meldingen,
-    vastgesteld,
-    bron,
+    vastgesteld: inkomensanalyse ? null : vastgesteld,
+    bron: inkomensanalyse ? 'analyse' : bron,
     berekend: inkomen ? inkomen.berekend : 0,
     toetsinkomen: inkomen ? inkomen.toetsinkomen : 0,
     documenten: docs,
@@ -1218,7 +1220,7 @@ export function vergelijkKaders(dossier, ids = KADER_VOLGORDE) {
   };
   return ids.map((id) => {
     try {
-      const r = bereken({ ...basis, kader: id });
+      const r = bereken({ ...basis, kader: id, metNhg: false, soort: basis.soort === 'ANALYSE' ? 'IKV' : basis.soort });
       // Eerst de concrete voorwaarden per onderneming, daarna de meldingen op dossierniveau.
       const nok = [
         ...r.ondernemingen.filter((a) => a.meenemen !== false || r.familie === 'ABN')

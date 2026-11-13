@@ -2,7 +2,7 @@
 
 ZIB is een webapplicatie voor acceptanten zakelijk inkomen. Je voert per klantdossier de jaarcijfers in, ZIB berekent het bestendig zakelijk inkomen, toetst de voorwaarden en maakt een herleidbare rapportage met alle rekenstappen. De opzet volgt de rekensoftware voor inkomensverklaringen (ViiZ): volledige balans en W&V, normalisaties, overwinst met dubbele balanstoets, rekenstappen met formules en een uitgebreid rapport. Voor ABN AMRO-dossiers vertaalt ZIB de uitkomst bovendien naar de invoer van de rekentool van de bank (BZI).
 
-Vijf basiskaders en vijftien aanvullende geldverstrekkerprofielen. Je kiest per dossier het kader. Het tabblad Berekening laat het gekozen kader en de basiskaders zien, met de overige geldverstrekkers in een uitklapbare vergelijking:
+Vijf basiskaders en vijftien aanvullende geldverstrekkerprofielen. Kies bij Klantgegevens een geldverstrekker en klik op Opslaan. De beoordeling toont alleen dat kader; met NHG is dat alleen NHG. Kies Inkomensanalyse als je alle uitkomsten naast elkaar wilt zien:
 
 | Kader | Inkomensverklaring (IKV) |
 |---|---|
@@ -52,7 +52,7 @@ De 0-verklaring (nul-inkomen) beoordeelt verplichtingen, zekerheden, kasstroom e
 - **Geldstromen**: management fee, intern dividend (naar rato van het belang), DGA-loon, betaalbaar gesteld dividend versus box 2, nog te ontvangen dividend, en overige stromen of posities (ook met partijen buiten de berekening, zoals een fee aan de holding van een medeaandeelhouder of een rekening-courant tussen zustermaatschappijen), telkens volgens beide partijen met het verschil.
 - **Verplichtingen**: rekening-courant directie, lening directie (annuïteit), zakelijke kredieten en lease (lopend/afgelost), DGA-loon lopend jaar uit de salarisstrook.
 - **Notities** in de opbouw van de rekentool (algemene informatie en organogram, financiële informatie per onderneming, privé, kredietbestemming, conclusie, bijlagen) met formats, concepttekst uit de invoer en de rekenkundige onderbouwing van een afwijkend inkomen.
-- **Rapport** in twee weergaven, met genummerde hoofdstukken en een inhoudsopgave die meeloopt. Bovenaan staat de kern: de uitkomst, de belangrijkste gegevens en de aandachtspunten uit de rekenkern (zwaarste eerst). *Kort* bevat daarnaast de inkomensvaststelling met de toelichting op de berekening in drie kolommen (omschrijving, berekening, uitkomst), de ondernemingen met organogram, kengetallen en voorwaarden, verplichtingen, toelichting, conclusie en verantwoording. *Uitgebreid* voegt de vergelijking van toetskaders, geldstromen, alle voorwaarden en als bijlagen de rekenstappen, balans en winst- en verliesrekening per onderneming toe. Hoofdstukken klappen in op het scherm; afdrukken en downloaden geven altijd het hele rapport.
+- **Rapport** in twee weergaven, met genummerde hoofdstukken en een inhoudsopgave die meeloopt. Bovenaan staat de kern: de uitkomst, de belangrijkste gegevens en de aandachtspunten uit de rekenkern (zwaarste eerst). *Kort* bevat daarnaast de inkomensvaststelling met de toelichting op de berekening in drie kolommen (omschrijving, berekening, uitkomst), de ondernemingen met organogram, kengetallen en voorwaarden, verplichtingen, toelichting, conclusie en verantwoording. *Uitgebreid* voegt geldstromen, alle voorwaarden en als bijlagen de rekenstappen, balans en winst- en verliesrekening per onderneming toe. Hoofdstukken klappen in op het scherm; afdrukken en downloaden geven altijd het hele rapport. Het rapport van een *Inkomensanalyse* bevat de uitkomsten per toetskader.
 - **Fiattering**: 1e beoordeling (gereed melden), 2e beoordeling met controlevragen en accreditatiecheck (vier ogen), historie en eerdere versies.
 - **Opslag**: lokaal in de browser (demo/offline), in de demo op claude.ai gespiegeld naar een map in je Google Drive (versies, samenvoegen per dossier), of centraal in Cloudflare D1 met versiegeschiedenis, conflictdetectie en point-in-time-herstel. Zie [docs/CLOUD.md](docs/CLOUD.md).
 
@@ -64,7 +64,7 @@ cd ZIB
 npm run dev          # statische server op http://localhost:5173
 ```
 
-Of bouw één zelfstandig bestand met `npm run build:demo` en open `dist/zib-demo.html` in de browser. In de lokale modus laadt ZIB negen demodossiers, waaronder een holdingstructuur met gedeelde deelneming, STAK, overwinst en geldstromen (ZIB-2026-0005), een Knab-starter met beletperiode (ZIB-2026-0101), een holding met minderheidsdeelneming (ZIB-2026-0102) en een oefendossier met de echte geconsolideerde jaarcijfers van Renewi Limited en een fictieve DGA (ZIB-2026-0103: IFRS, gebroken boekjaar, buitenlandse vennootschap, beëindigde activiteiten en aandeel derden). Een nieuw demodossier verschijnt in een bestaande browser na *Mijn gegevens > Demodossiers laden*.
+Of bouw één zelfstandig bestand met `npm run build:demo` en open `dist/zib-demo.html` in de browser. ZIB bevat onder meer een holdingstructuur met STAK en overwinst (ZIB-2026-0005), een Knab-starter (ZIB-2026-0101) en het oefendossier Renewi (ZIB-2026-0103). Onder **Aanvragen → Oefendossiers** vind je ZIB-2026-0110 t/m 0113: dezelfde fictieve cijfers voor Venn, ING, Rabobank en NIBC.
 
 ## Publiceren
 

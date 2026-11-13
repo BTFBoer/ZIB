@@ -1,7 +1,7 @@
 import { kiesAdapter } from './store/index.js';
 import { ConflictError } from './store/api.js';
 import { uid, nowISO } from './util.js';
-import { demoRecords } from './data/demo.js';
+import { demoRecords, beleidVoorbeelden } from './data/demo.js';
 import { migreerDossier } from './schema/fields.js';
 import { priveAlsTekst } from './views/formats.js';
 
@@ -63,6 +63,9 @@ export async function start() {
   lijst.forEach((r) => state.records.set(r.id, migreer(r)));
   if (adapter.naam === 'lokaal' && lijst.length === 0 && !lsGet('zib.demo.geladen')) {
     await laadDemo();
+  } else if (kanBeleidsvoorbeeldenLaden() && globalThis.ZIB_DEMO === true && lsGet('zib.demo.geladen')
+    && lijst.some((r) => r.type === 'dossier' && r.id.startsWith('dos_demo_'))) {
+    try { laadBeleidsvoorbeelden(); } catch (e) { state.waarschuwing ||= e.message; }
   }
   state.profiel = laadProfiel();
 }
@@ -129,6 +132,7 @@ export function get(id) {
 const timers = new Map();
 const bezig = new Set();
 const opnieuw = new Set();
+const lopendeSchrijfacties = new Map();
 
 export function opslaan(rec, { direct = false } = {}) {
   rec.gewijzigd = nowISO();
@@ -139,18 +143,34 @@ export function opslaan(rec, { direct = false } = {}) {
   clearTimeout(timers.get(rec.id));
   if (direct) {
     timers.delete(rec.id);
-    return schrijf(rec.id);
+    return schrijfDirect(rec.id);
   }
   timers.set(rec.id, setTimeout(() => schrijf(rec.id), 700));
   return null;
 }
 
-async function schrijf(id) {
-  timers.delete(id);
-  if (bezig.has(id)) {
-    opnieuw.add(id);
-    return;
+async function schrijfDirect(id) {
+  while (lopendeSchrijfacties.has(id)) {
+    if (await lopendeSchrijfacties.get(id) === false) return false;
   }
+  return schrijf(id);
+}
+
+function schrijf(id) {
+  if (lopendeSchrijfacties.has(id)) {
+    opnieuw.add(id);
+    return lopendeSchrijfacties.get(id);
+  }
+  const taak = Promise.resolve().then(() => schrijfRecord(id)).finally(() => {
+    lopendeSchrijfacties.delete(id);
+    if (opnieuw.delete(id)) schrijf(id);
+  });
+  lopendeSchrijfacties.set(id, taak);
+  return taak;
+}
+
+async function schrijfRecord(id) {
+  timers.delete(id);
   const rec = state.records.get(id);
   if (!rec) return;
   bezig.add(id);
@@ -162,6 +182,7 @@ async function schrijf(id) {
     if (!timers.size && bezig.size === 1) {
       state.opslag = { status: 'opgeslagen', tijd: new Date(), fout: '' };
     }
+    return true;
   } catch (e) {
     if (e instanceof ConflictError) {
       state.conflict = { id, huidig: e.huidig };
@@ -170,13 +191,10 @@ async function schrijf(id) {
     } else {
       state.opslag = { status: 'fout', tijd: state.opslag.tijd, fout: e.message || String(e) };
     }
+    return false;
   } finally {
     bezig.delete(id);
     meld('opslag');
-    if (opnieuw.has(id)) {
-      opnieuw.delete(id);
-      schrijf(id);
-    }
   }
 }
 
@@ -187,7 +205,7 @@ export async function bewaarAlles() {
 }
 
 export function heeftOnopgeslagen() {
-  return timers.size > 0 || bezig.size > 0;
+  return timers.size > 0 || lopendeSchrijfacties.size > 0;
 }
 
 export function nieuw(type, data = {}) {
@@ -260,14 +278,9 @@ export async function importeer(json) {
 export async function laadDemo() {
   const recs = demoRecords();
   if (state.adapter?.naam === 'lokaal') {
-    // Lokaal met de oorspronkelijke tijdstempels: een nieuwere versie elders (bijv. in Google Drive,
-    // waar een demodossier is gewijzigd of verwijderd) wint dan bij het samenvoegen.
-    const metTijd = recs.map((r) => ({ ...r, version: 1, updated_at: r.gewijzigd || r.aangemaakt || '2026-01-01T00:00:00.000Z' }));
-    await state.adapter.importAll({ records: metTijd });
-    metTijd.forEach((r) => state.records.set(r.id, migreer({ ...r })));
+    const aantal = voegLokaleVoorbeeldenToe(recs);
     lsSet('zib.demo.geladen', '1');
-    meld('records');
-    return;
+    return aantal;
   }
   for (const r of recs) {
     const res = await state.adapter.put(r);
@@ -275,6 +288,24 @@ export async function laadDemo() {
   }
   lsSet('zib.demo.geladen', '1');
   meld('records');
+}
+
+export function kanBeleidsvoorbeeldenLaden() {
+  return state.adapter?.naam === 'lokaal' && !globalThis.ZIB_ARTIFACT;
+}
+
+export function laadBeleidsvoorbeelden() {
+  if (!kanBeleidsvoorbeeldenLaden()) return 0;
+  return voegLokaleVoorbeeldenToe(beleidVoorbeelden());
+}
+
+function voegLokaleVoorbeeldenToe(records) {
+  // De oorspronkelijke tijdstempels houden samenvoegen met een bestaande back-up voorspelbaar.
+  const metTijd = records.map((r) => ({ ...r, version: 1, updated_at: r.gewijzigd || r.aangemaakt || '2026-01-01T00:00:00.000Z' }));
+  const toegevoegd = state.adapter.voegOntbrekendeToe(metTijd);
+  toegevoegd.forEach((r) => state.records.set(r.id, migreer({ ...r })));
+  if (toegevoegd.length) meld('records');
+  return toegevoegd.length;
 }
 
 export async function wisLokaal() {

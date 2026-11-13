@@ -2,7 +2,7 @@ import { esc, fmt, naamAanvrager, num, isIngevuld, getPath } from '../util.js';
 import { get, lijst, state } from '../state.js';
 import { bepaalJaren, vergelijkKaders } from '../engine/index.js';
 import {
-  RECHTSVORMEN, BEROEPSGROEPEN, SOORTEN, kaderLabel, soortOndernemer, KADERS, BASIS_KADERS, KADER_VOLGORDE, kaderOpties, kaderVoor, PARAM_LABELS, leesPad,
+  RECHTSVORMEN, BEROEPSGROEPEN, SOORTEN, kaderLabel, soortOndernemer, KADERS, kaderVoor, PARAM_LABELS, leesPad,
 } from '../engine/kaders.js';
 import {
   BALANS_RIJEN, VW_RIJEN, DIVERSEN_RIJEN, DIVERSEN_VLAGGEN, IB_ONDERNEMING_RIJEN, IB_PERSOON_RIJEN,
@@ -29,6 +29,7 @@ import { paneelGeldstromen, geldstromenTabel } from './geldstromen.js';
 import { overwinstBlok } from './overwinst.js';
 import { renderBziInvoer } from './bziinvoer.js';
 import { beleidInvoer, beleidUitkomst } from './beleid.js';
+import { renderDossierbeleid } from './dossierbeleid.js';
 
 export const TABS = [
   ['overzicht', 'Dossieroverzicht'],
@@ -66,7 +67,10 @@ export function dossierKop(d, r) {
   const isNul = d.soort === 'NUL';
   let label = 'Vastgesteld zakelijk inkomen';
   let toelichting = `Geldig voor bindende offertes t/m ${fmt.datum(r.geldigTot)}`;
-  if (isNul) {
+  if (r.inkomensanalyse) {
+    label = 'Inkomensanalyse';
+    toelichting = 'Vergelijk de uitkomsten per toetskader.';
+  } else if (isNul) {
     label = '0-verklaring';
     toelichting = r.nul?.maandlastCorrectie ? `Maandlastcorrectie € ${fmt.getal(r.nul.maandlastCorrectie)} per maand` : r.nul ? STATUS_TEKST[r.nul.status] : '';
   } else if (r.bron === 'afwijkend') {
@@ -88,16 +92,16 @@ export function dossierKop(d, r) {
       <div class="naam">${esc(naamAanvrager(d.aanvrager))}</div>
       <div class="meta">
         <span>${esc(d.nummer || '')}</span>
-        ${pil('neutraal', SOORTEN[d.soort] || d.soort)} ${pil('neutraal', kaderLabel(d.kader))} ${statusPil(d.status)}${d.spoed ? ' <span class="badge-spoed">Spoed</span>' : ''}
+        ${pil('neutraal', SOORTEN[d.soort] || d.soort)} ${r.inkomensanalyse ? '' : pil('neutraal', kaderLabel(r.kader))} ${statusPil(d.status)}${d.spoed ? ' <span class="badge-spoed">Spoed</span>' : ''}
         ${adv ? `<span>${esc(adv.naam)}</span>` : ''}
         <span>Berekeningsdatum ${esc(fmt.datum(r.datum))}</span>
-        <span>Toetsjaren ${esc(r.T.join(', '))}${r.C ? ` + ${r.C}` : ''}</span>
+        ${r.inkomensanalyse ? '' : `<span>Toetsjaren ${esc(r.T.join(', '))}${r.C ? ` + ${r.C}` : ''}</span>`}
       </div>
-      <div class="kop-onder">${weergaveSchakelaar(d, 'viiz')}${voortgangKop(d, r)}</div>
+      <div class="kop-onder">${!r.inkomensanalyse && ['ABN', 'NHG'].includes(r.kader) ? weergaveSchakelaar(d, 'viiz') : ''}${voortgangKop(d, r)}</div>
     </div>
     <div class="toetsinkomen">
-      <div class="label">${esc(label)} ${pil(r.status, r.beleid && r.status === 'akkoord' ? 'Ter beoordeling' : undefined)}</div>
-      <div class="bedrag">${isNul ? '€ 0' : r.beleid ? r.beleid.bedrag === null ? 'Nog te bepalen' : esc(fmt.eur(r.beleid.bedrag)) : esc(fmt.eur(r.vastgesteld))}</div>
+      <div class="label">${esc(label)} ${r.inkomensanalyse ? '' : pil(r.status, r.beleid && r.status === 'akkoord' ? 'Ter beoordeling' : undefined)}</div>
+      ${r.inkomensanalyse ? '' : `<div class="bedrag">${isNul ? '€ 0' : r.beleid ? r.beleid.bedrag === null ? 'Nog te bepalen' : esc(fmt.eur(r.beleid.bedrag)) : esc(fmt.eur(r.vastgesteld))}</div>`}
       <div class="toelichting">${esc(toelichting)}</div>
     </div>
   </div>`;
@@ -105,6 +109,7 @@ export function dossierKop(d, r) {
 
 /** Weergave van dit dossier, rekening houdend met de voorkeur van de gebruiker voor ABN AMRO-dossiers. */
 export function weergaveDossier(d) {
+  if (d.soort === 'ANALYSE' || !['ABN', 'NHG'].includes(kaderVoor(d).id)) return 'viiz';
   return weergaveVan(d, state.profiel?.weergaveABN || 'viiz');
 }
 
@@ -307,9 +312,7 @@ function tabKlant(d, r) {
   const toetsjaarOpties = [['', `Standaard (${r.T3})`], ...[jaarNu - 1, jaarNu - 2, jaarNu - 3].map((y) => [String(y), String(y)])];
   const heeftVPB = (d.ondernemingen || []).some((o) => soortOndernemer(o.rechtsvorm) === 'VPB');
 
-  const aanvraag = `<section class="paneel"><h2>Aanvraag</h2><div class="raster-3">
-    ${keuze('Soort aanvraag', 'soort', { IKV: 'Inkomensverklaring (IKV)', NUL: '0-verklaring (nul-inkomen)' }, d.soort, { render: true })}
-    ${keuze('Toetskader', 'kader', kaderOpties(), d.kader, { render: true, hint: `${kader.versie}. ${kader.bronStatus || ''}` })}
+  const aanvraag = `<section class="paneel"><h2>Aanvraag</h2>${renderDossierbeleid(d)}<div class="raster-3">
     ${veld('Berekeningsdatum', 'berekeningsdatum', d.berekeningsdatum, { type: 'datum', render: true })}
     ${keuze('Status', 'status', DOSSIER_STATUSSEN, d.status, { render: true })}
     ${keuze('Advieskantoor', 'advieskantoorId', advOpties, d.advieskantoorId, { leeg: 'Geen / onbekend' })}
@@ -373,7 +376,7 @@ function tabKlant(d, r) {
     ${d.soort === 'NUL' || (d.ondernemingen || []).some((o) => o.meenemen === false || o.nulInkomen) ? paneelNul(d) : ''}
     ${d.soort === 'IKV' && !kader.beleid ? paneelAfwijkend(d, r) : ''}`);
   return `<div class="intake-basis">${aanvraag}${aanvrager}</div>
-    ${beleidInvoer(d, r)}
+    ${r.inkomensanalyse ? '' : beleidInvoer(d, r)}
     ${ondernemingen}
     <div class="intake-aanvullend">${behandeling}${contact}${toetsopties}${structuur}${verplichtingen}${aanvullende}</div>`;
 }
@@ -557,7 +560,7 @@ function tabRooster(d, ond, tab, r) {
   const uitleg = {
     balans: 'Bedragen per balansdatum. Punten zijn duizendtallen, de komma is het decimaalteken. Het verschil tussen activa en passiva moet 0 zijn.',
     vw: 'Kosten en lasten als positief bedrag invullen. Bij het lopende jaar: de cijfers over de periode in de kolomkop.',
-    diversen: `Correcties volgen het gekozen kader (${kaderLabel(d.kader)}). Laat incidentele baten/lasten leeg om de bijzondere posten uit de V&W te gebruiken.`,
+    diversen: `Correcties volgen ${r.inkomensanalyse ? 'het kader per rekenuitkomst' : `het gekozen kader (${kaderLabel(r.kader)})`}. Laat incidentele baten/lasten leeg om de bijzondere posten uit de V&W te gebruiken.`,
   }[tab];
   const modusKnop = tab !== 'diversen' ? `<div class="segment" role="group" aria-label="Invoermodus">
       <button type="button" class="${ui.uitgebreid ? '' : 'actief'}" data-actie="modus" data-modus="quick">Quick-scan</button>
@@ -828,40 +831,34 @@ export function ondernemingenMatrix(d, r, analyses, { links = true } = {}) {
     <p class="dempen klein" style="margin:8px 0 0">De bedragen en ratio's gelden voor ${T3}; de stip ervoor geeft het oordeel over alle toetsjaren${r.C ? ' en het controlejaar' : ''} (rond = akkoord, ruit = attentie, vierkant = niet akkoord).</p>`;
 }
 
-/** Hetzelfde dossier volgens alle toetskaders naast elkaar, plus de berekeningswijzen 1-1-1, 1-2-3 en 1-3-4. */
+/** Geselecteerd kader uit de rekenuitkomst. */
+function beoordelingskader(r) {
+  return `<p class="dempen" data-beoordelingskader="${esc(r.kader)}"><b>Toetskader</b> ${esc(r.kaderCfg.kort)} · ${esc(r.kaderVersie)}</p>`;
+}
+
+export function analyseBedrag(x) {
+  if (x.fout) return 'Niet te berekenen';
+  if (x.beleid?.bedrag === null) return x.beleid.indicatie === null ? 'Nog te bepalen' : `${fmt.eur(x.beleid.indicatie)} indicatief`;
+  return fmt.eur(x.toetsinkomen);
+}
+
+/** Alle uitkomsten op dezelfde invoer, beschikbaar voor een inkomensanalyse. */
 export function methodenTabel(d, r, { kop = true } = {}) {
-  if (d.soort === 'NUL' || !r.inkomen) return '';
-  let v = [];
-  const standaard = [...new Set([r.kader, ...BASIS_KADERS])];
-  try { v = vergelijkKaders(d, standaard); } catch { v = []; }
-  const m = r.inkomen.methoden;
-  const TO = ordeJarenOverzicht(r.T);
+  if (!r.inkomensanalyse) return '';
+  const uitkomsten = vergelijkKaders(d);
   const rij = (x) => {
-    if (x.fout) return `<tr><td><b>${esc(x.kort)}</b></td><td colspan="5" class="dempen">Niet te berekenen: ${esc(x.fout)}</td></tr>`;
-    const huidig = x.id === r.kader;
+    const open = `<tr data-analysekader="${esc(x.id)}">`;
+    if (x.fout) return `${open}<th scope="row">${esc(x.kort)}</th><td colspan="5" class="dempen">Niet te berekenen: ${esc(x.fout)}</td></tr>`;
     const reden = x.status === 'niet_akkoord' && x.nok.length ? `<div class="dempen klein">${esc(x.nok.slice(0, 4).join('; '))}</div>` : '';
     const stap = x.stappen?.length ? `<div class="dempen klein">${esc(x.stappen.slice(0, 2).join(' '))}</div>` : '';
-    return `<tr${huidig ? ' class="actief-rij"' : ''}><td><b>${esc(x.kort)}</b>${huidig ? ' <span class="dempen klein">(gekozen)</span>' : ''}<div class="dempen klein">${esc(x.versie)}</div></td>
+    const uitkomst = x.beleid ? 'Ter beoordeling' : x.bron === 'geen' ? 'Geen inkomen' : fmt.eur(x.vastgesteld);
+    return `${open}<th scope="row"><b>${esc(x.kort)}</b><div class="dempen klein">${esc(x.versie)}</div></th>
       <td>${pil(x.status, x.beleid && x.status === 'akkoord' ? 'Ter beoordeling' : undefined)}${reden}</td>
       <td class="num">${x.box1 === null ? '–' : fmt.eur(x.box1)}</td><td class="num">${x.box2 ? fmt.eur(x.box2) : '–'}</td>
-      <td class="num"><b>${x.beleid?.bedrag === null ? x.beleid.indicatie === null ? 'Nog te bepalen' : `${fmt.eur(x.beleid.indicatie)} indicatief` : fmt.eur(x.toetsinkomen)}</b>${stap}</td>
-      <td class="num">${x.beleid ? '<span class="dempen">Ter beoordeling</span>' : x.bron === 'geen' ? `<span class="dempen">€ 0 (geen inkomen)</span>` : fmt.eur(x.vastgesteld)}</td></tr>`;
+      <td class="num"><b>${esc(analyseBedrag(x))}</b>${stap}</td><td>${esc(uitkomst)}</td></tr>`;
   };
-  const tabel = (regels) => `<div class="scroll"><table class="tabel"><thead><tr><th>Kader</th><th>Oordeel</th><th class="num">Box 1</th><th class="num">Box 2</th><th class="num">Bedrag</th><th class="num">Af te geven</th></tr></thead><tbody>${regels.map(rij).join('')}</tbody></table></div>`;
-  const extra = KADER_VOLGORDE.filter((id) => !standaard.includes(id));
-  const bedragen = v.filter((x) => !x.fout && !x.beleid).map((x) => x.vastgesteld);
-  const spreiding = bedragen.length ? Math.max(...bedragen) - Math.min(...bedragen) : 0;
-  return `${kop ? '<h3>Vergelijking toetskaders</h3>' : ''}
-    <p class="dempen klein">Vergelijk het gekozen kader (${esc(kaderLabel(r.kader))}) met de basiskaders. Bij een aanvullend profiel blijft een indicatie of geregistreerde verklaring ter beoordeling.</p>
-    ${tabel(v)}
-    ${extra.length ? `<details class="stappen"><summary>Overige geldverstrekkers vergelijken (${extra.length})</summary><div class="inhoud">${tabel(vergelijkKaders(d, extra))}</div></details>` : ''}
-    ${spreiding ? `<p class="dempen klein" style="margin-top:6px">Verschil tussen het hoogste en laagste kader: ${esc(fmt.eur(spreiding))}.</p>` : ''}
-    ${m ? `<details class="stappen" style="margin-top:10px"><summary>Berekeningswijzen 1-1-1, 1-2-3 en 1-3-4 op het totaal per jaar</summary><div class="inhoud">
-      <div class="scroll"><table class="tabel trace"><thead><tr><th>Berekening</th><th class="num">${TO.join(' / ')}</th><th class="num">Uitkomst</th></tr></thead><tbody>
-      <tr><td><b>1-1-1</b><div class="dempen klein">Gemiddelde van drie jaar, maximaal het laatste jaar (NHG, ABN AMRO, ASN Bank)</div></td><td class="num">${TO.map((y) => fmt.getal(m.jaren[y])).join(' / ')}</td><td class="num"><span class="f">${esc(`${m.fGemiddelde} ${fmt.getal(m.gemiddelde)}; max. laatste jaar`)}</span>${fmt.eur(m.m111)}</td></tr>
-      <tr><td><b>1-2-3</b><div class="dempen klein">Gewogen: oudste 1×, middelste 2×, laatste 3×, maximaal het laatste jaar (basis van Optimaal en van het Knab-concept 2024, met een grens van 10% boven 1-1-1)</div></td><td class="num">${TO.map((y) => fmt.getal(m.jaren[y])).join(' / ')}</td><td class="num"><span class="f">${esc(`${m.fGewogen} ${fmt.getal(m.gewogen)}; max. laatste jaar`)}</span>${fmt.eur(m.m123)}</td></tr>
-      ${m.m134 !== undefined ? `<tr><td><b>1-3-4</b><div class="dempen klein">Gewogen: oudste 1×, middelste 3×, laatste 4×, maximaal het laatste jaar (Knab volgens de acceptatiegids 2026, zonder NHG; ZIB houdt de grens van 10% boven 1-1-1 aan)</div></td><td class="num">${TO.map((y) => fmt.getal(m.jaren[y])).join(' / ')}</td><td class="num"><span class="f">${esc(`${m.fGewogen134} ${fmt.getal(m.gewogen134)}; max. laatste jaar`)}</span>${fmt.eur(m.m134)}</td></tr>` : ''}
-      </tbody></table></div></div></details>` : ''}`;
+  return `<div data-inkomensanalyse>${kop ? '<h3>Uitkomsten per toetskader</h3>' : ''}
+    <div class="scroll"><table class="tabel"><thead><tr><th scope="col">Toetskader</th><th scope="col">Oordeel</th><th scope="col" class="num">Box 1</th><th scope="col" class="num">Box 2</th><th scope="col" class="num">Berekend inkomen</th><th scope="col">Uitkomst</th></tr></thead><tbody>${uitkomsten.map(rij).join('')}</tbody></table></div></div>`;
 }
 
 /** Schakelaar voor de formules in de rekenstappen en de knoppen om alles in of uit te klappen. */
@@ -874,6 +871,9 @@ export function weergaveOpties({ formules = true } = {}) {
 }
 
 function tabBerekening(d, r) {
+  if (r.inkomensanalyse) {
+    return `<section class="paneel"><h2>Uitkomsten per toetskader</h2>${methodenTabel(d, r, { kop: false })}</section>`;
+  }
   const isNul = d.soort === 'NUL';
   const analyses = r.ondernemingen.filter((a) => !(d.soort === 'IKV' && !a.meenemen && r.familie !== 'ABN'));
   // Bij drie of meer ondernemingen starten de ondernemingen die akkoord zijn ingeklapt: de aandacht gaat naar de rest.
@@ -890,7 +890,7 @@ function tabBerekening(d, r) {
     const n = r.nul;
     nav.push(['ber-inkomen', 'Beoordeling', n.status]);
     delen.push(klapPaneel('ber:inkomen', 'ber-inkomen', `Beoordeling 0-verklaring ${pil(n.status)}`, `
-      ${n.nhgOpmerking ? melding('info', esc(n.nhgOpmerking)) : ''}
+      ${r.kader === 'NHG' ? melding('info', 'Het NHG-toetskader voorziet niet in een nulverklaring. De kengetallen zijn beoordeeld op basis van de NHG-normen.') : ''}
       <p style="margin-top:10px"><b>${esc(n.conclusie)}</b></p>
       ${n.toelichtingCorrectie.length ? `<p class="dempen">${esc(n.toelichtingCorrectie.join('; '))}</p>` : ''}
       ${n.perOnderneming.map((o) => `<h3 style="margin-top:16px">${esc(o.naam)} <span class="dempen klein">${esc(o.rechtsvorm)}</span> ${pil(o.status)}</h3>${voorwaardenLijst(o.checks)}`).join('')}
@@ -901,8 +901,6 @@ function tabBerekening(d, r) {
     delen.push(klapPaneel('ber:inkomen', 'ber-inkomen', 'Inkomensvaststelling', `${inkomensTabel(d, r)}
       ${r.inkomen.stappen.length ? `<ul class="dempen" style="margin:10px 0 0 18px">${r.inkomen.stappen.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}
       ${r.inkomen.nietMeegenomen ? `<h3 style="margin-top:14px">Niet-meegenomen ondernemingen (risicobeoordeling) ${pil(r.inkomen.nietMeegenomen.status)}</h3>${r.inkomen.nietMeegenomen.perOnderneming.map((o) => `<p><b>${esc(o.naam)}</b></p>${voorwaardenLijst(o.checks)}`).join('')}` : ''}`));
-    nav.push(['ber-kaders', 'Toetskaders', '']);
-    delen.push(klapPaneel('ber:kaders', 'ber-kaders', 'Vergelijking toetskaders', methodenTabel(d, r, { kop: false })));
     const metOverwinst = r.ondernemingen.filter((a) => a.box2?.overwinst);
     if (metOverwinst.length) {
       nav.push(['ber-overwinst', 'Overwinst', '']);
@@ -942,7 +940,7 @@ function tabBerekening(d, r) {
     <nav class="subnav-links" aria-label="Onderdelen van de berekening">${nav.map(([doel, label, status]) => `<button type="button" data-actie="naar-sectie" data-doel="${esc(doel)}">${status ? stip(status) : ''}${esc(label)}</button>`).join('')}</nav>
     ${weergaveOpties()}
   </div>`;
-  return `<div class="berekening${ui.formules ? '' : ' zonder-formules'}">${subnav}${delen.join('')}</div>`;
+  return `<div class="berekening${ui.formules ? '' : ' zonder-formules'}">${beoordelingskader(r)}${subnav}${delen.join('')}</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1003,12 +1001,13 @@ function tabNotities(d, r) {
   const blokTekst = (titel, pad, waarde, format, rijen = 8, extra = '') => `<div class="paneel"><div class="paginakop" style="margin:0 0 6px"><h2>${esc(titel)}</h2><span class="acties">${extra}${format ? formatKnop(pad, format) : ''}</span></div>
     <textarea rows="${rijen}" data-bind="${esc(pad)}" data-type="tekst" data-template="${esc(format || '')}" placeholder="${esc(format ? FORMATS[format] || '' : '')}" aria-label="${esc(titel)}">${esc(waarde || '')}</textarea></div>`;
   return `
+    ${r.inkomensanalyse ? `<section class="paneel">${methodenTabel(d, r)}</section>` : beoordelingskader(r)}
     ${blokTekst('Algemene informatie en organogram', 'notities.algemeen', n.algemeen, 'algemeen', 10, '<button class="knop link klein" data-actie="organogram-invoegen">Organogram invoegen</button>')}
     ${(d.ondernemingen || []).map((o) => blokTekst(`Financiële informatie: ${o.naam || 'onderneming'}`, `notities.financieelOnderneming.${o.id}`, n.financieelOnderneming?.[o.id], 'financieelOnderneming', 9,
       `<button class="knop link klein" data-actie="concept-financieel" data-ond="${esc(o.id)}">Concept uit invoer</button>`)).join('')}
     ${blokTekst('Financiële informatie ondernemer in privé', 'notities.priveTekst', n.priveTekst, 'prive', 8)}
     ${blokTekst('Kredietbestemming en aflossing', 'notities.kredietbestemming', n.kredietbestemming, 'kredietbestemming', 4)}
-    ${blokTekst(`Conclusie (${d.afdeling === 'RV' ? 'RV' : 'FMD en IMV'})`, 'notities.conclusie', n.conclusie, conclusieFormat(d, r), 9)}
+    ${blokTekst('Conclusie', 'notities.conclusie', n.conclusie, r.inkomensanalyse ? null : conclusieFormat(d, r), 9)}
     ${blokTekst('Bijlagen en stukkenlijst', 'notities.bijlagen', n.bijlagen, 'bijlagen', 7)}
     <div class="paneel"><h2>Broncontroles</h2><div class="raster-2">
       ${tekstvak('Insolventieregister en beroepsregisters (BIG/LRK/NBA/NOvA/KNB): datum en resultaat', 'notities.broncontroles', n.broncontroles, { rijen: 3 })}
@@ -1028,7 +1027,10 @@ function tabNotities(d, r) {
 // ---------------------------------------------------------------------------
 // Fiattering en historie
 // ---------------------------------------------------------------------------
-function tabFiat(d) {
+function tabFiat(d, r) {
+  if (r.inkomensanalyse) {
+    return `<section class="paneel"><p>Kies en bewaar één toetskader bij <a href="${dossierPad(d, 'klant')}">Klantgegevens</a> om een inkomensbeoordeling te fiatteren.</p>${methodenTabel(d, r)}</section>`;
+  }
   const f = d.fiat || {};
   const p = state.profiel || {};
   const acc = p.accreditatie || 'Basis';
@@ -1061,11 +1063,11 @@ function tabFiat(d) {
       </div>` : '<p class="dempen">De tweede beoordeling is mogelijk zodra het dossier gereed is gemeld (status "2e beoordeling").</p>'}
   </div>`;
   const historie = `<div class="paneel"><h2>Historie</h2>
-    ${(d.historie || []).length ? `<table class="tabel"><thead><tr><th>Tijdstip</th><th>Door</th><th>Actie</th></tr></thead><tbody>${d.historie.map((h) => `<tr><td class="nowrap">${esc(fmt.tijdstip(h.at))}</td><td>${esc(h.door)}</td><td>${esc(h.actie)}</td></tr>`).join('')}</tbody></table>` : '<p class="dempen">Nog geen historie.</p>'}
+    ${(d.historie || []).length ? `<table class="tabel"><thead><tr><th>Tijdstip</th><th>Door</th><th>Actie</th></tr></thead><tbody>${d.historie.map((h) => `<tr><td class="nowrap">${esc(fmt.tijdstip(h.at))}</td><td>${esc(h.door)}</td><td>${esc(/^Toetskader gewijzigd\b/i.test(h.actie) ? 'Toetskader gewijzigd' : h.actie)}</td></tr>`).join('')}</tbody></table>` : '<p class="dempen">Nog geen historie.</p>'}
     <div class="acties" style="margin-top:12px"><button class="knop sec" data-actie="toon-versies">Eerdere versies van dit dossier</button></div>
     <div id="versies"></div>
   </div>`;
-  return `${eerste}${tweede}${historie}`;
+  return `${beoordelingskader(r)}${eerste}${tweede}${historie}`;
 }
 
 export { hoofdbedrijven };

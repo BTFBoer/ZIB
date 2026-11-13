@@ -21,7 +21,7 @@ function geldigeDatum(v) {
 
 /** Bereken de route van de geldverstrekker; een bankverklaring is een bron, geen ZIB-berekening. */
 export function toetsBeleidsprofiel(profiel, dossier, analyses, ctx, nhg) {
-  const invoer = dossier.beleidsinvoer?.[profiel.id] || {};
+  const invoer = { ...dossier.beleidsinvoer?.[profiel.id], nhg: ctx.kader.nhg === true };
   const grondslag = profiel.bereken?.({ dossier, analyses, ctx, nhg, invoer }) || {};
   if (dossier.soort === 'NUL') {
     return {

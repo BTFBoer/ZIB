@@ -2,9 +2,9 @@
 // aanvragenlijst van de rekensoftware: vaste kolommen, sorteren, zoeken, filter, paginering,
 // pop-ups voor status, hypotheekaanvraagnummer, taken, kopiëren en herbeoordelen.
 import { esc, fmt, naamAanvrager, todayISO } from '../util.js';
-import { lijst, get, state } from '../state.js';
+import { lijst, get, state, kanBeleidsvoorbeeldenLaden } from '../state.js';
 import { bereken } from '../engine/index.js';
-import { soortOndernemer, KADERS, KADER_VOLGORDE } from '../engine/kaders.js';
+import { dossierMetNhg, soortOndernemer, KADERS, KADER_VOLGORDE } from '../engine/kaders.js';
 import { AFGEROND, DOSSIER_STATUSSEN } from '../schema/fields.js';
 import { docAanwezig } from '../schema/documenten.js';
 import { deadlineKlasse, deadlineTekst, kolomFilterPast } from '../lijsten.js';
@@ -32,9 +32,10 @@ export function samenvatting(d) {
 }
 
 export function soortAanvraagTekst(d) {
+  if (d.soort === 'ANALYSE') return 'Inkomensanalyse';
   const k = KADERS[d.kader];
   const label = d.label || (k && d.kader !== 'NHG' ? k.kort : '');
-  const nhg = (k?.beleid ? d.beleidsinvoer?.[k.id]?.nhg : k?.nhg) ? 'met NHG' : 'zonder NHG';
+  const nhg = dossierMetNhg(d) ? 'met NHG' : 'zonder NHG';
   return `${d.soort === 'NUL' ? '0-verklaring' : 'IKV'} ${label} ${nhg}`.replace(/\s+/g, ' ').trim();
 }
 
@@ -140,6 +141,7 @@ const SNELFILTERS = [
   ['spoed', 'Spoed', (d) => !!d.spoed],
   ['taken', 'Met open taken', (d) => openTaken(d).length > 0],
   ['mijn', 'Mijn dossiers', (d) => { const m = state.profiel?.naam || ''; return !!m && (d.behandelaar === m || d.fiatteur === m); }],
+  ['beleid-voorbeelden', 'Oefendossiers', (d) => d.id.startsWith('dos_demo_beleid_')],
 ];
 
 function sortering(afgerond) {
@@ -225,12 +227,13 @@ function cel(d, k) {
     case 'via': return esc(d.via || '');
     case 'opdrachtnemer': return esc(d.label || '');
     case 'inkomen': {
+      if (d.soort === 'ANALYSE') return '–';
       if (d.soort === 'NUL') return '€ 0';
       const r = s();
       if (r.beleid) return r.beleid.bedrag === null ? 'Open' : `${esc(fmt.eur(r.beleid.bedrag))} <span class="dempen klein">${r.beleid.bewijs ? 'bewijsstuk' : 'indicatief'}</span>`;
       return esc(fmt.eur(r.vastgesteld));
     }
-    case 'uitkomst': return pil(s().status);
+    case 'uitkomst': return d.soort === 'ANALYSE' ? pil('neutraal', 'Vergelijking') : pil(s().status);
     default: return '';
   }
 }
@@ -314,6 +317,7 @@ export function renderAanvragen(afgerond) {
   const eigen = ui.aanvragen.kolommen;
   const zichtbaar = new Set(zichtbareKolommen(afgerond).map((k) => k.k));
   const chips = afgerond ? '' : SNELFILTERS.map(([k, label, test]) => {
+    if (k === 'beleid-voorbeelden') return '';
     const n = basis.filter((d) => test(d, vandaag)).length;
     if (!n && ui.aanvragen.snel !== k) return '';
     return `<button type="button" class="snelfilter ${k}${ui.aanvragen.snel === k ? ' actief' : ''}" data-actie="snelfilter" data-snel="${k}" aria-pressed="${ui.aanvragen.snel === k}">${esc(label)} <b>${n}</b></button>`;
@@ -327,6 +331,7 @@ export function renderAanvragen(afgerond) {
       <div class="werkstart-acties">
         <button class="knop" data-actie="nieuwe-aanvraag">${icoon('plus')} Nieuwe aanvraag</button>
         <a class="knop sec" href="#/toetskaders">${icoon('boek')} Toetskaders</a>
+        ${!afgerond && kanBeleidsvoorbeeldenLaden() ? `<button type="button" class="knop sec" data-actie="beleid-voorbeelden-laden" aria-pressed="${ui.aanvragen.snel === 'beleid-voorbeelden'}">${icoon('map')} Oefendossiers</button>` : ''}
       </div>
     </div>
     <div class="werkstart-illustratie" aria-hidden="true"><span></span><span></span><span></span><span></span><svg viewBox="0 0 360 110" preserveAspectRatio="none"><path d="M0 99 61 73 113 83 175 49 231 58 285 21 360 9" /><circle cx="285" cy="21" r="5" /></svg></div>
@@ -381,6 +386,7 @@ export const SOORT_KEUZES = [
   ...KADER_VOLGORDE.filter((id) => KADERS[id].beleid).map((id) => [`IKV|${id}`, KADERS[id].kort]),
   ['NUL|ABN', '0-verklaring / beoordelingsverklaring zonder NHG'],
   ['NUL|NHG', '0-verklaring / beoordelingsverklaring met NHG'],
+  ['ANALYSE|ABN', 'Inkomensanalyse (alle toetskaders)'],
 ];
 
 export function modaalNieuweKlant() {

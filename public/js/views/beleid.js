@@ -20,7 +20,7 @@ export function beleidInvoer(d, r) {
   }).join('');
   return `<section id="beleid-invoer" class="paneel beleid-invoer">
     <div class="paginakop"><div><h2>${esc(p.kort)} · beleid en bewijs</h2><p class="dempen">${esc(r.beleid?.versie || p.versie)} · ${esc(METHODE_LABEL[r.beleid?.methode || p.methode])}</p></div>${bronnenLink(r.beleid?.bronUrl || p.bronUrl)}</div>
-    <div class="raster-3">${vink('Aanvraag met NHG', `${pad}.nhg`, invoer.nhg === true, render)}${extra}</div>
+    ${extra ? `<div class="raster-3">${extra}</div>` : ''}
     ${d.soort !== 'NUL' && (r.beleid?.methode === 'extern' || p.ikvOptioneel) ? `<h3>Inkomensverklaring of bankbeoordeling${r.beleid?.methode === 'extern' ? '' : ' (optioneel)'}</h3>
     <div class="raster-3">
       <label class="veld"><span>Toetsinkomen op het bewijsstuk</span>${bedrag(`${pad}.ikvBedrag`, invoer.ikvBedrag, { ...render, label: 'Toetsinkomen op het bewijsstuk' })}</label>
