@@ -308,7 +308,7 @@ test('Signaal: nieuwe holding zonder inkomen die op de duur afketst krijgt het a
   ondernemingen: [aggBV('h1', 'Holding 1'), aggBV('h2', 'Nieuwe holding', { startdatum: '2025-12-28' }, {}, { omzet: 0, nettowinst: 0 })] };
   const r = bereken(d);
   assert.equal(r.status, 'niet_akkoord');
-  assert.ok(r.meldingen.some((m) => /0-inkomen \(beoordelingsverklaring\)/.test(m.tekst)));
+  assert.ok(r.meldingen.some((m) => /nulbesluit bij Fiattering/.test(m.tekst)));
 });
 
 test('Zeggenschap via twee eigen holdings samen (30% + 30%), inkomen alleen via de meegetelde holding', () => {
