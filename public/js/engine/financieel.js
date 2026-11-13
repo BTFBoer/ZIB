@@ -141,7 +141,7 @@ export function totalenJaar(jd = {}) {
     const belasting = heeftBedrag(agg.vpb);
     const NW = netto ? num(agg.nettowinst) : voorBelasting && belasting ? num(agg.resultaatVoorBelasting) - num(agg.vpb) : 0;
     const RVB = voorBelasting ? num(agg.resultaatVoorBelasting) : NW + (netto && belasting ? num(agg.vpb) : 0);
-    vw = { OMZET: num(agg.omzet), BRUTO: 0, AFSCHRIJVINGEN: 0, KOSTEN: 0, BEDRIJFSRESULTAAT: NW, FIN: 0,
+    vw = { OMZET: num(agg.omzet), BRUTO: 0, AFSCHRIJVINGEN: num(agg.afschrijvingen), KOSTEN: 0, BEDRIJFSRESULTAAT: NW, FIN: 0,
       BUITENGEWOON: 0, RVB, NW, KOSTPRIJS: 0, aggregaat: true };
   } else {
     vw = vwTotalen(w);

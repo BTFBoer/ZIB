@@ -16,6 +16,13 @@
 .woordmerk b::after { content: none; }
 .woordmerk .woordmerk-tekst span { margin: 0; font-size: 10px; letter-spacing: .025em; white-space: nowrap; }
 .menu > a.actief { border-bottom-color: var(--werk-accent); }
+.balk-rechts { flex-shrink: 0; }
+.menu-meer { flex-shrink: 0; }
+@media (max-width: 1260px) {
+  .balk .menu, .balk .account { display: none; }
+  .balk .menu-smal { display: flex; }
+  .balk-binnen { justify-content: space-between; }
+}
 .werkstart { position: relative; isolation: isolate; overflow: hidden; min-height: 232px; padding: clamp(24px, 4vw, 50px); border-radius: 18px; background: var(--werk-donker); color: #fff; margin-bottom: 16px; }
 .werkstart-inhoud { position: relative; z-index: 1; }
 .werkstart-label { display: flex; align-items: center; gap: 8px; color: var(--werk-licht); font-size: 11px; font-weight: 750; letter-spacing: .13em; }

@@ -57,5 +57,24 @@ test('Het Inkomensanalyse-oefendossier toont voor ieder kader een bedrag of een 
     assert.ok(dossier.oefenverklaringen[rij.id]?.bedrag > 0, rij.id);
     assert.match(dossier.oefenverklaringen[rij.id]?.opsteller, /^Fictieve /);
   }
-  assert.deepEqual(zonderIndicatie, ['ASR', 'BIJBOUWE', 'TULP']);
+  assert.deepEqual(zonderIndicatie, ['TULP']);
+});
+
+test('a.s.r. en bijBouwe tonen bij volledige grondslag een NHG-indicatie, met een afzonderlijk bewijsvereiste', () => {
+  for (const id of ['ASR', 'BIJBOUWE']) {
+    const d = beleidsvoorbeeldVoor(id);
+    const r = bereken(d);
+    assert.ok(r.beleid.indicatie > 0);
+    assert.equal(r.beleid.bedrag, null);
+    assert.equal(r.beleid.bewijs, null);
+    assert.equal(Object.keys(r.beleid.perJaar).length, 3);
+    d.ondernemingen[0].jaren = {};
+    d.ib = {};
+    assert.equal(bereken(d).beleid.indicatie, null);
+  }
+  const d = beleidsvoorbeeldVoor('ASR');
+  d.loondienst = { meenemen: true, actueelPct: 80, loonJaar: 40000 };
+  const r = bereken(d);
+  assert.equal(r.beleid.indicatie, null);
+  assert.equal(r.beleid.stappen.find((x) => x.label.startsWith('Maximum'))?.waarde, 12000);
 });

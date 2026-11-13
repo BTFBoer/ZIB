@@ -30,6 +30,10 @@ export function wisBeleidsconcept(id) {
   concepten.delete(id);
 }
 
+export function leesBeleidsconcept(id) {
+  return concepten.get(id);
+}
+
 export function renderDossierbeleid(d) {
   const opgeslagen = dossierbeleid(d);
   const v = concepten.get(d.id) || opgeslagen;

@@ -61,7 +61,7 @@ export async function start() {
   state.me = me || {};
   const lijst = await adapter.list();
   lijst.forEach((r) => state.records.set(r.id, migreer(r)));
-  if (adapter.naam === 'lokaal' && lijst.length === 0 && !lsGet('zib.demo.geladen')) {
+  if (adapter.naam === 'lokaal' && globalThis.ZIB_LOCAL_PRIVATE !== true && lijst.length === 0 && !lsGet('zib.demo.geladen')) {
     await laadDemo();
   } else if (kanBeleidsvoorbeeldenLaden() && globalThis.ZIB_DEMO === true && lsGet('zib.demo.geladen')
     && lijst.some((r) => r.type === 'dossier' && r.id.startsWith('dos_demo_'))) {
@@ -77,9 +77,8 @@ export function laadProfiel() {
   if (state.modus === 'cloud') {
     const email = (state.me?.email || 'onbekend').toLowerCase();
     const id = `profiel_${email.replace(/[^a-z0-9]/g, '_')}`;
-    return state.records.get(id) || {
-      id, type: 'profiel', email, naam: state.me?.naam || email, initialen: '', rol: 'acceptant', accreditatie: 'Medium',
-    };
+    return { naam: state.me?.naam || email, initialen: '', ...state.records.get(id),
+      id, type: 'profiel', email, rol: 'acceptant', accreditatie: state.me?.accreditatie || '' };
   }
   try {
     const p = JSON.parse(lsGet('zib.profiel') || 'null');
@@ -90,9 +89,13 @@ export function laadProfiel() {
 }
 
 export function bewaarProfiel(p) {
-  state.profiel = p;
-  if (state.modus === 'cloud') opslaan(p, { direct: true });
-  else lsSet('zib.profiel', JSON.stringify(p));
+  if (state.modus === 'cloud') {
+    state.profiel = { ...p, email: state.me.email, rol: 'acceptant', accreditatie: state.me.accreditatie || '' };
+    opslaan(state.profiel, { direct: true });
+  } else {
+    state.profiel = p;
+    lsSet('zib.profiel', JSON.stringify(p));
+  }
   meld('profiel');
 }
 
@@ -147,6 +150,41 @@ export function opslaan(rec, { direct = false } = {}) {
   }
   timers.set(rec.id, setTimeout(() => schrijf(rec.id), 700));
   return null;
+}
+
+/** Bewaar een dossierconcept. Pas de gedeelde dossierlijst aan nadat de opslag bevestigd is. */
+export async function bewaarDossier(concept) {
+  const { id } = concept;
+  if (timers.has(id)) {
+    clearTimeout(timers.get(id));
+    timers.delete(id);
+    if (await schrijfDirect(id) === false) return null;
+  } else if (lopendeSchrijfacties.has(id) && await lopendeSchrijfacties.get(id) === false) return null;
+
+  const dossier = { ...concept, gewijzigd: nowISO(), gewijzigdDoor: mijnNaam() };
+  state.opslag = { status: 'bezig', tijd: state.opslag.tijd, fout: '' };
+  meld('opslag');
+  try {
+    const huidig = get(id);
+    if ((huidig?.version || 0) !== (dossier.version || 0)) throw new ConflictError(huidig);
+    const bewaard = await state.adapter.put(dossier, { controleerVersie: true });
+    state.records.set(id, bewaard);
+    state.opslag = { status: 'opgeslagen', tijd: new Date(), fout: '' };
+    if (state.conflict?.id === id) state.conflict = null;
+    meld('records', id);
+    return bewaard;
+  } catch (e) {
+    if (e instanceof ConflictError) {
+      state.conflict = { id, huidig: e.huidig, dossierConcept: true };
+      state.opslag = { status: 'conflict', tijd: state.opslag.tijd, fout: e.message };
+      meld('conflict', state.conflict);
+    } else {
+      state.opslag = { status: 'fout', tijd: state.opslag.tijd, fout: e.message || String(e) };
+    }
+    return null;
+  } finally {
+    meld('opslag');
+  }
 }
 
 async function schrijfDirect(id) {
@@ -235,8 +273,9 @@ export function losConflictOp(keuze) {
   const c = state.conflict;
   if (!c) return;
   state.conflict = null;
-  if (keuze === 'herladen' && c.huidig) {
-    state.records.set(c.id, c.huidig);
+  if (keuze === 'herladen') {
+    if (c.huidig && !c.huidig.deleted) state.records.set(c.id, c.huidig);
+    else state.records.delete(c.id);
     state.opslag = { status: 'opgeslagen', tijd: new Date(), fout: '' };
   } else if (keuze === 'overschrijven') {
     const rec = state.records.get(c.id);
@@ -244,6 +283,7 @@ export function losConflictOp(keuze) {
     if (rec) opslaan(rec, { direct: true });
   }
   meld('records');
+  meld('opslag');
 }
 
 export function volgendDossiernummer(jaar = new Date().getFullYear()) {
@@ -291,7 +331,7 @@ export async function laadDemo() {
 }
 
 export function kanBeleidsvoorbeeldenLaden() {
-  return state.adapter?.naam === 'lokaal' && !globalThis.ZIB_ARTIFACT;
+  return state.adapter?.naam === 'lokaal' && !globalThis.ZIB_ARTIFACT && globalThis.ZIB_LOCAL_PRIVATE !== true;
 }
 
 export function laadBeleidsvoorbeelden() {

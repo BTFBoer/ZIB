@@ -209,3 +209,13 @@
   .reken-tabel, .reken-tabel.reken-analysetabel { min-width: 0; }
   .reken-tabel small { white-space: normal; }
 }
+.uitkomsten-tabel th:first-child { min-width: 160px; }
+.uitkomsten-tabel th a { display: inline-flex; align-items: center; gap: 4px; color: var(--accenttekst); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.uitkomsten .reken-paneel-kop p { margin: 3px 0 0; }
+.uitkomsten-tabel .num, .reken-jaartotaal .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+#fiat-controles > .paginakop, #fiat-inkomenswijziging > h2 { margin-bottom: 12px; }
+#tabinhoud > .reken-paneel, #tabinhoud > .uitkomsten, .bzi-inhoud > .reken-paneel, .bzi-inhoud > .uitkomsten { margin-bottom: 14px; }
+.fiat-controles + .fiat-controles, .fiat-inkomensgroep + .fiat-inkomensgroep { margin-top: 8px; }
+.fiat-controlelijst { padding: 0; margin: 0; list-style: none; }
+.fiat-controle { padding: 8px 0; border-bottom: 1px solid var(--lijn-zacht); overflow-wrap: anywhere; }
+.fiat-inkomenswijziging + .fiat-inkomenswijziging { margin-top: 8px; }

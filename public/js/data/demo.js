@@ -477,7 +477,7 @@ function maakBeleidsvoorbeeld([kader, label, nummer, invoer, oefenbedrag]) {
   let toelichting = 'Vergelijk de beleidsroute, cijferuitkomst en gevraagde onderbouwing.';
   if (analyse) toelichting = 'Vergelijk alle kaders met dezelfde ingevoerde cijfers. Een oefenverklaring simuleert de externe route.';
   if (kader === 'TULP') toelichting = 'De ondernemer begon in januari 2025. Gebruik voor 2023 en 2024 het loon vóór de start en voor 2025 de fiscale winst.';
-  if (kader === 'ASR' || kader === 'BIJBOUWE') toelichting = 'Voor deze route stelt een rekenexpert het inkomen vast. De oefenverklaring laat zien hoe zo’n extern bedrag eruitziet.';
+  if (kader === 'ASR' || kader === 'BIJBOUWE') toelichting = 'Vergelijk de indicatie op NHG-grondslag met het bedrag in de fictieve verklaring. Een rekenexpert stelt het formele inkomen vast.';
   return {
     ...sjabloon,
     id: `dos_demo_beleid_${kader.toLowerCase()}`,

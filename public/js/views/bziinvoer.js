@@ -212,7 +212,7 @@ export function renderBziInvoer(d, r) {
     const verschil = !x.nul && Math.abs(x.woonbeleidVoorAfslag - x.berekend) > 1;
     const adviesT = x.nul ? '0-inkomen afgeven (vinkje "0-inkomen afgegeven?")'
       : x.bron === 'geen' ? 'Geen inkomen afgeven (vinkje "Geen inkomen afgeven?")'
-      : x.bron === 'afwijkend' ? `Afwijkend inkomen ${fmt.eur(x.bijdrage)} (vinkje "Afwijkend inkomen?")`
+      : x.bron === 'afwijkend' ? `Afwijkend inkomen ${fmt.eur(x.bijdrage)} (vastgelegd bij Fiattering)`
         : verschil ? `Afwijkend inkomen ${fmt.eur(x.woonbeleidVoorAfslag)} overwegen, met de rekenkundige onderbouwing hieronder` : 'Berekend inkomen afgeven';
     const werkelijk = d.ondernemingen.find((o) => o.id === x.id)?.bziWerkelijk;
     const vergelijking = x.nul ? 'n.v.t.' : `${bedrag(`ond:${x.id}.bziWerkelijk`, werkelijk, { label: `Werkelijke uitkomst in BZI voor ${x.naam}` })}

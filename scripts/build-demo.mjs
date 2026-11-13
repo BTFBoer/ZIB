@@ -55,8 +55,12 @@ ${app}
 <script>${js}</script>
 `;
 
+const lokaal = html.replace('<title>ZIB | Zakelijk inkomen (demo)</title>', '<title>ZIB | Lokale werkruimte</title>')
+  .replace('window.ZIB_DEMO = true; window.ZIB_ARTIFACT = ', 'window.ZIB_LOCAL_PRIVATE = true; window.ZIB_ARTIFACT = ');
+
 mkdirSync(path.join(root, 'dist'), { recursive: true });
 const uit = path.join(root, 'dist/zib-demo.html');
 writeFileSync(uit, html);
 writeFileSync(path.join(root, 'dist/zib-artifact.html'), artifact);
+writeFileSync(path.join(root, 'dist/zib-lokaal.html'), lokaal);
 console.log(`Demo gebouwd: ${uit} (${Math.round(html.length / 1024)} kB) en dist/zib-artifact.html`);

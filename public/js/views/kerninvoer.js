@@ -95,12 +95,12 @@ export function renderKerninvoer(d, ond, { jaren, kandidaatC }, r) {
         ${sectie('Winst en verlies', 'Neem de cijfers over uit de jaarrekening.')}${rijen(defs(basisVW), 'vw')}
         ${sectie('Balans', 'Gebruik de boekwaarden aan het einde van de periode.')}${rijen(defs(basisBalans), 'balans')}
       </tbody></table></div>
-      <div class="kern-voet"><span>Wijzigingen worden automatisch opgeslagen.</span><a href="${href('bziinvoer')}">Detailinvoer en correcties ${icoon('rechts')}</a></div>
+      <div class="kern-voet"><span>Klik bovenaan op Opslaan om de wijzigingen vast te leggen.</span><a href="${href('bziinvoer')}">Detailinvoer en correcties ${icoon('rechts')}</a></div>
     </section>
     <details class="paneel kern-blok kern-extra"><summary><strong>3. Aanvullende posten</strong><span>Voorraad${vpb ? ', resultaat vóór belasting, VPB' : ''} en overige inkomsten</span></summary>
       <div class="scroll"><table class="kern-tabel" aria-label="Aanvullende posten">${kop}<tbody>
         ${sectie('Aanvullende jaarcijfers', 'Invullen als het gekozen beleid deze cijfers gebruikt.')}
-        ${rijen(defs([['voorraad', 'Voorraad en onderhanden werk', 'VOORRADEN']]), 'balans')}${vpb ? rijen(defs(vpbVW), 'vw') : ''}
+        ${rijen(defs([['voorraad', 'Voorraad en onderhanden werk', 'VOORRADEN']]), 'balans')}${rijen(defs([['afschrijvingen', 'Afschrijvingen', 'AFSCHRIJVINGEN'], ...(vpb ? vpbVW : [])]), 'vw')}
         ${sectie('Overige inkomsten en vermogen', 'Bedragen gelden voor het hele dossier; vul ze één keer in.')}${rijen(IB_PERSOON_RIJEN, 'persoon')}
       </tbody></table></div>
     </details>

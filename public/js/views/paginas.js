@@ -267,6 +267,7 @@ function paneelDrive() {
 
 export function renderDownloads() {
   return `${paginakop('Downloads', 'Back-ups, sjablonen en documentenlijsten.')}
+    ${globalThis.ZIB_LOCAL_PRIVATE === true && state.modus === 'lokaal' ? `<section class="paneel"><h2>Broncijfers van echte dossiers</h2><p>Lees het ZIB-broncijfersbestand in, bekijk welke lege velden worden aangevuld en controleer de herkomst. Dit gebeurt in deze lokale werkruimte.</p><label class="knop sec">Broncijfers kiezen<input type="file" accept="application/json,.json" data-broncijfers-bestand class="sr"></label></section>` : ''}
     ${paneelDrive()}
     <div class="raster-2"${globalThis.ZIB_ARTIFACT ? ' style="margin-top:16px"' : ''}>
       <div class="paneel"><h2>Back-up</h2>
@@ -326,15 +327,18 @@ export function renderTicket(id) {
 // ---------------------------------------------------------------------------
 export function renderMijnGegevens() {
   const p = state.profiel || {};
+  const cloud = state.modus === 'cloud';
   const thema = (() => { try { return localStorage.getItem('zib.thema') || 'systeem'; } catch { return 'systeem'; } })();
   return `${paginakop('Mijn gegevens')}
     <div class="raster-2">
       <div class="paneel"><h2>Profiel</h2><div class="raster-3">
         ${veld('Naam', 'naam', p.naam, { rec: '__profiel' })}
         ${veld('Initialen', 'initialen', p.initialen, { rec: '__profiel' })}
-        ${veld('E-mail', 'email', p.email, { rec: '__profiel', type: 'email' })}
-        ${keuze('Rol', 'rol', { acceptant: 'Acceptant zakelijk inkomen', fiatteur: 'Fiatteur', adviseur: 'Adviseur', beheer: 'Beheer' }, p.rol || 'acceptant', { rec: '__profiel' })}
-        ${keuze('Accreditatie', 'accreditatie', ACCREDITATIES, p.accreditatie || 'Medium', { rec: '__profiel', hint: 'Bepaalt welke dossierniveaus je mag fiatteren.' })}
+        ${cloud ? `<div class="veld"><span>E-mail</span><b>${esc(state.me?.email || '')}</b></div>
+          <div class="veld"><span>Accreditatie</span><b>${esc(state.me?.accreditatie || 'Geen toegekend')}</b><small>Toegekend door de beheerder van de omgeving.</small></div>` : `
+          ${veld('E-mail', 'email', p.email, { rec: '__profiel', type: 'email' })}
+          ${keuze('Rol', 'rol', { acceptant: 'Acceptant zakelijk inkomen', fiatteur: 'Fiatteur', adviseur: 'Adviseur', beheer: 'Beheer' }, p.rol || 'acceptant', { rec: '__profiel' })}
+          ${keuze('Accreditatie (lokale demo)', 'accreditatie', ACCREDITATIES, p.accreditatie || 'Medium', { rec: '__profiel', hint: 'Simuleert welke dossierniveaus je mag fiatteren in deze browser.' })}`}
       </div></div>
       <div class="paneel"><h2>Weergave</h2><div class="raster-3" style="grid-template-columns:1fr">
         <label class="veld"><span>Thema</span><select data-actie="thema"><option value="systeem"${thema === 'systeem' ? ' selected' : ''}>Volg systeem</option><option value="light"${thema === 'light' ? ' selected' : ''}>Licht</option><option value="dark"${thema === 'dark' ? ' selected' : ''}>Donker</option></select></label>
@@ -345,7 +349,7 @@ export function renderMijnGegevens() {
         <p>Huidige opslag: <b>${esc(state.adapter?.omschrijving || '')}</b>${state.modus === 'cloud' ? ` (ingelogd als ${esc(state.me?.email || '')})` : ''}.</p>
         ${state.modus === 'lokaal' ? melding('attentie', 'Lokale opslag is gebonden aan deze browser en dit apparaat. Wissen van browsergegevens betekent dat de dossiers weg zijn. Gebruik de cloudopslag of maak regelmatig een back-up.') : melding('akkoord', 'Gegevens worden centraal opgeslagen; elke wijziging bewaart ook de vorige versie.')}
         <label class="veld" style="margin-top:12px"><span>Voorkeur</span><select data-actie="opslagvoorkeur"><option value="auto"${opslagvoorkeur() === 'auto' ? ' selected' : ''}>Automatisch (cloud als beschikbaar)</option><option value="lokaal"${opslagvoorkeur() === 'lokaal' ? ' selected' : ''}>Altijd lokaal</option></select></label>
-        ${state.modus === 'lokaal' ? `<div class="acties" style="margin-top:12px"><button class="knop sec" data-actie="demo-laden">Demodossiers laden</button>
+        ${state.modus === 'lokaal' ? `<div class="acties" style="margin-top:12px">${globalThis.ZIB_LOCAL_PRIVATE ? '' : '<button class="knop sec" data-actie="demo-laden">Demodossiers laden</button>'}
           <button class="knop gevaar" data-actie="lokaal-wissen">Alle lokale gegevens wissen</button></div>` : ''}
       </div>
       <div class="paneel"><h2>Over ZIB</h2><p>De <a href="#/toetskaders">toetskaders</a> tonen per geldverstrekker de rekenroute, bewijsstukken en beleidsbron. De beoordeling en motivering blijven bij de acceptant.</p></div>
@@ -360,7 +364,7 @@ export function renderLogin() {
     <div class="raster-3" style="grid-template-columns:1fr">
       <label class="veld"><span>Naam</span><input id="login-naam" type="text" autocomplete="name" placeholder="Bijv. A. de Groot"></label>
       <label class="veld"><span>Initialen</span><input id="login-initialen" type="text" placeholder="AdG"></label>
-      <label class="veld"><span>Accreditatie</span><select id="login-accreditatie">${ACCREDITATIES.map((a) => `<option${a === 'Medium' ? ' selected' : ''}>${a}</option>`).join('')}</select></label>
+      <label class="veld"><span>Accreditatie (lokale demo)</span><select id="login-accreditatie">${ACCREDITATIES.map((a) => `<option${a === 'Medium' ? ' selected' : ''}>${a}</option>`).join('')}</select></label>
     </div>
     <div class="acties" style="margin-top:16px"><button class="knop" data-actie="login">Aanmelden</button></div>
     <p class="dempen klein" style="margin-top:14px">Lokale modus: aanmelden legt alleen je naam vast in deze browser. In de cloudversie log je in via Cloudflare Access.</p>

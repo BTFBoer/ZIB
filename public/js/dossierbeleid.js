@@ -1,4 +1,5 @@
 import { dossierMetNhg, kaderVoor, KADERS, SOORTEN } from './engine/kaders.js';
+import { wisInkomensWijzigingen } from './engine/beoordelingsrechten.js';
 
 export function dossierbeleid(d) {
   const labelKader = Object.values(KADERS).find((k) => k.id !== 'NHG' && k.kort === d.label)?.id;
@@ -18,19 +19,13 @@ export function bewaarDossierbeleid(d, keuze) {
   const gekozenKader = kader === 'NHG' ? oud.kader : kader;
   if (oud.soort === soort && oud.kader === gekozenKader && oud.metNhg === metNhg) return false;
 
-  const oudKader = kaderVoor(d).id;
   Object.assign(d, { soort, kader: gekozenKader, metNhg });
   if (oud.kader !== gekozenKader) d.label = KADERS[gekozenKader].kort;
   if (soort === 'ANALYSE' || !['ABN', 'NHG'].includes(kaderVoor(d).id)) d.weergave = 'viiz';
-  if (oud.soort !== soort || oudKader !== kaderVoor(d).id) {
-    delete d.fiat;
-    delete d.fiatteur;
-    delete d.teruggezet;
-    if (d.afwijkend?.actief) d.afwijkend = { ...d.afwijkend, actief: false };
-    for (const o of d.ondernemingen || []) {
-      if (o.afwijkend?.actief) o.afwijkend = { ...o.afwijkend, actief: false };
-    }
-    if (['beoordeling_2', 'afgerond'].includes(d.status)) d.status = 'beoordeling_1';
-  }
+  delete d.fiat;
+  delete d.fiatteur;
+  delete d.teruggezet;
+  wisInkomensWijzigingen(d);
+  if (['beoordeling_2', 'afgerond'].includes(d.status)) d.status = 'beoordeling_1';
   return true;
 }

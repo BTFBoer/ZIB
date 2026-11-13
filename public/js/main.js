@@ -1,7 +1,7 @@
 import {
   state, start, lijst, get, opslaan, nieuw, verwijder, opWijziging, bewaarProfiel, logUit, volgendDossiernummer,
   logHistorie, exporteer, importeer, laadDemo, laadBeleidsvoorbeelden, wisLokaal, zetOpslagvoorkeur, losConflictOp, bewaarAlles,
-  heeftOnopgeslagen, mijnNaam,
+  heeftOnopgeslagen, mijnNaam, bewaarDossier,
 } from './state.js';
 import { bereken, salarisPeriode, organogramGraaf, organogramTekst } from './engine/index.js';
 import {
@@ -23,7 +23,7 @@ import {
 } from './views/paginas.js';
 import { renderTaken, rijenTaken, tabelTaken } from './views/taken.js';
 import { openModaal, sluitModaal, waardeUit, toast, downloadBestand, leeg, bevestig, vervangModaalInhoud, icoon } from './views/ui.js';
-import { FORMATS, FIAT_VRAGEN, magFiatteren } from './views/formats.js';
+import { FORMATS, FIAT_VRAGEN } from './views/formats.js';
 import { dossierNotitiesTekst, conceptFinancieel, conceptAlgemeen } from './views/rapport.js';
 import { documentenlijst } from './schema/documenten.js';
 import { WINST_CORRECTIES, VERMOGENS_CORRECTIES } from './schema/correcties.js';
@@ -31,7 +31,9 @@ import { pasDetailToe, DOSSIER_STATUSSEN, AFGEROND, BALANS_RIJEN, VW_RIJEN } fro
 import { parseGrootboekTekst, verdeelGrootboek } from './schema/rekeningschema.js';
 import { RECHTSVORMEN, KADERS, kaderLabel } from './engine/kaders.js';
 import { bewaarDossierbeleid } from './dossierbeleid.js';
-import { leesKeuze, werkBeleidsconceptBij, wisBeleidsconcept } from './views/dossierbeleid.js';
+import { leesBeleidsconcept, werkBeleidsconceptBij, wisBeleidsconcept } from './views/dossierbeleid.js';
+import { actorVoor, beoordelingsInhoud, fiatBlokkade, getekendeDossierfase, inkomensWijzigingPad, magFiatteren, pasInkomensWijzigingToe, wisInkomensWijzigingen } from './engine/beoordelingsrechten.js';
+import { blokkadeUitkomst } from './fiatteringsuitkomst.js';
 import {
   ui, zetUitgebreid, zetPaginagrootte, toggleNotitie, zetNotitiesVerborgen, zetJaarVolgorde, zetOrganogramWeergave,
   zetKolommen, zetFormules, zetRapportModus, noteerRecent, zetKlap,
@@ -41,11 +43,19 @@ import { openZoeken, sluitZoeken } from './views/zoeken.js';
 import { organogramSVG } from './views/organogram.js';
 import { heeftControleperiode, werkKerninvoerTellingBij } from './views/kerninvoer.js';
 import { leesKernbedrag, leesKerncijfers } from './schema/kernimport.js';
+import { initBroncijfersImport, laadPriveStart } from './broncijfers-import.js';
 
 const app = document.getElementById('app');
 let route = { pagina: 'aanvragen' };
 let resultaat = null;
 let gbVoorbeeld = null;
+let dossierconcept = null;
+let dossierOpslag = null;
+let actieveHash = '';
+let geschiedenisNummer = 0;
+let herstelNavigatie = null;
+let interneNavigatie = '';
+let vertrekKeuze = null;
 
 // ---------------------------------------------------------------------------
 // Thema
@@ -60,8 +70,8 @@ try { zetThema(localStorage.getItem('zib.thema') || 'systeem'); } catch { /* gee
 // ---------------------------------------------------------------------------
 // Router en rendering
 // ---------------------------------------------------------------------------
-function parseRoute() {
-  const [h, zoek] = location.hash.replace(/^#\/?/, '').split('?');
+function parseRoute(hash = location.hash) {
+  const [h, zoek] = hash.replace(/^#\/?/, '').split('?');
   const [p = '', a, b, c] = h.split('/').map((x) => decodeURIComponent(x || ''));
   switch (p) {
     case '':
@@ -79,13 +89,228 @@ const MENU_KEY = {
   'mijn-gegevens': 'mijn-gegevens', 'e-mail': 'e-mail',
 };
 
+function dossierVoorRoute(id) {
+  const opgeslagen = get(id);
+  if (!opgeslagen || opgeslagen.deleted) return null;
+  if (dossierconcept?.record.id !== id) {
+    dossierconcept = { record: clone(opgeslagen), basis: JSON.stringify(opgeslagen), wijziging: false,
+      inkomen: new Map(), documenten: new Map(), verwijderd: new Map(), gekozenBestand: null };
+  } else if (!conceptGewijzigd() && dossierconcept.basis !== JSON.stringify(opgeslagen)) {
+    dossierconcept.record = clone(opgeslagen);
+    dossierconcept.basis = JSON.stringify(opgeslagen);
+  }
+  return dossierconcept.record;
+}
+
 function huidigDossier() {
-  return route.pagina === 'dossier' ? get(route.id) : null;
+  return route.pagina === 'dossier' ? dossierVoorRoute(route.id) : null;
+}
+
+function conceptGewijzigd() {
+  const c = dossierconcept;
+  return !!(c && (c.wijziging || c.inkomen.size || c.documenten.size || c.verwijderd.size || c.gekozenBestand || leesBeleidsconcept(c.record.id)));
+}
+
+function werkDossierconceptBij(d) {
+  if (dossierconcept?.record !== d) return;
+  dossierconcept.wijziging = dossierconcept.basis !== JSON.stringify(d);
+  werkBewaarstatusBij();
+}
+
+function werkBewaarstatusBij() {
+  if (route.pagina !== 'dossier') return;
+  const gewijzigd = conceptGewijzigd();
+  const tekst = dossierOpslag ? 'Bezig met opslaan…' : gewijzigd ? 'Niet opgeslagen wijzigingen' : 'Alle wijzigingen opgeslagen';
+  for (const el of app.querySelectorAll('[data-dossier-bewaarstatus]')) {
+    el.textContent = tekst;
+    el.dataset.status = dossierOpslag ? 'bezig' : gewijzigd ? 'gewijzigd' : 'opgeslagen';
+  }
+  for (const knop of app.querySelectorAll('[data-actie="dossier-opslaan"], [data-dossierbeleid] button[type="submit"]')) knop.disabled = !!dossierOpslag;
+  const balkStatus = document.getElementById('opslagstatus');
+  if (balkStatus && gewijzigd && state.opslag.status === 'opgeslagen') {
+    balkStatus.innerHTML = '<span class="opslagstatus bezig"><i></i><span class="tekst">Niet opgeslagen</span></span>';
+  } else if (balkStatus) balkStatus.innerHTML = opslagStatusHTML();
+}
+
+function conceptDocumenten(d) {
+  const c = dossierconcept?.record.id === d.id ? dossierconcept : null;
+  return [...lijst('document').filter((x) => x.dossierId === d.id && !c?.verwijderd.has(x.id)),
+    ...[...(c?.documenten.values() || [])].map(({ doc }) => ({ ...doc, concept: true }))];
+}
+
+const inkomensVelden = ['keuze', 'bedrag', 'motivatie', 'onderbouwing', 'bestendigheid', 'documentatie'];
+
+function inkomensVeldenIn(blok) {
+  return inkomensVelden.map((key) => [key, blok.querySelector(`[name="inkomens-${key}"]`)]).filter(([, el]) => el);
+}
+
+function werkLosseVeldenBij(el) {
+  const c = dossierconcept;
+  if (!c || dossierOpslag) return false;
+  const blok = el.closest('[data-inkomenswijziging]');
+  if (blok) {
+    const knop = blok.querySelector('[data-actie="inkomenswijziging"]');
+    if (!knop) return false;
+    const id = knop.dataset.ond || '';
+    const velden = inkomensVeldenIn(blok);
+    if (velden.some(([, veld]) => veld.value !== veld.dataset.zibBegin)) {
+      c.inkomen.set(id, Object.fromEntries(velden.map(([key, veld]) => [key, veld.value])));
+    } else c.inkomen.delete(id);
+    werkBewaarstatusBij();
+    return true;
+  }
+  if (['doc-bestand', 'doc-jaar', 'doc-ond', 'doc-categorie'].includes(el.id)) {
+    const bestand = document.getElementById('doc-bestand')?.files?.[0] || (el.id === 'doc-bestand' ? null : c.gekozenBestand?.bestand);
+    c.gekozenBestand = bestand ? { bestand, categorie: document.getElementById('doc-categorie').value,
+      jaar: document.getElementById('doc-jaar').value, ondId: document.getElementById('doc-ond').value } : null;
+    werkBewaarstatusBij();
+    return true;
+  }
+  return false;
+}
+
+function herstelLosseVelden() {
+  const c = dossierconcept;
+  if (route.pagina !== 'dossier' || !c) return;
+  for (const blok of app.querySelectorAll('[data-inkomenswijziging]')) {
+    const id = blok.querySelector('[data-actie="inkomenswijziging"]')?.dataset.ond || '';
+    const waarden = c.inkomen.get(id);
+    for (const [key, el] of inkomensVeldenIn(blok)) {
+      el.dataset.zibBegin = el.value;
+      if (waarden && Object.hasOwn(waarden, key)) el.value = waarden[key];
+    }
+    if (waarden) blok.closest('details')?.setAttribute('open', '');
+  }
+  const invoer = document.getElementById('doc-bestand');
+  if (c.gekozenBestand && invoer) {
+    const { bestand, categorie, jaar, ondId } = c.gekozenBestand;
+    if (typeof DataTransfer !== 'undefined') {
+      try {
+        const bestanden = new DataTransfer();
+        bestanden.items.add(bestand);
+        invoer.files = bestanden.files;
+      } catch { /* Een bewaard bestand kan ook zonder opnieuw gevulde browserinvoer worden opgeslagen. */ }
+    }
+    document.getElementById('doc-categorie').value = categorie;
+    document.getElementById('doc-jaar').value = jaar;
+    document.getElementById('doc-ond').value = ondId;
+  }
+}
+
+function verwerkInkomensbesluit(d, id, invoer) {
+  const uitkomst = pasInkomensWijzigingToe(d, actorVoor(state.profiel, state.me), {
+    ...invoer, ondId: id, soort: invoer.keuze, bedrag: leesKernbedrag(invoer.bedrag),
+  });
+  if (uitkomst.gewijzigd) logHistorie(d, uitkomst.tekst);
+  return uitkomst;
+}
+
+function voegDocumentConceptToe(c) {
+  const invoer = c.gekozenBestand;
+  if (!invoer) return '';
+  if (invoer.bestand.size > 15 * 1024 * 1024) return 'Het bestand is groter dan 15 MB.';
+  const { bestand, categorie, jaar, ondId } = invoer;
+  const id = uid('doc');
+  const doc = { id, type: 'document', dossierId: c.record.id, categorie, jaar, ondId,
+    naam: bestand.name, mime: bestand.type, grootte: bestand.size, door: mijnNaam(), aangemaakt: nowISO() };
+  c.gekozenBestand = null;
+  logHistorie(c.record, `Document toegevoegd: ${bestand.name}`);
+  c.documenten.set(id, { doc, bestand, historie: c.record.historie[0] });
+  werkDossierconceptBij(c.record);
+  return '';
+}
+
+async function schrijfDocumentConcepten(c) {
+  for (const [id, { doc, bestand }] of c.documenten) {
+    const res = await state.adapter.putFile(id, bestand);
+    const opgeslagen = await bewaarDossier({ ...doc, opslag: res.opslag });
+    if (!opgeslagen) throw new Error(`Het document ${doc.naam} is nog niet opgeslagen.`);
+    c.documenten.delete(id);
+  }
+  for (const [id, doc] of c.verwijderd) {
+    await state.adapter.remove(id, doc.version);
+    state.records.delete(id);
+    c.verwijderd.delete(id);
+    await state.adapter.removeFile(id).catch(() => {});
+  }
+}
+
+function conceptWissen() {
+  if (dossierconcept) wisBeleidsconcept(dossierconcept.record.id);
+  dossierconcept = null;
+}
+
+function stempelFiatteur(actor) {
+  return { naam: actor.naam, datum: nowISO(), ...(actor.email ? { email: actor.email } : {}) };
+}
+
+/** Eén bevestigde schrijfhandeling per dossier. Bij een fout blijft de invoer beschikbaar. */
+async function dossierOpslaan({ aanpassen, tekenOpnieuw = true, stil = false } = {}) {
+  const d = huidigDossier();
+  if (!d || dossierOpslag) return false;
+  const c = dossierconcept;
+  const bestandFout = voegDocumentConceptToe(c);
+  if (bestandFout) { toast(bestandFout); return false; }
+  if (!conceptGewijzigd() && !aanpassen) { if (!stil) toast('Alle wijzigingen zijn al opgeslagen.'); return true; }
+  const volgend = clone(d);
+  const basis = JSON.parse(c.basis);
+  const beleid = leesBeleidsconcept(d.id);
+  const gewijzigdBeleid = beleid && bewaarDossierbeleid(volgend, beleid);
+  if (gewijzigdBeleid) {
+    const actor = actorVoor(state.profiel, state.me);
+    const vereist = getekendeDossierfase(basis) && basis.status !== 'beoordeling_2' ? 2 : 1;
+    if ((getekendeDossierfase(basis) || basis.fiat?.eerste || basis.fiat?.tweede)
+      && (actor.rol === 'adviseur' || !magFiatteren(actor.accreditatie, basis.niveau, vereist))) {
+      toast('Laat een bevoegde fiatteur dit toetskader wijzigen.');
+      return false;
+    }
+    if (volgend.status !== d.status) volgend.statusDatum = nowISO();
+    logHistorie(volgend, 'Toetskader of aanvraagsoort gewijzigd');
+  }
+  if (!gewijzigdBeleid && getekendeDossierfase(basis)
+    && JSON.stringify(beoordelingsInhoud(basis)) !== JSON.stringify(beoordelingsInhoud(volgend))) {
+    toast('De dossierinhoud is vergrendeld tijdens de tweede beoordeling en na akkoord.');
+    return false;
+  }
+  for (const [id, invoer] of c.inkomen) {
+    const { fout } = verwerkInkomensbesluit(volgend, id, invoer);
+    if (fout) { toast(fout); return false; }
+  }
+  if (aanpassen) {
+    const fout = aanpassen(volgend);
+    if (fout) { toast(fout); return false; }
+  }
+  dossierOpslag = c;
+  const tabinhoud = document.getElementById('tabinhoud');
+  if (tabinhoud) tabinhoud.inert = true;
+  werkBewaarstatusBij();
+  try {
+    if (JSON.stringify(volgend) !== c.basis) {
+      const bewaard = await bewaarDossier(volgend);
+      if (!bewaard) { toast('Opslaan is niet gelukt. Je invoer staat nog in dit venster.'); return false; }
+      c.record = clone(bewaard);
+      c.basis = JSON.stringify(bewaard);
+    }
+    c.wijziging = false;
+    c.inkomen.clear();
+    wisBeleidsconcept(d.id);
+    await schrijfDocumentConcepten(c);
+    if (!stil) toast('Dossier opgeslagen.');
+    return true;
+  } catch (e) {
+    toast(`Opslaan is niet voltooid: ${e.message}. Probeer opnieuw op te slaan.`);
+    return false;
+  } finally {
+    dossierOpslag = null;
+    if (tabinhoud) tabinhoud.inert = false;
+    if (tekenOpnieuw && route.id === d.id) render({ behoudScroll: true });
+    else werkBewaarstatusBij();
+  }
 }
 
 export function render({ behoudScroll = false } = {}) {
   const y = window.scrollY;
-  route = parseRoute();
+  route = parseRoute(actieveHash || location.hash);
   if (!state.profiel && state.modus === 'lokaal' && route.pagina !== 'login') {
     location.hash = '#/login';
     return;
@@ -101,11 +326,11 @@ export function render({ behoudScroll = false } = {}) {
   switch (route.pagina) {
     case 'aanvragen': inhoud = renderAanvragen(route.afgerond); titel = route.afgerond ? 'Afgeronde aanvragen' : titel; breed = true; break;
     case 'dossier': {
-      const d = get(route.id);
+      const d = huidigDossier();
       if (!d) { inhoud = leeg('Dit dossier bestaat niet (meer).', '<a class="knop" href="#/klanten">Naar aanvragen</a>'); break; }
       resultaat = bereken(d);
       noteerRecent(d.id);
-      inhoud = renderDossier(d, route.tab, route.ondId, resultaat);
+      inhoud = renderDossier(d, route.tab, route.ondId, resultaat, { documenten: conceptDocumenten(d) });
       titel = `${d.nummer} ${naamAanvrager(d.aanvrager)}`;
       breed = weergaveDossier(d) === 'bzi';
       break;
@@ -130,6 +355,8 @@ export function render({ behoudScroll = false } = {}) {
   if (behoudScroll) window.scrollTo(0, y);
   naRender();
   werkKerninvoerTellingBij(app.querySelector('[data-kerninvoer]'));
+  herstelLosseVelden();
+  werkBewaarstatusBij();
   if (!behoudScroll && route.veld && route.pagina === 'dossier') {
     const el = [...app.querySelectorAll('#tabinhoud [data-bind]')].find((x) => x.dataset.bind === route.veld && !x.disabled);
     if (el) requestAnimationFrame(() => {
@@ -207,7 +434,7 @@ const herberekenDossier = debounce(() => {
   const tabs = document.getElementById('dossiertabs');
   if (tabs) {
     const links = tabs.scrollLeft;
-    tabs.outerHTML = tabsHTML(d, tabs.dataset.tab, tabs.dataset.ond, resultaat);
+    tabs.outerHTML = tabsHTML(d, tabs.dataset.tab, tabs.dataset.ond, resultaat, conceptDocumenten(d));
     document.getElementById('dossiertabs').scrollLeft = links;
   }
   document.querySelectorAll('[data-calc]').forEach((el) => {
@@ -248,9 +475,10 @@ opWijziging((type) => {
   if (type === 'opslag') {
     const el = document.getElementById('opslagstatus');
     if (el) el.innerHTML = opslagStatusHTML();
-    if (state.opslag.status === 'fout' && !document.querySelector('.banner .niet_akkoord')) render({ behoudScroll: true });
+    werkBewaarstatusBij();
+    werkBannersBij();
   }
-  if (type === 'conflict') render({ behoudScroll: true });
+  if (type === 'conflict') werkBannersBij();
 });
 
 // ---------------------------------------------------------------------------
@@ -267,6 +495,7 @@ function waardeVan(el) {
 function doelVoor(el) {
   const rec = el.dataset.rec;
   if (rec === '__profiel') return { soort: 'profiel', obj: { ...(state.profiel || {}) } };
+  if (rec && rec === route.id && route.pagina === 'dossier') return { soort: 'dossier', obj: huidigDossier() };
   if (rec) return { soort: 'record', obj: get(rec) };
   return { soort: 'dossier', obj: huidigDossier() };
 }
@@ -287,9 +516,17 @@ function zetWaarde(obj, pad, waarde) {
 }
 
 function verwerkBinding(el, magRenderen) {
+  if (dossierOpslag) return;
   const doel = doelVoor(el);
   if (!doel.obj) return;
   const waarde = waardeVan(el);
+  const bind = el.dataset.bind;
+  if (doel.soort === 'profiel' && state.modus === 'cloud' && ['accreditatie', 'email', 'rol'].includes(bind)) return;
+  if (doel.obj.type === 'dossier') {
+    const fout = inkomensWijzigingPad(bind) ? 'Leg een handmatige inkomenswijziging vast bij Fiattering.'
+      : bind === 'status' ? statusBlokkade(doel.obj, waarde) : '';
+    if (fout) { toast(fout); render({ behoudScroll: true }); return; }
+  }
   zetWaarde(doel.obj, el.dataset.bind, waarde);
   if (doel.soort === 'profiel') {
     bewaarProfiel(doel.obj);
@@ -312,20 +549,13 @@ function verwerkBinding(el, magRenderen) {
           doel.obj.weergave = 'viiz';
         }
       }
-      const afw = /^(?:ond:([^.]+)\.)?afwijkend\.(actief|bedrag|motivatie)$/.exec(bind);
-      if (afw) {
-        const ond = afw[1] ? ondVan(doel.obj, afw[1]) : null;
-        const a = (ond ? ond.afwijkend : doel.obj.afwijkend) || {};
-        const wie = ond ? ` (${ond.naam || 'hoofdbedrijf'})` : '';
-        if (afw[2] === 'actief') logHistorie(doel.obj, `Afwijkend inkomen${wie} ${waarde ? 'ingeschakeld' : 'uitgeschakeld'}${waarde && a.bedrag ? `: € ${fmt.getal(Number(a.bedrag))}` : ''}`);
-        else if (afw[2] === 'bedrag' && a.actief) logHistorie(doel.obj, `Afwijkend inkomen${wie} vastgesteld op € ${fmt.getal(Number(waarde) || 0)}${a.motivatie ? '' : ' (motivatie nog leeg)'}`);
-        else if (afw[2] === 'motivatie' && a.actief) logHistorie(doel.obj, `Motivatie afwijkend inkomen${wie} vastgelegd: ${String(waarde || '').slice(0, 140)}`);
-      }
       if (/^instellingen\.belet\.actief$/.test(bind)) logHistorie(doel.obj, `Beletperiode / incidenteel jaar ${waarde ? 'ingeschakeld' : 'uitgeschakeld'}`);
     }
   }
-  opslaan(doel.obj);
-  if (doel.soort === 'dossier') herberekenDossier();
+  if (doel.soort === 'dossier') {
+    werkDossierconceptBij(doel.obj);
+    herberekenDossier();
+  } else opslaan(doel.obj);
   if (el.dataset.render && magRenderen) {
     if (doel.soort === 'dossier') herberekenDossier.flush();
     render({ behoudScroll: true });
@@ -381,6 +611,7 @@ function verwerkKolomfilter(el) {
 
 document.addEventListener('input', (e) => {
   const el = e.target;
+  if (route.pagina === 'dossier' && werkLosseVeldenBij(el)) return;
   if (el.matches('[data-beleid-zoek]')) {
     const zoek = el.value.toLocaleLowerCase('nl').trim();
     const kaarten = [...document.querySelectorAll('[data-beleid-kaart]')];
@@ -409,10 +640,14 @@ document.addEventListener('input', (e) => {
 
 document.addEventListener('change', (e) => {
   const el = e.target;
+  if (route.pagina === 'dossier' && werkLosseVeldenBij(el)) return;
   const form = el.closest('[data-dossierbeleid]');
   if (form) {
     const d = huidigDossier();
-    if (d) werkBeleidsconceptBij(form, d);
+    if (d && !dossierOpslag) {
+      werkBeleidsconceptBij(form, d);
+      werkBewaarstatusBij();
+    }
     return;
   }
   if (verwerkKolomfilter(el)) return;
@@ -441,33 +676,14 @@ document.addEventListener('change', (e) => {
   else if (el.dataset.render) verwerkBinding(el, true);
 });
 
-document.addEventListener('submit', async (e) => {
+document.addEventListener('submit', (e) => {
   const form = e.target;
   if (!form.matches('[data-dossierbeleid]')) return;
   e.preventDefault();
   const d = huidigDossier();
-  if (!d) return;
-  const keuze = leesKeuze(form);
-  const velden = [...form.elements];
-  velden.forEach((el) => { el.disabled = true; });
-  const herstel = () => { if (form.isConnected) velden.forEach((el) => { el.disabled = false; }); };
-  // Controleer eerst of eerdere wijzigingen in hetzelfde dossier zijn weggeschreven.
-  if (heeftOnopgeslagen() && !await opslaan(d, { direct: true })) { herstel(); return; }
-  const nieuw = clone(d);
-  const gewijzigd = bewaarDossierbeleid(nieuw, keuze);
-  if (gewijzigd) {
-    if (nieuw.status !== d.status) nieuw.statusDatum = nowISO();
-    logHistorie(nieuw, 'Toetskader of aanvraagsoort gewijzigd');
-    const bewaard = await opslaan(nieuw, { direct: true });
-    if (!bewaard) {
-      if (get(d.id) === nieuw) state.records.set(d.id, d);
-      herstel();
-      return;
-    }
-  }
-  wisBeleidsconcept(d.id);
-  if (huidigDossier()?.id === d.id) render({ behoudScroll: true });
-  toast('Klantgegevens opgeslagen.');
+  if (!d || dossierOpslag) return;
+  werkBeleidsconceptBij(form, d);
+  dossierOpslaan();
 });
 
 document.addEventListener('focusout', (e) => {
@@ -633,9 +849,14 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if ((e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey) && !e.altKey) { e.preventDefault(); zoekenOpenen(); return; }
+  if ((e.key === 's' || e.key === 'S') && (e.ctrlKey || e.metaKey) && !e.altKey && route.pagina === 'dossier') {
+    e.preventDefault();
+    if (!document.getElementById('modaal')) dossierOpslaan();
+    return;
+  }
   if (e.key === '/' && !typend && !e.ctrlKey && !e.metaKey && !document.getElementById('modaal')) { e.preventDefault(); zoekenOpenen(); return; }
   if (e.key === 'Escape') sluitUitklap();
-  if (e.key === 'Escape') sluitModaal();
+  if (e.key === 'Escape' && !(dossierOpslag && vertrekKeuze?.el.isConnected)) sluitModaal();
   if (e.key === 'Enter' && e.target.matches && e.target.matches('tr[data-actie]')) voerUit(e.target.dataset.actie, e.target, e);
   if (e.key === 'Enter' && e.target.matches && e.target.matches('#modaal input:not([type="checkbox"]):not([type="radio"])')) {
     const knop = document.querySelector('#modaal .acties .knop:not(.sec)');
@@ -643,10 +864,91 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-window.addEventListener('hashchange', () => { sluitModaal(); sluitZoeken(); render(); window.scrollTo(0, 0); });
+function zelfdeDossierpagina(hash) {
+  const doel = parseRoute(hash);
+  return doel.pagina === 'dossier' && doel.id === route.id && doel.tab === route.tab;
+}
+
+function vraagVertrek(doorgaan) {
+  if (dossierOpslag) { toast('Wacht tot het opslaan klaar is.'); return; }
+  if (!conceptGewijzigd()) { doorgaan(); return; }
+  if (vertrekKeuze?.el.isConnected) return;
+  const actief = document.activeElement;
+  const keuze = openModaal('Niet opgeslagen wijzigingen', '<p>Wil je je wijzigingen opslaan voordat je deze pagina verlaat?</p>',
+    '<button type="button" class="knop" data-actie="dossier-opslaan-verder">Opslaan en verder</button><button type="button" class="knop sec" data-actie="dossier-verlaten">Verlaten zonder opslaan</button>',
+    { sluitTekst: 'Hier blijven' });
+  vertrekKeuze = { el: keuze, doorgaan };
+  app.inert = true;
+  const observer = new MutationObserver(() => {
+    if (keuze.isConnected) return;
+    observer.disconnect();
+    app.inert = false;
+    if (vertrekKeuze?.el === keuze) {
+      vertrekKeuze = null;
+      actief?.focus({ preventScroll: true });
+    }
+  });
+  observer.observe(document.body, { childList: true });
+}
+
+function navigeerZonderVraag(hash) {
+  if (location.hash === hash) { render({ behoudScroll: true }); return; }
+  interneNavigatie = hash;
+  location.hash = hash;
+}
+
+function tekenNavigatie() {
+  actieveHash = location.hash;
+  geschiedenisNummer = history.state?.zibRouteIndex ?? geschiedenisNummer + 1;
+  history.replaceState({ ...history.state, zibRouteIndex: geschiedenisNummer }, '');
+  sluitModaal();
+  sluitZoeken();
+  render();
+  window.scrollTo(0, 0);
+}
+
+document.addEventListener('click', (e) => {
+  if (route.pagina !== 'dossier' || !(conceptGewijzigd() || dossierOpslag) || e.defaultPrevented
+    || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+  const link = e.target.closest('a[href]');
+  if (!link || link.dataset.actie || link.hasAttribute('download') || (link.target && link.target !== '_self')) return;
+  const url = new URL(link.href);
+  const zelfdeApp = url.origin === location.origin && url.pathname === location.pathname && url.search === location.search;
+  if (zelfdeApp && (url.hash === actieveHash || zelfdeDossierpagina(url.hash))) return;
+  e.preventDefault();
+  vraagVertrek(zelfdeApp ? () => navigeerZonderVraag(url.hash) : () => { location.href = url.href; });
+}, true);
+
+function behandelHash() {
+  const hash = location.hash;
+  if (herstelNavigatie) {
+    if (hash !== actieveHash) return;
+    const doorgaan = herstelNavigatie;
+    herstelNavigatie = null;
+    vraagVertrek(doorgaan);
+    return;
+  }
+  if (hash === actieveHash) return;
+  if (hash === interneNavigatie || !(conceptGewijzigd() || dossierOpslag) || zelfdeDossierpagina(hash)) {
+    interneNavigatie = '';
+    tekenNavigatie();
+    return;
+  }
+  const vorigeIndex = history.state?.zibRouteIndex;
+  const stap = Number.isInteger(vorigeIndex) ? vorigeIndex - geschiedenisNummer : 0;
+  if (stap) {
+    herstelNavigatie = () => { interneNavigatie = hash; history.go(stap); };
+    history.go(-stap);
+    return;
+  }
+  history.replaceState({ ...history.state, zibRouteIndex: geschiedenisNummer }, '', actieveHash || '#/klanten');
+  vraagVertrek(() => navigeerZonderVraag(hash));
+}
+
+window.addEventListener('hashchange', behandelHash);
+window.addEventListener('popstate', behandelHash);
 window.addEventListener('beforeunload', (e) => {
-  if (heeftOnopgeslagen()) {
-    bewaarAlles();
+  if (conceptGewijzigd() || dossierOpslag || heeftOnopgeslagen()) {
     e.preventDefault();
     e.returnValue = '';
   }
@@ -666,6 +968,11 @@ function zetStatus(d, status, toelichting = '') {
   d.status = status;
   d.statusDatum = nowISO();
   logHistorie(d, `Status gewijzigd van "${oud}" naar "${DOSSIER_STATUSSEN[status] || status}"${toelichting ? `: ${toelichting}` : ''}`);
+}
+
+function statusBlokkade(d, status) {
+  return status !== d.status && (['beoordeling_2', 'afgerond'].includes(status) || ['beoordeling_2', 'afgerond'].includes(d.status))
+    ? 'Wijzig deze beoordelingsstatus via Fiattering of vraag een herbeoordeling aan.' : '';
 }
 
 function modaalVeld(naam) {
@@ -691,6 +998,7 @@ function kopieDossier(bron, { status = 'documenten_uploaden', actie = '' } = {})
   const kopie = clone(bron);
   ['id', 'version', 'updated_at', 'updated_by', 'fiat', 'fiatteur', 'meekijken', 'teruggezet', 'oefenverklaringen'].forEach((k) => delete kopie[k]);
   for (const o of kopie.ondernemingen || []) delete o.bziWerkelijk;
+  wisInkomensWijzigingen(kopie);
   for (const i of Object.values(kopie.beleidsinvoer || {})) {
     for (const key of ['ikvBedrag', 'ikvDatum', 'ikvOpsteller']) delete i[key];
   }
@@ -729,7 +1037,7 @@ function voegNotitieToe(d, pad, tekst, kop) {
   const huidig = String(getPath(d, pad) || '');
   const nieuwT = huidig.trim() ? `${huidig.trimEnd()}\n\n${kop ? `${kop}\n` : ''}${tekst}` : tekst;
   setPath(d, pad, nieuwT);
-  opslaan(d);
+  werkDossierconceptBij(d);
 }
 
 function openCorrectieModaal(d, ondId, y, lijstNaam) {
@@ -797,6 +1105,29 @@ function zetKlapDOM(bak, dicht) {
 
 const ACTIES = {
   'zoek-open'() { zoekenOpenen(); },
+  'dossier-opslaan'() { return dossierOpslaan(); },
+  async 'dossier-opslaan-verder'() {
+    const keuze = vertrekKeuze;
+    if (!keuze || dossierOpslag) return;
+    for (const knop of keuze.el.querySelectorAll('button')) knop.disabled = true;
+    const opgeslagen = await dossierOpslaan({ tekenOpnieuw: false });
+    if (!opgeslagen) {
+      for (const knop of keuze.el.querySelectorAll('button')) knop.disabled = false;
+      return;
+    }
+    if (vertrekKeuze !== keuze) return;
+    vertrekKeuze = null;
+    sluitModaal();
+    keuze.doorgaan();
+  },
+  'dossier-verlaten'() {
+    const keuze = vertrekKeuze;
+    if (!keuze || dossierOpslag) return;
+    conceptWissen();
+    vertrekKeuze = null;
+    sluitModaal();
+    keuze.doorgaan();
+  },
 
   // ---- Berekening en rapport: in- en uitklappen, springen, formules, weergave -------------
   klap(el) {
@@ -952,10 +1283,14 @@ const ACTIES = {
     if (d) openModaal('Status wijzigen', modaalStatus(d), '<button class="knop" data-actie="status-opslaan">Wijzig status</button>');
   },
   'status-opslaan'() {
-    const d = get(modaalVeld('id'));
+    const id = modaalVeld('id');
+    const d = id === route.id ? huidigDossier() : get(id);
     if (!d) return;
+    const fout = statusBlokkade(d, modaalVeld('status'));
+    if (fout) { toast(fout); return; }
     zetStatus(d, modaalVeld('status'), modaalVeld('toelichting'));
-    opslaan(d, { direct: true });
+    if (id === route.id) werkDossierconceptBij(d);
+    else opslaan(d, { direct: true });
     sluitModaal();
     render({ behoudScroll: true });
   },
@@ -1107,19 +1442,18 @@ const ACTIES = {
     const naar = el.dataset.weergave === 'viiz' ? 'viiz' : 'bzi';
     if (naar === 'bzi' && (d.soort === 'ANALYSE' || !['ABN', 'NHG'].includes(resultaat?.kader))) return;
     d.weergave = naar;
-    opslaan(d);
+    werkDossierconceptBij(d);
     const tab = route.tab || 'overzicht';
     const nieuweTab = naar === 'bzi' ? (NAAR_BZI[tab] || tab) : (NAAR_VIIZ[tab] || tab);
     const ond = route.ondId ? `/${route.ondId}` : '';
     const doel = `#/dossier/${d.id}/${nieuweTab}${['bedrijf', 'balans', 'vw', 'diversen', 'samenvatting', 'bedrijven'].includes(nieuweTab) ? ond : ''}`;
-    if (location.hash === doel) render({ behoudScroll: true });
-    else location.hash = doel;
+    navigeerZonderVraag(doel);
   },
   'ond-toevoegen'() {
     const d = huidigDossier();
     d.ondernemingen = d.ondernemingen || [];
     d.ondernemingen.push(nieuweOnderneming(`Onderneming ${d.ondernemingen.length + 1}`));
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
   'hoofdbedrijf-toevoegen'() {
@@ -1128,14 +1462,14 @@ const ACTIES = {
     const o = nieuweOnderneming('', 'BV', '', { activiteit: 'Holding' });
     d.ondernemingen.push(o);
     logHistorie(d, 'Hoofdbedrijf toegevoegd');
-    opslaan(d);
-    location.hash = `#/dossier/${d.id}/bedrijven/${o.id}`;
+    werkDossierconceptBij(d);
+    navigeerZonderVraag(`#/dossier/${d.id}/bedrijven/${o.id}`);
   },
   'deelneming-toevoegen'(el) {
     const d = huidigDossier();
     const o = nieuweOnderneming('', 'BV', '', { parentId: el.dataset.ouder, direct: false });
     d.ondernemingen.push(o);
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
   async 'ond-verwijderen'(el) {
@@ -1156,7 +1490,7 @@ const ACTIES = {
     if (d.salarisStrook) delete d.salarisStrook[o.id];
     if (d.notities?.financieelOnderneming) delete d.notities.financieelOnderneming[o.id];
     logHistorie(d, `Onderneming ${o.naam || '(naamloos)'} verwijderd`);
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
   'extra-ouder-toevoegen'(el) {
@@ -1165,7 +1499,7 @@ const ACTIES = {
     if (!o) return;
     o.extraParents = o.extraParents || [];
     o.extraParents.push({ id: '', pct: '' });
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
   'extra-ouder-weg'(el) {
@@ -1173,7 +1507,7 @@ const ACTIES = {
     const o = ondVan(d, el.dataset.ond);
     if (!o) return;
     o.extraParents.splice(Number(el.dataset.index), 1);
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
   'bzi-tm'(el) {
@@ -1191,7 +1525,7 @@ const ACTIES = {
       x.jaren[y].tot = `${y}-${String(m).padStart(2, '0')}-${laatsteDagMaand(y, m)}`;
       if (!x.jaren[y].status) x.jaren[y].status = m === 12 ? 'concept' : 'tussentijds';
     });
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
 
@@ -1215,7 +1549,7 @@ const ACTIES = {
     const huidig = getPath(d, pad) || '';
     const nieuwT = huidig.trim() ? `${huidig.trimEnd()}\n\n${format}` : format;
     setPath(d, pad, nieuwT);
-    opslaan(d);
+    werkDossierconceptBij(d);
     const ta = document.querySelector(`textarea[data-bind="${CSS.escape(pad)}"]`);
     if (ta) { ta.value = nieuwT; ta.focus(); delete ta.dataset.ingevoegd; }
   },
@@ -1251,7 +1585,7 @@ const ACTIES = {
     d.organogram = d.organogram || {};
     d.organogram.knopen = d.organogram.knopen || [];
     d.organogram.knopen.push({ id: uid('k'), soort: 'persoon', naam: '', toelichting: '' });
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
   async 'og-knoop-weg'(el) {
@@ -1261,7 +1595,7 @@ const ACTIES = {
     d.organogram.knopen.splice(Number(el.dataset.index), 1);
     d.organogram.lijnen = (d.organogram.lijnen || []).filter((l) => l.van !== k.id && l.naar !== k.id);
     (d.geldstromenExtra || []).forEach((x) => { if (x.van === k.id) x.van = ''; if (x.naar === k.id) x.naar = ''; });
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
   'og-lijn-toevoegen'() {
@@ -1269,13 +1603,13 @@ const ACTIES = {
     d.organogram = d.organogram || {};
     d.organogram.lijnen = d.organogram.lijnen || [];
     d.organogram.lijnen.push({ id: uid('l'), van: '', naar: '', pct: null, soort: 'aandelen' });
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
   'og-lijn-weg'(el) {
     const d = huidigDossier();
     d.organogram?.lijnen?.splice(Number(el.dataset.index), 1);
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
   'og-situatie-toevoegen'() {
@@ -1284,7 +1618,7 @@ const ACTIES = {
     d.organogram = d.organogram || {};
     d.organogram.situaties = d.organogram.situaties || [];
     d.organogram.situaties.push({ id: uid('s'), titel: `Situatie tot en met ${r.T3}`, tekst: organogramTekst(d) });
-    opslaan(d);
+    werkDossierconceptBij(d);
     toast('Huidige structuur vastgelegd; pas titel en tekst aan naar de eerdere situatie.');
     render({ behoudScroll: true });
   },
@@ -1292,21 +1626,21 @@ const ACTIES = {
     const d = huidigDossier();
     if (!(await bevestig('Deze situatie verwijderen?', 'Verwijderen'))) return;
     d.organogram?.situaties?.splice(Number(el.dataset.index), 1);
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
   'gs-toevoegen'() {
     const d = huidigDossier();
     d.geldstromenExtra = Array.isArray(d.geldstromenExtra) ? d.geldstromenExtra : [];
     d.geldstromenExtra.push({ id: uid('gs'), van: '', naar: '', soort: 'fee', perJaar: {}, toelichting: '' });
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
   async 'gs-weg'(el) {
     const d = huidigDossier();
     if (!(await bevestig('Deze geldstroom verwijderen?', 'Verwijderen'))) return;
     d.geldstromenExtra?.splice(Number(el.dataset.index), 1);
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
   async 'kopieer-tsv'(el) {
@@ -1331,13 +1665,13 @@ const ACTIES = {
     d.notities.boekhouder = d.notities.boekhouder || { optie: '1', lijst: [] };
     d.notities.boekhouder.lijst = d.notities.boekhouder.lijst || [];
     d.notities.boekhouder.lijst.push({ naam: '', kvk: '' });
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
   'boekhouder-weg'(el) {
     const d = huidigDossier();
     d.notities?.boekhouder?.lijst?.splice(Number(el.dataset.index), 1);
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
   'kopieer-notities': async () => {
@@ -1368,14 +1702,14 @@ const ACTIES = {
     const d = huidigDossier();
     d.zk = Array.isArray(d.zk) ? d.zk : [];
     d.zk.push({ id: uid('zk'), soort: 'krediet', kredietgever: '', omschrijving: '', ondId: '', maandlast: null, saldo: null, gedragenDoor: 'onderneming', status: 'lopend', afgelostIn: '' });
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
   async 'zk-verwijderen'(el) {
     const d = huidigDossier();
     if (!(await bevestig('Dit krediet verwijderen?', 'Verwijderen'))) return;
     d.zk.splice(Number(el.dataset.index), 1);
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
   'correctie-open'(el) {
@@ -1399,7 +1733,7 @@ const ACTIES = {
     o.jaren[y][sleutel].push({ type, bedrag: bedragW, toelichting: modaalVeld('toelichting').trim() });
     const defs = lijstNaam === 'winst' ? WINST_CORRECTIES : VERMOGENS_CORRECTIES;
     logHistorie(d, `${defs[type]?.label || type} ${y} toegevoegd bij ${o.naam}: ${fmt.eur(bedragW)}`);
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
     openCorrectieModaal(d, ondId, y, lijstNaam);
   },
@@ -1412,7 +1746,7 @@ const ACTIES = {
     if (!lijstC) return;
     const [weg] = lijstC.splice(Number(el.dataset.index), 1);
     if (weg) logHistorie(d, `Correctie ${y} verwijderd bij ${o.naam}: ${fmt.eur(weg.bedrag)}`);
-    opslaan(d);
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
     openCorrectieModaal(d, o.id, y, el.dataset.lijst);
   },
@@ -1437,7 +1771,7 @@ const ACTIES = {
     o.jaren[y].bzi = o.jaren[y].bzi || {};
     o.jaren[y].bzi.vaDetail = det;
     o.jaren[y].bzi.va = num(det.voorraden) + num(det.vorderingen) + num(det.rcDirectie) + num(det.liquide);
-    opslaan(d);
+    werkDossierconceptBij(d);
     sluitModaal();
     render({ behoudScroll: true });
   },
@@ -1463,23 +1797,26 @@ const ACTIES = {
       f: s.f, bedrag: s.bedrag,
     };
     logHistorie(d, `DGA-inkomen ${y} bepaald uit de salarisstrook: ${s.f}`);
-    opslaan(d);
+    werkDossierconceptBij(d);
     sluitModaal();
     render({ behoudScroll: true });
   },
-  'woonbeleid-overnemen'(el) {
+  'woonbeleid-overnemen'() {
     const d = huidigDossier();
-    const o = ondVan(d, el.dataset.ond);
-    if (!o) return;
-    const bedragW = Math.round(Number(el.dataset.bedrag) || 0);
-    const r = resultaat || bereken(d);
-    const h = r.inkomen?.perHoofdbedrijf?.find((x) => x.id === o.id);
-    const onderbouwing = h?.onderbouwing || `Inkomen volgens de toets aan het Woonbeleid: ${fmt.eur(bedragW)}.`;
-    o.afwijkend = { actief: true, bedrag: bedragW, motivatie: onderbouwing };
-    voegNotitieToe(d, 'notities.conclusie', onderbouwing, `Afwijkend inkomen ${o.naam} (rekenkundige onderbouwing uit ZIB)`);
-    logHistorie(d, `${o.naam}: inkomen volgens Woonbeleid${h?.overwinstMee ? ' inclusief overwinst' : ''} overgenomen als afwijkend inkomen (${fmt.eur(bedragW)})`);
-    opslaan(d);
-    toast('Overgenomen als afwijkend inkomen; de onderbouwing staat in de conclusie.');
+    if (d) location.hash = `#/dossier/${encodeURIComponent(d.id)}/fiat`;
+  },
+  'inkomenswijziging'(el) {
+    const d = huidigDossier();
+    const c = dossierconcept;
+    const blok = el.closest('[data-inkomenswijziging]');
+    const id = el.dataset.ond || '';
+    if (!d || !blok || !c) return;
+    const invoer = Object.fromEntries(inkomensVeldenIn(blok).map(([key, veld]) => [key, veld.value]));
+    const uitkomst = verwerkInkomensbesluit(d, id, invoer);
+    if (uitkomst.fout) { toast(uitkomst.fout); return; }
+    c.inkomen.delete(id);
+    werkDossierconceptBij(d);
+    toast(uitkomst.gewijzigd ? 'Inkomensbesluit toegevoegd aan je wijzigingen.' : 'Het inkomensbesluit is gelijk gebleven.');
     render({ behoudScroll: true });
   },
   'grootboek-open'(el) {
@@ -1538,7 +1875,7 @@ const ACTIES = {
     }
     logHistorie(d, `Grootboek geïmporteerd voor ${o.naam} ${jaar} (${gbVoorbeeld.aantal} regels)`);
     gbVoorbeeld = null;
-    opslaan(d);
+    werkDossierconceptBij(d);
     toast('Grootboek overgenomen. Controleer de posten en het balansverschil.');
     render({ behoudScroll: true });
   },
@@ -1548,54 +1885,61 @@ const ACTIES = {
   },
 
   // ---- Dossier: fiattering ------------------------------------------------
-  'gereed-melden'() {
-    const d = huidigDossier();
-    if (d.soort === 'ANALYSE') return;
-    if (d.soort === 'IKV' && resultaat?.beleid && resultaat.status === 'niet_akkoord') { toast('Los de afgewezen voorwaarden op voordat je het dossier gereed meldt.'); return; }
-    if (d.soort === 'IKV' && resultaat?.beleid?.bedrag === null) { toast('Onderbouw eerst het inkomen volgens het gekozen toetskader.'); return; }
-    const p = state.profiel || {};
-    if (!magFiatteren(p.accreditatie || 'Basis', d.niveau || 'Basis', 1)) { toast('Je accreditatie is niet toereikend om dit dossier gereed te melden.'); return; }
-    d.fiat = d.fiat || {};
-    d.fiat.eerste = { naam: mijnNaam(), datum: nowISO(), opmerking: d.fiat.concept1 || '' };
-    delete d.fiat.concept1;
-    delete d.fiat.tweede;
-    d.teruggezet = false;
-    zetStatus(d, 'beoordeling_2', 'gereed gemeld');
-    opslaan(d, { direct: true });
-    nieuw('taak', { titel: '2e beoordeling uitvoeren', dossierId: d.id, toegewezenAan: '', deadline: todayISO(), status: 'open', door: mijnNaam() });
+  async 'gereed-melden'() {
+    const id = route.id;
+    const actor = actorVoor(state.profiel, state.me);
+    const bewaard = await dossierOpslaan({ stil: true, aanpassen(d) {
+      const fout = fiatBlokkade(actor, d, 1) || blokkadeUitkomst(d);
+      if (fout) return fout;
+      d.fiat = d.fiat || {};
+      d.fiat.eerste = { ...stempelFiatteur(actor), opmerking: d.fiat.concept1 || '' };
+      delete d.fiat.concept1;
+      delete d.fiat.tweede;
+      d.teruggezet = false;
+      zetStatus(d, 'beoordeling_2', 'gereed gemeld');
+      return '';
+    } });
+    if (!bewaard) return;
+    nieuw('taak', { titel: '2e beoordeling uitvoeren', dossierId: id, toegewezenAan: '', deadline: todayISO(), status: 'open', door: mijnNaam() });
     toast('Gereed gemeld. Het dossier staat onder Meekijken voor de 2e beoordeling.');
-    render({ behoudScroll: true });
   },
-  'fiat-akkoord'() {
-    const d = huidigDossier();
-    if (d.soort === 'ANALYSE') return;
-    if (d.soort === 'IKV' && resultaat?.beleid && (resultaat.beleid.bedrag === null || resultaat.status === 'niet_akkoord')) { toast('Het toetskader geeft nog geen onderbouwd inkomen voor fiattering.'); return; }
-    const ant = d.fiat?.tweede?.antwoorden || {};
-    const open = FIAT_VRAGEN.filter(([k]) => !ant[k]?.antwoord);
-    if (open.length) { toast('Beantwoord eerst alle vragen.'); return; }
-    if (FIAT_VRAGEN.some(([k]) => ant[k].antwoord === 'Nee')) { toast('Er is een vraag met "Nee" beantwoord: geef geen akkoord.'); return; }
-    d.fiat.tweede = { ...d.fiat.tweede, naam: mijnNaam(), datum: nowISO(), resultaat: 'akkoord' };
-    d.fiatteur = mijnNaam();
-    zetStatus(d, 'afgerond', '2e beoordeling akkoord');
-    lijst('taak').filter((t) => t.dossierId === d.id && t.status === 'open' && /2e (fiat|beoordeling)/i.test(t.titel)).forEach((t) => { t.status = 'gereed'; opslaan(t); });
-    opslaan(d, { direct: true });
+  async 'fiat-akkoord'() {
+    const id = route.id;
+    const actor = actorVoor(state.profiel, state.me);
+    const bewaard = await dossierOpslaan({ stil: true, aanpassen(d) {
+      const fout = fiatBlokkade(actor, d, 2) || blokkadeUitkomst(d);
+      if (fout) return fout;
+      const ant = d.fiat?.tweede?.antwoorden || {};
+      if (FIAT_VRAGEN.some(([k]) => !ant[k]?.antwoord)) return 'Beantwoord eerst alle vragen.';
+      if (FIAT_VRAGEN.some(([k]) => ant[k].antwoord === 'Nee')) return 'Herstel de vragen die met Nee zijn beantwoord of zet het dossier terug.';
+      d.fiat.tweede = { ...d.fiat.tweede, ...stempelFiatteur(actor), resultaat: 'akkoord' };
+      d.fiatteur = actor.naam;
+      zetStatus(d, 'afgerond', '2e beoordeling akkoord');
+      return '';
+    } });
+    if (!bewaard) return;
+    lijst('taak').filter((t) => t.dossierId === id && t.status === 'open' && /2e (fiat|beoordeling)/i.test(t.titel)).forEach((t) => { t.status = 'gereed'; opslaan(t); });
     toast('Akkoord gegeven. Het dossier staat bij Afgeronde aanvragen.');
-    render({ behoudScroll: true });
   },
-  'fiat-niet-akkoord'() {
-    const d = huidigDossier();
-    if (d.soort === 'ANALYSE') return;
-    const ant = d.fiat?.tweede?.antwoorden || {};
-    if (!FIAT_VRAGEN.some(([k]) => ant[k]?.antwoord === 'Nee') && !d.fiat?.tweede?.opmerking) {
-      toast('Geef aan welke vraag niet akkoord is of licht toe in de opmerking.');
-      return;
-    }
-    d.fiat.tweede = { ...d.fiat.tweede, naam: mijnNaam(), datum: nowISO(), resultaat: 'niet_akkoord' };
-    d.teruggezet = true;
-    zetStatus(d, 'beoordeling_1', '2e beoordeling niet akkoord, teruggezet');
+  async 'fiat-niet-akkoord'() {
+    const id = route.id;
+    const actor = actorVoor(state.profiel, state.me);
+    const bewaard = await dossierOpslaan({ stil: true, aanpassen(d) {
+      const fout = fiatBlokkade(actor, d, 2);
+      if (fout) return fout;
+      const ant = d.fiat?.tweede?.antwoorden || {};
+      if (!FIAT_VRAGEN.some(([k]) => ant[k]?.antwoord === 'Nee') && !d.fiat?.tweede?.opmerking?.trim()) {
+        return 'Geef aan welke vraag niet akkoord is of licht toe in de opmerking.';
+      }
+      d.fiat.tweede = { ...d.fiat.tweede, ...stempelFiatteur(actor), resultaat: 'niet_akkoord' };
+      d.teruggezet = true;
+      zetStatus(d, 'beoordeling_1', '2e beoordeling niet akkoord, teruggezet');
+      return '';
+    } });
+    if (!bewaard) return;
+    const d = get(id);
     nieuw('taak', { titel: 'Bevindingen 2e beoordeling verwerken', dossierId: d.id, toegewezenAan: d.fiat.eerste?.naam || d.behandelaar || '', deadline: todayISO(), status: 'open', door: mijnNaam() });
-    opslaan(d, { direct: true });
-    render({ behoudScroll: true });
+    toast('Dossier teruggezet naar de eerste beoordeling.');
   },
   async 'toon-versies'() {
     const d = huidigDossier();
@@ -1614,15 +1958,21 @@ const ACTIES = {
   },
   async 'versie-herstellen'(el) {
     const d = huidigDossier();
+    const fout = fiatBlokkade(actorVoor(state.profiel, state.me), d, 1);
+    if (fout) { toast(fout); return; }
     const v = Number(el.dataset.versie);
-    if (!(await bevestig(`Versie ${v} terugzetten? De huidige inhoud wordt als nieuwe versie bewaard.`, 'Terugzetten'))) return;
+    if (!(await bevestig(`Versie ${v} overnemen als concept? Klik daarna op Opslaan.`, 'Versie overnemen'))) return;
     const oud = await state.adapter.getVersion(d.id, v);
     if (!oud) { toast('Versie niet gevonden.'); return; }
-    const versie = d.version;
+    if (huidigDossier() !== d) return;
+    const { version, status, statusDatum } = d;
     Object.keys(d).forEach((k) => { delete d[k]; });
-    Object.assign(d, oud, { version: versie });
+    Object.assign(d, clone(oud), { version, status, statusDatum });
+    delete d.fiat;
+    delete d.fiatteur;
+    wisInkomensWijzigingen(d);
     logHistorie(d, `Versie ${v} teruggezet`);
-    opslaan(d, { direct: true });
+    werkDossierconceptBij(d);
     render({ behoudScroll: true });
   },
   afdrukken() {
@@ -1699,28 +2049,18 @@ const ACTIES = {
   },
 
   // ---- Documenten ---------------------------------------------------------
-  async 'doc-upload'() {
+  'doc-upload'() {
     const d = huidigDossier();
     const input = document.getElementById('doc-bestand');
-    const bestand = input?.files?.[0];
-    if (!bestand) { toast('Kies eerst een bestand.'); return; }
-    if (bestand.size > 15 * 1024 * 1024) { toast('Het bestand is groter dan 15 MB.'); return; }
-    const id = uid('doc');
-    try {
-      const res = await state.adapter.putFile(id, bestand);
-      const rec = { id, type: 'document', dossierId: d.id, categorie: document.getElementById('doc-categorie').value,
-        jaar: document.getElementById('doc-jaar').value, ondId: document.getElementById('doc-ond').value,
-        naam: bestand.name, mime: bestand.type, grootte: bestand.size, opslag: res.opslag, door: mijnNaam(), aangemaakt: nowISO() };
-      opslaan(rec, { direct: true });
-      logHistorie(d, `Document toegevoegd: ${bestand.name}`);
-      opslaan(d);
-      toast('Document toegevoegd.');
-      render({ behoudScroll: true });
-    } catch (e) {
-      toast(`Uploaden mislukt: ${e.message}`);
-    }
+    if (!d || !input || !dossierconcept.gekozenBestand) { toast('Kies eerst een bestand.'); return; }
+    const fout = voegDocumentConceptToe(dossierconcept);
+    if (fout) { toast(fout); return; }
+    toast('Document toegevoegd aan je wijzigingen. Klik op Opslaan om het te bewaren.');
+    render({ behoudScroll: true });
   },
   async 'doc-download'(el) {
+    const concept = dossierconcept?.documenten.get(el.dataset.id);
+    if (concept) { downloadBestand(concept.doc.naam, concept.bestand); return; }
     const rec = get(el.dataset.id);
     try {
       const blob = await state.adapter.getFile(el.dataset.id);
@@ -1731,10 +2071,21 @@ const ACTIES = {
     }
   },
   async 'doc-verwijderen'(el) {
+    const c = dossierconcept;
+    const concept = c?.documenten.get(el.dataset.id);
+    if (concept) {
+      c.documenten.delete(el.dataset.id);
+      c.record.historie = c.record.historie?.filter((h) => h !== concept.historie);
+      werkDossierconceptBij(c.record);
+      render({ behoudScroll: true });
+      return;
+    }
     const rec = get(el.dataset.id);
     if (!rec || !(await bevestig(`Document "${rec.naam}" verwijderen?`, 'Verwijderen'))) return;
-    try { await state.adapter.removeFile(rec.id); } catch { /* bestand ontbrak al */ }
-    await verwijder(rec.id);
+    if (!c || c !== dossierconcept || rec.dossierId !== c.record.id) return;
+    c.verwijderd.set(rec.id, rec);
+    logHistorie(c.record, `Document verwijderd: ${rec.naam}`);
+    werkDossierconceptBij(c.record);
     render({ behoudScroll: true });
   },
   'mail-adviseur'() {
@@ -1745,7 +2096,7 @@ const ACTIES = {
     mailto({ aan: adv?.email || '', onderwerp: `Aanvullende stukken ${d.nummer} ${naamAanvrager(d.aanvrager)}`, bericht: tekst });
     if (['documenten_uploaden', 'controleren_documenten', 'opnieuw_controleren', 'beoordeling_1'].includes(d.status)) zetStatus(d, 'informatie_aanleveren');
     logHistorie(d, 'Ontbrekende stukken opgevraagd bij adviseur');
-    opslaan(d);
+    werkDossierconceptBij(d);
   },
 
   // ---- Overige pagina's ------------------------------------------------------
@@ -1838,8 +2189,9 @@ const ACTIES = {
       const json = JSON.parse(await bestand.text());
       if (!Array.isArray(json.records)) throw new Error('Geen geldig ZIB-back-upbestand.');
       if (!(await bevestig(`${json.records.length} records terugzetten? Bestaande records met hetzelfde id worden overschreven.`, 'Terugzetten'))) return;
-      const n = await importeer(json);
-      toast(`${n} records teruggezet.`);
+      const uitkomst = await importeer(json);
+      if (typeof uitkomst === 'number') toast(`${uitkomst} records teruggezet.`);
+      else toast(`${uitkomst.aantal} records teruggezet.${uitkomst.geweigerd ? ` ${uitkomst.geweigerd} geweigerd.` : ''}${uitkomst.herbeoordelen ? ` ${uitkomst.herbeoordelen} opnieuw te beoordelen.` : ''}`);
       render();
     } catch (e) {
       toast(`Terugzetten mislukt: ${e.message}`);
@@ -1901,22 +2253,30 @@ const ACTIES = {
     location.hash = '#/klanten';
   },
   'log-uit'() {
-    logUit();
+    vraagVertrek(logUit);
   },
   'verberg-banner'() {
     try { sessionStorage.setItem('zib.banner.lokaal', '1'); } catch { /* geen opslag */ }
     render({ behoudScroll: true });
   },
   'opnieuw-opslaan'() {
-    const d = huidigDossier();
-    if (d) opslaan(d, { direct: true });
-    bewaarAlles();
+    if (conceptGewijzigd()) return dossierOpslaan();
+    return bewaarAlles();
   },
   'conflict-herladen'() {
+    if (state.conflict?.dossierConcept && state.conflict.id === dossierconcept?.record.id) conceptWissen();
     losConflictOp('herladen');
     render({ behoudScroll: true });
   },
   'conflict-overschrijven'() {
+    if (state.conflict?.dossierConcept && state.conflict.id === dossierconcept?.record.id) {
+      const huidig = state.conflict.huidig;
+      if (!huidig || huidig.deleted) { toast('Dit dossier is verwijderd. Laad de huidige gegevens om je lijst bij te werken.'); return; }
+      losConflictOp('herladen');
+      dossierconcept.record.version = huidig.version;
+      dossierconcept.basis = JSON.stringify(huidig);
+      return dossierOpslaan();
+    }
     losConflictOp('overschrijven');
     render({ behoudScroll: true });
   },
@@ -1926,6 +2286,7 @@ const ACTIES = {
 };
 
 function voerUit(actie, el, e) {
+  if (dossierOpslag && route.pagina === 'dossier' && !['sluit-modaal', 'zoek-open'].includes(actie)) return;
   const fn = ACTIES[actie];
   if (!fn) return;
   try {
@@ -1943,9 +2304,14 @@ function voerUit(actie, el, e) {
 (async () => {
   try {
     await start();
+    if (globalThis.ZIB_LOCAL_PRIVATE) await laadPriveStart();
     if (!location.hash) location.hash = state.profiel || state.modus === 'cloud' ? '#/klanten' : '#/login';
+    actieveHash = location.hash;
+    geschiedenisNummer = history.state?.zibRouteIndex ?? 0;
+    history.replaceState({ ...history.state, zibRouteIndex: geschiedenisNummer }, '');
     render();
-    initDrive();
+    if (globalThis.ZIB_LOCAL_PRIVATE) initBroncijfersImport(() => render());
+    if (!globalThis.ZIB_LOCAL_PRIVATE) initDrive();
   } catch (e) {
     console.error(e);
     app.innerHTML = `<div class="pagina"><div class="melding niet_akkoord">ZIB kon niet starten: ${esc(e.message || String(e))}</div></div>`;

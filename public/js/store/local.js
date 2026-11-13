@@ -1,6 +1,8 @@
 // Lokale opslag: alles blijft in deze browser. Bedoeld voor de demo en voor offline werken.
 // Let op: wissen van browsergegevens = gegevens kwijt. Gebruik daarom de cloudopslag of maak back-ups.
 
+import { ConflictError } from './api.js';
+
 const KEY = 'zib.records.v1';
 const VKEY = 'zib.versies.v1';
 const MAX_VERSIES = 25;
@@ -31,6 +33,8 @@ export class LocalAdapter {
     this.data = {};
     this.versies = {};
     this.persistent = true;
+    this.dataKey = globalThis.ZIB_LOCAL_PRIVATE === true ? 'zib.prive.records.v1' : KEY;
+    this.versionKey = globalThis.ZIB_LOCAL_PRIVATE === true ? 'zib.prive.versies.v1' : VKEY;
   }
 
   async init() {
@@ -40,8 +44,8 @@ export class LocalAdapter {
     } catch {
       this.persistent = false;
     }
-    this.data = lees(KEY, {});
-    this.versies = lees(VKEY, {});
+    this.data = lees(this.dataKey, {});
+    this.versies = lees(this.versionKey, {});
     return { naam: '', email: '' };
   }
 
@@ -49,24 +53,35 @@ export class LocalAdapter {
     return Object.values(this.data).filter((r) => !r.deleted);
   }
 
-  async put(rec) {
-    const vorig = this.data[rec.id];
-    if (vorig) {
-      const lijst = this.versies[rec.id] || [];
-      lijst.unshift({ version: vorig.version || 0, at: vorig.updated_at || '', door: vorig.updated_by || '', data: vorig });
-      this.versies[rec.id] = lijst.slice(0, MAX_VERSIES);
+  async put(rec, { controleerVersie = false } = {}) {
+    const opgeslagen = lees(this.dataKey, this.data);
+    const vorigeVersies = lees(this.versionKey, this.versies);
+    const vorig = opgeslagen[rec.id];
+    if (controleerVersie && ((vorig?.version || 0) !== (rec.version || 0) || vorig?.deleted)) {
+      throw new ConflictError(vorig || null);
     }
+    const versies = { ...vorigeVersies };
+    if (vorig) versies[rec.id] = [
+      { version: vorig.version || 0, at: vorig.updated_at || '', door: vorig.updated_by || '', data: vorig },
+      ...(vorigeVersies[rec.id] || []),
+    ].slice(0, MAX_VERSIES);
     const nieuw = { ...rec, version: (vorig?.version || 0) + 1, updated_at: new Date().toISOString(), updated_by: rec.gewijzigdDoor || '' };
-    this.data[rec.id] = nieuw;
-    const ok = schrijf(KEY, this.data) && schrijf(VKEY, this.versies);
-    if (!ok) throw new Error('De browseropslag is vol of geblokkeerd. Maak een back-up (Downloads) en koppel de cloudopslag.');
+    const data = { ...opgeslagen, [rec.id]: nieuw };
+    // Schrijf de versiehistorie eerst. Als het dossier niet past, blijft de bewaarde versie leidend.
+    if (!schrijf(this.versionKey, versies)) throw new Error('De browseropslag is vol of geblokkeerd. Maak een back-up bij Downloads.');
+    if (!schrijf(this.dataKey, data)) {
+      schrijf(this.versionKey, vorigeVersies);
+      throw new Error('De browseropslag is vol of geblokkeerd. Maak een back-up (Downloads) en koppel de cloudopslag.');
+    }
+    this.data = data;
+    this.versies = versies;
     return nieuw;
   }
 
-  async remove(id) {
-    const r = this.data[id];
+  async remove(id, version) {
+    const r = lees(this.dataKey, this.data)[id];
     if (!r) return;
-    await this.put({ ...r, deleted: true });
+    await this.put({ ...r, deleted: true, version: version ?? r.version }, { controleerVersie: version !== undefined });
   }
 
   async versions(id) {
@@ -83,14 +98,16 @@ export class LocalAdapter {
 
   async importAll(json) {
     const recs = Array.isArray(json?.records) ? json.records : [];
-    recs.forEach((r) => { if (r && r.id && r.type) this.data[r.id] = r; });
-    schrijf(KEY, this.data);
+    const data = { ...lees(this.dataKey, this.data) };
+    recs.forEach((r) => { if (r && r.id && r.type) data[r.id] = r; });
+    if (!schrijf(this.dataKey, data)) throw new Error('De browseropslag is vol of geblokkeerd. De back-up kon niet worden teruggezet.');
+    this.data = data;
     return recs.length;
   }
 
   /** Voeg voorbeelden toe, met behoud van bestaande en verwijderde dossiers. */
   voegOntbrekendeToe(records) {
-    const bewaard = { ...(this.persistent ? lees(KEY, this.data) : this.data) };
+    const bewaard = { ...(this.persistent ? lees(this.dataKey, this.data) : this.data) };
     const nummers = new Set(Object.values(bewaard)
       .filter((r) => r.type === 'dossier' && !r.deleted)
       .map((r) => r.nummer));
@@ -104,7 +121,7 @@ export class LocalAdapter {
       bewaard[rec.id] = rec;
       toegevoegd.push(rec);
     }
-    if (toegevoegd.length && this.persistent && !schrijf(KEY, bewaard)) {
+    if (toegevoegd.length && this.persistent && !schrijf(this.dataKey, bewaard)) {
       throw new Error('De browseropslag is vol of geblokkeerd.');
     }
     this.data = bewaard;
@@ -114,8 +131,8 @@ export class LocalAdapter {
   async wisAlles() {
     this.data = {};
     this.versies = {};
-    schrijf(KEY, this.data);
-    schrijf(VKEY, this.versies);
+    schrijf(this.dataKey, this.data);
+    schrijf(this.versionKey, this.versies);
     try { await idbClear(); } catch { /* geen bestanden */ }
   }
 
@@ -137,7 +154,7 @@ export class LocalAdapter {
 function idb() {
   return new Promise((resolve, reject) => {
     if (!globalThis.indexedDB) { reject(new Error('IndexedDB niet beschikbaar')); return; }
-    const req = indexedDB.open('zib-bestanden', 1);
+    const req = indexedDB.open(globalThis.ZIB_LOCAL_PRIVATE === true ? 'zib-prive-bestanden' : 'zib-bestanden', 1);
     req.onupgradeneeded = () => req.result.createObjectStore('bestanden');
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);

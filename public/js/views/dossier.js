@@ -12,16 +12,17 @@ import { CATEGORIEEN, docAanwezig } from '../schema/documenten.js';
 import { WINST_CORRECTIES, VERMOGENS_CORRECTIES } from '../schema/correcties.js';
 import { balansTotalen, vwTotalen } from '../engine/financieel.js';
 import { pil, statusPil, bedrag, veld, tekstvak, keuze, vink, melding, leeg, STATUS_TEKST, icoon } from './ui.js';
-import { renderTrace } from './trace-view.js';
+import { rekenInvoerStatus } from '../engine/reken-invoer.js';
 import { renderRapportPagina } from './rapport.js';
-import { FORMATS, CONTROLES, FIAT_VRAGEN, magFiatteren, conclusieFormat } from './formats.js';
+import { FORMATS, CONTROLES, FIAT_VRAGEN, conclusieFormat } from './formats.js';
+import { actorVoor, fiatBlokkade } from '../engine/beoordelingsrechten.js';
 import { datumKort } from './layout.js';
 import { ui, ordeJaren, ordeJarenOverzicht, ingeklapt } from './uistate.js';
 import { voortgang, voortgangTelling } from './voortgang.js';
 import { sparkSVG } from './spark.js';
 import { renderBZI, bziKop, weergaveSchakelaar, hoofdbedrijven } from './bzi.js';
 import {
-  paneelRC, paneelLeningDirectie, paneelZK, paneelLoondienst, paneelNul, paneelAfwijkend,
+  paneelRC, paneelLeningDirectie, paneelZK, paneelLoondienst, paneelNul,
   structuurVelden, rechtsvormOpties,
 } from './panelen.js';
 import { paneelOrganogram } from './organogram.js';
@@ -31,7 +32,10 @@ import { renderBziInvoer } from './bziinvoer.js';
 import { beleidInvoer, beleidUitkomst } from './beleid.js';
 import { renderDossierbeleid } from './dossierbeleid.js';
 import { renderKerninvoer } from './kerninvoer.js';
-import { renderAnalyseTabel, renderRekenwerkruimte } from './rekenwerkruimte.js';
+import { renderAnalyseTabel, renderRekenwerkruimte, renderOndernemingBerekening, renderRekenInvoercontroles, renderUitkomstentabel } from './rekenwerkruimte.js';
+import { dossierWerkbalk } from './dossierwerkbalk.js';
+import { renderFiatBeoordeling } from './fiatbeoordeling.js';
+import { renderBroncontrole } from './broncontrole.js';
 
 export const TABS = [
   ['overzicht', 'Dossieroverzicht'],
@@ -183,14 +187,15 @@ function stapNav(d, tab, ondId) {
   </nav>`;
 }
 
-export function renderDossier(d, tab, ondId, r) {
-  const docs = dossierDocs(d);
+export function renderDossier(d, tab, ondId, r, { documenten } = {}) {
+  const docs = documenten ?? dossierDocs(d);
   const bzi = weergaveDossier(d) === 'bzi';
   const onds = d.ondernemingen || [];
   const ond = onds.find((o) => o.id === ondId) || onds[0];
   if (!tab || tab === 'overzicht') {
-    return `${kopVoor(d, r)}${bzi ? '' : tabsHTML(d, 'overzicht', '', r, docs)}
-      <div id="tabinhoud">${tabOverzicht(d, r, docs, bzi)}</div>`;
+    return `${kopVoor(d, r)}${bzi ? '' : `<div class="dossier-schil">${tabsHTML(d, 'overzicht', '', r, docs)}<div class="dossier-werkblad">`}
+      ${dossierWerkbalk('Dossieroverzicht', { toonTitel: false })}
+      <div id="tabinhoud">${tabOverzicht(d, r, docs, bzi)}</div>${bzi ? '' : '</div></div>'}`;
   }
   if (bzi) {
     const ontbrekend = r.documenten.filter((x) => x.verplicht && !docAanwezig(docs, x)).length;
@@ -198,11 +203,11 @@ export function renderDossier(d, tab, ondId, r) {
       ontbrekend,
       documenten: () => tabDocumenten(d, r, docs),
       invoer: () => renderKerninvoer(d, ond, roosterJaren(d), r),
-      berekening: () => tabBerekening(d, r),
+      berekening: () => tabBerekening(d, r, ondId),
       bziinvoer: () => renderBziInvoer(d, r),
       notities: () => tabNotities(d, r),
       rapport: () => renderRapportPagina(d, r),
-      fiat: () => tabFiat(d, r),
+      fiat: () => tabFiat(d, r, docs),
     });
   }
   const t = NAAR_VIIZ[tab] || tab;
@@ -213,20 +218,20 @@ export function renderDossier(d, tab, ondId, r) {
     case 'vw': inhoud = ond ? tabRooster(d, ond, 'vw', r) : geenOnderneming(d); break;
     case 'diversen': inhoud = ond ? tabRooster(d, ond, 'diversen', r) : geenOnderneming(d); break;
     case 'ib': inhoud = tabIB(d, r); break;
-    case 'berekening': inhoud = tabBerekening(d, r); break;
+    case 'berekening': inhoud = tabBerekening(d, r, ondId); break;
     case 'bziinvoer': inhoud = renderBziInvoer(d, r); break;
     case 'rapport': inhoud = renderRapportPagina(d, r); break;
     case 'documenten': inhoud = tabDocumenten(d, r, docs); break;
     case 'notities': inhoud = tabNotities(d, r); break;
-    case 'fiat': inhoud = tabFiat(d, r); break;
+    case 'fiat': inhoud = tabFiat(d, r, docs); break;
     default: inhoud = tabKlant(d, r);
   }
   const tabGeldig = TABS.some(([k]) => k === t) ? t : 'klant';
   const keuzeOnd = PER_ONDERNEMING.includes(t) && onds.length > 1
     ? `<div class="ondkeuze geen-print">${onds.map((o) => `<a href="#/dossier/${esc(d.id)}/${t}/${esc(o.id)}" class="${o.id === ond?.id ? 'actief' : ''}">${esc(o.naam || '(naamloos)')}</a>`).join('')}</div>` : '';
-  return `${dossierKop(d, r)}${tabsHTML(d, tabGeldig, ond?.id, r, docs)}${keuzeOnd}
-    ${t !== 'rapport' ? `<h1 class="dossier-titel">${esc(TAB_LABEL[tabGeldig])}</h1>` : ''}
-    <div id="tabinhoud">${inhoud}</div>${stapNav(d, tabGeldig, ond?.id)}`;
+  return `${dossierKop(d, r)}<div class="dossier-schil">${tabsHTML(d, tabGeldig, ond?.id, r, docs)}<div class="dossier-werkblad">${keuzeOnd}
+    ${dossierWerkbalk(TAB_LABEL[tabGeldig], { toonTitel: t !== 'rapport' })}
+    <div id="tabinhoud">${inhoud}</div>${stapNav(d, tabGeldig, ond?.id)}</div></div>`;
 }
 
 const TRIAGE_LABEL = { ok: 'Compleet', aandacht: 'Te controleren', fout: 'Actie nodig', open: 'Open' };
@@ -246,10 +251,8 @@ function tabOverzicht(d, r, docs, bzi) {
   const volgende = AFGEROND.includes(d.status) ? 'rapport'
     : d.status === 'beoordeling_2' ? 'fiat'
     : stappen.find((k) => v[k] && v[k].status !== 'ok') || 'rapport';
-  const vervolg = { klant: 'Klantgegevens aanvullen', documenten: 'Stukken controleren', balans: 'Balans controleren', vw: 'V&W controleren', ib: 'IB-gegevens aanvullen', berekening: 'Voorwaarden beoordelen', notities: 'Onderbouwing vastleggen', fiat: 'Naar fiattering', rapport: 'Rapport openen' };
+  const vervolg = { klant: 'Klantgegevens aanvullen', documenten: 'Stukken controleren', balans: 'Balans controleren', vw: 'V&W controleren', ib: 'IB-gegevens aanvullen', berekening: 'Berekening bekijken', notities: 'Onderbouwing vastleggen', fiat: 'Naar fiattering', rapport: 'Rapport openen' };
   const bevindingen = (r.meldingen || []).filter((m) => m.niveau === 'niet_akkoord' || m.niveau === 'attentie');
-  const zwaar = bevindingen.filter((m) => m.niveau === 'niet_akkoord');
-  const selectie = [...zwaar, ...bevindingen.filter((m) => m.niveau === 'attentie')];
   const onds = d.ondernemingen || [];
   const status = (k) => pil(TRIAGE_PIL[v[k].status], TRIAGE_LABEL[v[k].status]);
   const rij = (k) => `<li><a href="${href(k)}"><span><strong>${esc(TAB_LABEL[k])}</strong><small>${esc(v[k].tekst)}</small></span>${status(k)}${icoon('rechts')}</a></li>`;
@@ -271,24 +274,20 @@ function tabOverzicht(d, r, docs, bzi) {
         <div><span>Verplichte stukken ontbreken</span><strong>${v.documenten?.teller || 0}</strong>
           <a href="${href('documenten')}">Bekijk stukken ${icoon('rechts')}</a></div>
         <div><span>Rekenmeldingen</span><strong>${bevindingen.length}</strong>
-          <a href="${href('berekening')}">Bekijk berekening ${icoon('rechts')}</a></div>
+          <a href="${href('fiat')}">Bekijk controles bij Fiattering ${icoon('rechts')}</a></div>
       </div>
     </section>
     <div class="overzicht-kolommen">
       ${groep('Aanvraag en cijfers', ['klant', 'documenten', 'balans', 'vw', 'ib'])}
       <div class="overzicht-stapel">
         ${groep('Beoordeling', ['berekening', 'notities', 'fiat'])}
-        ${selectie.length ? `<section class="paneel overzicht-bevindingen"><h2>Rekenmeldingen</h2>
-          <ul>${selectie.slice(0, 3).map((m) => `<li>${stip(m.niveau)}<span>${esc(m.tekst)}</span></li>`).join('')}</ul>
-          <a href="${href('berekening')}">${selectie.length > 3 ? `Alle ${selectie.length} meldingen bekijken` : 'Onderbouwing in de berekening'} ${icoon('rechts')}</a></section>` : ''}
       </div>
     </div>
     <section class="paneel overzicht-ondernemingen"><h2>Ondernemingen</h2>
       ${onds.length ? `<ul>${onds.map((o) => {
-        const analyse = r.ondernemingen.find((a) => a.id === o.id);
         return `<li><a href="${dossierPad(d, bzi ? 'bedrijf' : 'balans', o.id)}">${icoon('gebouw')}
           <span><strong>${esc(o.naam || 'Naamloze onderneming')}</strong><small>${esc(RECHTSVORMEN[o.rechtsvorm]?.label || o.rechtsvorm || '')}</small></span>
-          ${analyse ? pil(analyse.status) : ''}${icoon('rechts')}</a></li>`;
+          ${icoon('rechts')}</a></li>`;
       }).join('')}</ul>` : `<p class="dempen">Er is nog geen onderneming toegevoegd.</p>${detailLink('klant', 'Naar klantgegevens', 'plus')}`}
       ${bzi ? `<div class="acties overzicht-snel">${detailLink('bedrijven', 'Structuur', 'organogram')}${detailLink('verplichtingen', 'Verplichtingen', 'lijst')}${detailLink('bziinvoer', 'BZI-invoer', 'reken')}${detailLink('samenvatting', 'Samenvatting', 'notitie')}</div>` : ''}
     </section>
@@ -378,8 +377,7 @@ function tabKlant(d, r) {
     ${paneelGeldstromen(d, r)}${heeftVPB ? paneelRC(d, r) + paneelLeningDirectie(d, r) : ''}${paneelZK(d)}`);
   const aanvullende = intakeKlap(d, 'inkomen', 'Loondienst, 0-inkomen en afwijkingen', `
     ${kader.familie === 'NHG' || d.soort === 'NUL' ? paneelLoondienst(d, r) : ''}
-    ${d.soort === 'NUL' || (d.ondernemingen || []).some((o) => o.meenemen === false || o.nulInkomen) ? paneelNul(d) : ''}
-    ${d.soort === 'IKV' && !kader.beleid ? paneelAfwijkend(d, r) : ''}`);
+    ${d.soort === 'NUL' || (d.ondernemingen || []).some((o) => o.meenemen === false || o.nulInkomen) ? paneelNul(d) : ''}`);
   return `<div class="intake-basis">${aanvraag}${aanvrager}</div>
     ${r.inkomensanalyse ? '' : beleidInvoer(d, r)}
     ${ondernemingen}
@@ -479,9 +477,7 @@ function ondernemingKaart(d, o, i, r) {
       ${tekstvak('SBI-code(s) en omschrijving (één per regel)', `${b}.sbi`, o.sbi, { rijen: 2 })}
       <div style="display:grid;gap:8px">
         ${vink('Onderneming is actief', `${b}.actief`, o.actief !== false, { render: true })}
-        ${d.soort === 'IKV' ? vink('Inkomen uit deze onderneming meenemen', `${b}.meenemen`, o.meenemen !== false, { render: true, hint: 'Uitzetten = alleen risicobeoordeling (zoals bij een 0-verklaring).' }) : ''}
         ${soort === 'VPB' ? vink('Zelfstandig bevoegd om dividend uit te keren (zeggenschap aangetoond)', `${b}.zeggenschap`, !!o.zeggenschap, { render: true }) : ''}
-        ${d.soort === 'IKV' && r.familie !== 'ABN' ? vink('0-inkomen / beoordelingsverklaring (alleen risicobeoordeling)', `${b}.nulInkomen`, !!o.nulInkomen, { render: true, hint: 'Bijv. een nieuwe persoonlijke holding zonder eigen inkomen: telt niet mee in het inkomen en het toetskader.' }) : ''}
         ${soort === 'VPB' && r.kader === 'ASN' && !o.parentId && analyse && analyse.aandeel <= 0.5 ? vink('Dividend uit dit minderheidsbelang is jaarlijks terugkerend en bestendig (§3.2, expert judgement)', `${b}.minderheidDividendBestendig`, !!o.minderheidDividendBestendig, { render: true }) : ''}
         ${soort === 'VPB' && r.familie === 'ABN' && !o.parentId ? vink('Holdingroute (3.63): DGA-loon + ontvangen dividend uit minderheidsdeelneming(en)', `${b}.holdingroute`, !!o.holdingroute, { render: true, hint: 'Gemiddeld ontvangen dividend, maximaal het laatste jaar. Uitkering en winst van de holding tellen dan niet mee.' }) : ''}
         ${o.parentId && soort === 'VPB' ? vink('Cijfers zijn geconsolideerd in de aandeelhouder', `${b}.geconsolideerd`, !!o.geconsolideerd, { render: true }) : ''}
@@ -757,41 +753,6 @@ export function kengetallenTabel(a, r) {
   </tbody></table></div>`;
 }
 
-function voorwaardenLijst(checks) {
-  return `<div class="voorwaarden">${checks.map((c) => `<div class="voorwaarde"><b>${esc(c.label)}</b><div>${pil(c.status)}</div><div class="tekst">${esc(c.tekst)}</div></div>`).join('')}</div>`;
-}
-
-// Waar een voorwaarde wordt ingevoerd: het tabblad (ViiZ) of de stap (BZI) achter "Naar invoer".
-function invoerVoorCheck(key) {
-  if (key === 'winst') return ['vw', 'V&W'];
-  if (/^(liquiditeit|werkkapitaal|solvabiliteit|definitief|tussentijds|balans\d{4}|plausibel(Cor)?\d{4})$/.test(key)) return ['balans', 'Balans'];
-  return ['klant', 'Klantgegevens'];
-}
-
-function invoerLink(d, a, key) {
-  const [tab, label] = invoerVoorCheck(key);
-  if (weergaveDossier(d) === 'bzi') {
-    const stap = tab === 'klant' ? 'bedrijven' : `bedrijf/${esc(a.id)}`;
-    return `<a class="naar-invoer geen-print" href="#/dossier/${esc(d.id)}/${stap}">Naar invoer${icoon('rechts')}</a>`;
-  }
-  return `<a class="naar-invoer geen-print" href="#/dossier/${esc(d.id)}/${tab}${tab === 'klant' ? '' : `/${esc(a.id)}`}">Naar invoer (${esc(label)})${icoon('rechts')}</a>`;
-}
-
-/** Voorwaarden van één onderneming: wat aandacht vraagt staat bovenaan met een link naar de invoer; wat akkoord is, klapt in. */
-function voorwaardenBlok(d, a) {
-  const aandacht = a.checks.filter((c) => c.status !== 'akkoord');
-  const akkoord = a.checks.filter((c) => c.status === 'akkoord');
-  const rij = (c, link) => `<div class="voorwaarde"><b>${esc(c.label)}</b><div>${pil(c.status)}</div><div class="tekst">${esc(c.tekst)}${link ? ` ${invoerLink(d, a, c.key)}` : ''}</div></div>`;
-  const sleutel = `vw:${a.id}`;
-  const dicht = ingeklapt(sleutel, true);
-  const lijstId = `vw-${a.id}`;
-  return `${aandacht.length ? `<div class="voorwaarden">${aandacht.map((c) => rij(c, true)).join('')}</div>` : ''}
-    ${akkoord.length ? `<div class="klap vw-akkoord${dicht ? ' ingeklapt' : ''}" data-klap="${esc(sleutel)}">
-      <button type="button" class="vw-akkoord-kop" data-actie="klap" data-sleutel="${esc(sleutel)}" aria-expanded="${!dicht}" aria-controls="${esc(lijstId)}">${icoon('open')}
-        <span>${aandacht.length ? `${akkoord.length} ${akkoord.length === 1 ? 'voorwaarde' : 'voorwaarden'} akkoord` : `Alle ${akkoord.length} voorwaarden akkoord`}</span></button>
-      <div class="klap-inhoud voorwaarden" id="${esc(lijstId)}">${akkoord.map((c) => rij(c, false)).join('')}</div></div>` : ''}`;
-}
-
 /** Paneel dat via de kop in- en uitklapt. De keuze blijft staan zolang de pagina open is. */
 function klapPaneel(sleutel, id, kopHTML, inhoud, { standaardDicht = false } = {}) {
   const dicht = ingeklapt(sleutel, standaardDicht);
@@ -849,66 +810,13 @@ export function weergaveOpties({ formules = true } = {}) {
   </div>`;
 }
 
-function tabBerekening(d, r) {
-  if (r.inkomensanalyse) {
-    return renderRekenwerkruimte(d, r);
-  }
-  const isNul = d.soort === 'NUL';
-  const analyses = r.ondernemingen.filter((a) => !(d.soort === 'IKV' && !a.meenemen && r.familie !== 'ABN'));
-  // Bij drie of meer ondernemingen starten de ondernemingen die akkoord zijn ingeklapt: de aandacht gaat naar de rest.
-  const veel = analyses.length >= 3;
-  const nav = [];
-  const delen = [];
-  if (isNul) {
-    const n = r.nul;
-    nav.push(['ber-inkomen', 'Beoordeling', n.status]);
-    delen.push(klapPaneel('ber:inkomen', 'ber-inkomen', `Beoordeling 0-verklaring ${pil(n.status)}`, `
-      ${r.kader === 'NHG' ? melding('info', 'Het NHG-toetskader voorziet niet in een nulverklaring. De kengetallen zijn beoordeeld op basis van de NHG-normen.') : ''}
-      <p style="margin-top:10px"><b>${esc(n.conclusie)}</b></p>
-      ${n.toelichtingCorrectie.length ? `<p class="dempen">${esc(n.toelichtingCorrectie.join('; '))}</p>` : ''}
-      ${n.perOnderneming.map((o) => `<h3 style="margin-top:16px">${esc(o.naam)} <span class="dempen klein">${esc(o.rechtsvorm)}</span> ${pil(o.status)}</h3>${voorwaardenLijst(o.checks)}`).join('')}
-      <h3 style="margin-top:16px">Zekerheden en verplichtingen</h3>${voorwaardenLijst(n.zekerheden)}
-      ${r.toets30 ? `<p class="dempen" style="margin-top:12px">Ter informatie: maximaal 30%-toets bij loondienst ≥ 80%: ${esc(fmt.eur(r.toets30.max))}.</p>` : ''}`));
-  } else {
-    if (r.inkomen.nietMeegenomen) {
-      nav.push(['ber-risico', 'Risicobeoordeling', r.inkomen.nietMeegenomen.status]);
-      delen.push(klapPaneel('ber:risico', 'ber-risico', 'Niet-meegenomen ondernemingen', r.inkomen.nietMeegenomen.perOnderneming.map((o) => `<p><b>${esc(o.naam)}</b></p>${voorwaardenLijst(o.checks)}`).join('')));
-    }
-    const metOverwinst = r.ondernemingen.filter((a) => a.box2?.overwinst);
-    if (metOverwinst.length) {
-      nav.push(['ber-overwinst', 'Overwinst', '']);
-      delen.push(klapPaneel('ber:overwinst', 'ber-overwinst', 'Overwinst en dubbele balanstoets',
-        metOverwinst.map((a) => `${metOverwinst.length > 1 ? `<h3>${esc(a.naam)}</h3>` : ''}${overwinstBlok(d, r, a)}`).join('')));
-    }
-    if (r.inkomen.geldstromen?.length) {
-      nav.push(['ber-geldstromen', 'Geldstromen', '']);
-      delen.push(`<section class="paneel" id="ber-geldstromen">${geldstromenTabel(r, r.inkomen.geldstromen)}</section>`);
-    }
-  }
-  if (analyses.length > 1) {
-    nav.push(['ber-ondernemingen', 'Ondernemingen', '']);
-    delen.push(klapPaneel('ber:ondernemingen', 'ber-ondernemingen', `Samenvatting ondernemingen <span class="dempen klein">${analyses.length} ondernemingen</span>`, ondernemingenMatrix(d, r, analyses)));
-  }
-  analyses.forEach((a) => {
-    const econ = a.belangEconomisch !== undefined && a.belangEconomisch !== null && Math.abs(a.belangEconomisch - a.aandeel) > 0.0001
-      ? `, economisch ${fmt.pct(a.belangEconomisch, 1)}` : '';
-    nav.push([`ber-ond-${a.id}`, a.naam, a.status]);
-    delen.push(klapPaneel(`ber:ond:${a.id}`, `ber-ond-${a.id}`,
-      `${esc(a.naam)} ${pil(a.status)} <span class="dempen klein">${esc(a.rechtsvormLabel)}, ${esc(a.soort === 'VPB' ? 'niet-IB (DGA)' : 'IB-ondernemer')}${a.aandeel < 1 ? `, ${fmt.pct(a.aandeel, 0)}` : ''}${econ}${a.isDeelneming ? ', deelneming' : ''}${a.soort === 'VPB' && a.zeggenschap === false ? ', geen zeggenschap' : ''}</span>`,
-      `${kengetallenTabel(a, r)}
-      ${d.soort === 'IKV' ? `<h3 style="margin-top:16px">Voorwaarden</h3>${voorwaardenBlok(d, a)}` : ''}
-      <div class="raster-2" style="margin-top:14px">
-        <div>${a.maxOnttrekkenNvt ? melding('info', `Maximaal te onttrekken: n.v.t. ${esc(a.maxOnttrekkenNvt)}`) : melding('info', `Maximaal te onttrekken vlottende activa zodat de onderneming nog aan de ratio's voldoet (${a.laatsteBalansJaar}): <b>${esc(fmt.eur(a.maxOnttrekken ?? 0))}</b>`)}</div>
-        <div>${a.benodigdBox3 ? melding('attentie', `Minimaal benodigde balansversterking (box 3 vermogen) om aan de normen te voldoen: <b>${esc(fmt.eur(a.benodigdBox3))}</b> (liquiditeit ${esc(fmt.eur(a.benodigdBox3Detail.nodigCr))}, solvabiliteit ${esc(fmt.eur(a.benodigdBox3Detail.nodigSv))}).`) : melding('akkoord', 'Geen aanvullend box 3 vermogen nodig.')}</div>
-        ${a.box2?.benodigdVoorOverwinst ? `<div>${melding('info', `Benodigde balansversterking om de volledige overwinst mee te nemen: <b>${esc(fmt.eur(a.box2.benodigdVoorOverwinst))}</b>.`)}</div>` : ''}
-      </div>
-      <details class="stappen" style="margin-top:14px"><summary>Rekenstappen ${esc(a.naam)}</summary><div class="inhoud">${renderTrace(a.trace)}</div></details>`,
-      { standaardDicht: veel && a.status === 'akkoord' }));
-  });
-  const subnav = nav.length > 1 ? `<div class="subnav geen-print" data-spy>
-    <nav class="subnav-links" aria-label="Onderdelen van de berekening">${nav.map(([doel, label, status]) => `<button type="button" data-actie="naar-sectie" data-doel="${esc(doel)}">${status ? stip(status) : ''}${esc(label)}</button>`).join('')}</nav>
-  </div>` : '';
-  return renderRekenwerkruimte(d, r, { details: `${subnav}${delen.join('')}`, weergave: weergaveOpties() });
+function tabBerekening(d, r, ondId) {
+  const a = ondId && r.ondernemingen.find((o) => o.id === ondId);
+  if (!a) return renderRekenwerkruimte(d, r);
+  const over = a.box2?.overwinst ? `<details class="stappen reken-uitklap"><summary>Berekening overwinst</summary><div class="reken-uitklap-inhoud">${overwinstBlok(d, r, a)}</div></details>` : '';
+  const stroom = r.inkomen?.geldstromen?.filter((x) => x.van === a.id || x.naar === a.id);
+  const geld = stroom?.length ? `<details class="stappen reken-uitklap"><summary>Geldstromen van de onderneming</summary><div class="reken-uitklap-inhoud">${geldstromenTabel(r, stroom)}</div></details>` : '';
+  return renderOndernemingBerekening(d, r, a, { details: over + geld, weergave: weergaveOpties() });
 }
 
 // ---------------------------------------------------------------------------
@@ -928,7 +836,7 @@ function tabDocumenten(d, r, docs) {
       const label = x.verplicht ? (n >= aantal ? pil('akkoord', 'Aanwezig per categorie') : pil('attentie', n ? `${n} van ${aantal}` : 'Ontbreekt')) : pil('info', 'Optioneel');
       return `<tr><td><b>${esc(x.naam)}</b></td><td>${esc(x.wanneer)}</td><td>${esc(x.geldigheid)}</td><td>${label}</td></tr>`;
     }).join('')}</tbody></table></div>`;
-  const docRijen = docs.sort((a, b) => String(b.aangemaakt).localeCompare(String(a.aangemaakt))).map((x) => {
+  const docRijen = [...docs].sort((a, b) => String(b.aangemaakt).localeCompare(String(a.aangemaakt))).map((x) => {
     const ond = (d.ondernemingen || []).find((o) => o.id === x.ondId);
     return `<tr><td>${esc(x.naam)}</td><td>${esc(CATEGORIEEN[x.categorie] || x.categorie)}</td><td>${esc(x.jaar || '')}</td><td>${esc(ond?.naam || '')}</td>
       <td class="nowrap">${esc(datumKort(x.aangemaakt))}</td><td class="num">${esc(fmt.getal(Math.round(num(x.grootte) / 1024)))} kB</td>
@@ -949,7 +857,7 @@ function tabDocumenten(d, r, docs) {
       <label class="veld"><span>Onderneming</span><select id="doc-ond"><option value="">Privé / algemeen</option>${(d.ondernemingen || []).map((o) => `<option value="${esc(o.id)}">${esc(o.naam)}</option>`).join('')}</select></label>
       <label class="veld"><span>Bestand (max. 15 MB)</span><input id="doc-bestand" type="file" accept=".pdf,image/*,.xlsx,.xls,.csv,.docx,.txt"></label>
     </div>
-    <div class="acties" style="margin-top:12px"><button class="knop" data-actie="doc-upload">Uploaden</button></div>
+    <div class="acties" style="margin-top:12px"><button class="knop" data-actie="doc-upload">Toevoegen</button><span class="dempen klein">Klik op Opslaan om de documenten te bewaren.</span></div>
   </div>
   <div class="paneel"><h2>Geüploade bestanden (${docs.length})</h2><div class="scroll"><table class="tabel"><thead><tr><th>Bestand</th><th>Soort</th><th>Jaar</th><th>Onderneming</th><th>Toegevoegd</th><th class="num">Grootte</th><th></th></tr></thead>
     <tbody>${docRijen || `<tr><td colspan="7" class="leeg">Nog geen documenten geüpload.</td></tr>`}</tbody></table></div></div>`;
@@ -964,7 +872,6 @@ function formatKnop(pad, format) {
 
 function tabNotities(d, r) {
   const n = d.notities || {};
-  const contr = n.controles || {};
   const bh = n.boekhouder || {};
   const blokTekst = (titel, pad, waarde, format, rijen = 8, extra = '') => `<div class="paneel"><div class="paginakop" style="margin:0 0 6px"><h2>${esc(titel)}</h2><span class="acties">${extra}${format ? formatKnop(pad, format) : ''}</span></div>
     <textarea rows="${rijen}" data-bind="${esc(pad)}" data-type="tekst" data-template="${esc(format || '')}" placeholder="${esc(format ? FORMATS[format] || '' : '')}" aria-label="${esc(titel)}">${esc(waarde || '')}</textarea></div>`;
@@ -977,14 +884,6 @@ function tabNotities(d, r) {
     ${blokTekst('Kredietbestemming en aflossing', 'notities.kredietbestemming', n.kredietbestemming, 'kredietbestemming', 4)}
     ${blokTekst('Conclusie', 'notities.conclusie', n.conclusie, r.inkomensanalyse ? null : conclusieFormat(d, r), 9)}
     ${blokTekst('Bijlagen en stukkenlijst', 'notities.bijlagen', n.bijlagen, 'bijlagen', 7)}
-    <div class="paneel"><h2>Broncontroles</h2><div class="raster-2">
-      ${tekstvak('Insolventieregister en beroepsregisters (BIG/LRK/NBA/NOvA/KNB): datum en resultaat', 'notities.broncontroles', n.broncontroles, { rijen: 3 })}
-      ${tekstvak('KvK-adrescheck (zakelijk en privé)', 'notities.kvkCheck', n.kvkCheck, { rijen: 3 })}
-      ${tekstvak('Google check (know your customer): website, social media, herkomst omzet en conclusie', 'notities.googleCheck', n.googleCheck, { rijen: 4 })}
-    </div></div>
-    <div class="paneel"><h2>Maatschappijspecifieke controles</h2><div class="raster-2">
-      ${CONTROLES.map(([k, l]) => keuze(l, `notities.controles.${k}`, ['Ja', 'Nee', 'N.v.t.'], contr[k], { leeg: 'Kies' })).join('')}
-    </div><div style="margin-top:12px">${vink('Dossier voorleggen aan KYC', 'notities.kyc', !!n.kyc, { render: true })}</div></div>
     <div class="paneel"><h2>Boekhoudgegevens</h2><div class="raster-3">
       ${keuze('Boekhouder', 'notities.boekhouder.optie', { 1: 'Boekhouder aanwezig', 2: 'Geen gegevens van de boekhouder', 3: 'Geen boekhouder, klant doet zelf aangifte' }, bh.optie || '1', { render: true })}
     </div>
@@ -995,47 +894,57 @@ function tabNotities(d, r) {
 // ---------------------------------------------------------------------------
 // Fiattering en historie
 // ---------------------------------------------------------------------------
-function tabFiat(d, r) {
+function renderBroncontroles(d) {
+  const n = d.notities || {};
+  return `<div class="paneel"><h2>Broncontroles</h2><div class="raster-2">
+      ${tekstvak('Insolventieregister en beroepsregisters (BIG/LRK/NBA/NOvA/KNB): datum en resultaat', 'notities.broncontroles', n.broncontroles, { rijen: 3 })}
+      ${tekstvak('KvK-adrescheck (zakelijk en privé)', 'notities.kvkCheck', n.kvkCheck, { rijen: 3 })}
+      ${tekstvak('Google check: website, social media, herkomst omzet en conclusie', 'notities.googleCheck', n.googleCheck, { rijen: 4 })}
+    </div></div>
+    <div class="paneel"><h2>Maatschappijspecifieke controles</h2><div class="raster-2">
+      ${CONTROLES.map(([k, l]) => keuze(l, `notities.controles.${k}`, ['Ja', 'Nee', 'N.v.t.'], n.controles?.[k], { leeg: 'Kies' })).join('')}
+    </div><div class="acties">${vink('Dossier voorleggen aan KYC', 'notities.kyc', !!n.kyc)}</div></div>`;
+}
+
+function tabFiat(d, r, docs) {
+  const uitkomsten = renderUitkomstentabel(d, r, { controles: true });
+  const controles = `${renderBroncontrole(d, r)}${renderRekenInvoercontroles(d, rekenInvoerStatus(d, r))}${renderFiatBeoordeling(d, r, docs, { broncontroles: renderBroncontroles(d) })}`;
   if (r.inkomensanalyse) {
-    return `<section class="paneel"><p>Kies en bewaar één toetskader bij <a href="${dossierPad(d, 'klant')}">Klantgegevens</a> om een inkomensbeoordeling te fiatteren.</p>${methodenTabel(d, r)}</section>`;
+    return `${uitkomsten}<section class="paneel"><p>Kies en bewaar één toetskader bij <a href="${dossierPad(d, 'klant')}">Klantgegevens</a> om een inkomensbeoordeling te fiatteren.</p></section>${controles}`;
   }
   const f = d.fiat || {};
-  const p = state.profiel || {};
-  const acc = p.accreditatie || 'Basis';
-  const niveau = d.niveau || 'Basis';
-  const mag1 = magFiatteren(acc, niveau, 1);
-  const mag2 = magFiatteren(acc, niveau, 2);
-  const zelfde = f.eerste?.naam && f.eerste.naam === p.naam;
+  const actor = actorVoor(state.profiel, state.me);
+  const blokkade1 = fiatBlokkade(actor, d, 1);
+  const blokkade2 = fiatBlokkade(actor, d, 2);
   const antwoorden = f.tweede?.antwoorden || {};
   const afgerond = AFGEROND.includes(d.status);
   const eerste = `<div class="paneel"><h2>Eerste beoordeling</h2>
     ${f.eerste ? `<p>Gereed gemeld door <b>${esc(f.eerste.naam)}</b> op ${esc(fmt.tijdstip(f.eerste.datum))}.</p>${f.eerste.opmerking ? `<p class="dempen">${esc(f.eerste.opmerking)}</p>` : ''}` : '<p class="dempen">Nog niet gereed gemeld.</p>'}
     ${d.teruggezet && d.status === 'beoordeling_1' ? melding('attentie', 'Dit dossier is na de tweede beoordeling teruggezet. Verwerk de bevindingen en meld opnieuw gereed.') : ''}
-    ${afgerond ? '' : `
+    ${afgerond || d.status === 'beoordeling_2' ? '' : `
       ${tekstvak('Opmerking bij gereed melden', 'fiat.concept1', f.concept1, { rijen: 2 })}
-      <div class="acties" style="margin-top:10px"><button class="knop" data-actie="gereed-melden"${mag1 ? '' : ' disabled'}>Gereedmelden (naar 2e beoordeling)</button>
-      ${mag1 ? '' : `<span class="dempen klein">Je accreditatie (${esc(acc)}) is niet toereikend voor een ${esc(niveau)}-dossier.</span>`}</div>`}
+      <div class="acties" style="margin-top:10px"><button class="knop" data-actie="gereed-melden"${blokkade1 ? ' disabled' : ''}>Gereedmelden (naar 2e beoordeling)</button>
+      ${blokkade1 ? `<span class="dempen klein">${esc(blokkade1)}</span>` : ''}</div>`}
   </div>`;
   const tweede = `<div class="paneel"><h2>Tweede beoordeling (vier ogen)</h2>
     ${f.tweede?.resultaat ? `<p>${f.tweede.resultaat === 'akkoord' ? pil('akkoord', 'Definitief akkoord') : pil('niet_akkoord', 'Niet akkoord')} door <b>${esc(f.tweede.naam)}</b> op ${esc(fmt.tijdstip(f.tweede.datum))}.</p>${f.tweede.opmerking ? `<p class="dempen">${esc(f.tweede.opmerking)}</p>` : ''}` : ''}
     ${d.status === 'beoordeling_2' ? `
-      ${zelfde ? melding('attentie', 'Je hebt de eerste beoordeling gedaan; de tweede beoordeling moet door een collega worden gedaan.') : ''}
-      ${mag2 ? '' : melding('attentie', `Je accreditatie (${esc(acc)}) is niet toereikend voor de tweede beoordeling van een ${esc(niveau)}-dossier.`)}
+      ${blokkade2 ? melding('attentie', esc(blokkade2)) : `
       <div class="voorwaarden" style="margin-top:10px">${FIAT_VRAGEN.map(([k, l]) => `<div class="voorwaarde"><b>${esc(l)}</b>
         <div>${keuze(null, `fiat.tweede.antwoorden.${k}.antwoord`, ['Ja', 'Nee', 'N.v.t.'], antwoorden[k]?.antwoord, { leeg: 'Kies' })}</div>
         <div><input type="text" placeholder="Motivatie" value="${esc(antwoorden[k]?.motivatie || '')}" data-bind="fiat.tweede.antwoorden.${k}.motivatie" data-type="tekst" style="width:100%" aria-label="Motivatie"></div></div>`).join('')}</div>
       <div style="margin-top:10px">${tekstvak('Opmerking', 'fiat.tweede.opmerking', f.tweede?.opmerking, { rijen: 2 })}</div>
       <div class="acties" style="margin-top:10px">
-        <button class="knop" data-actie="fiat-akkoord"${mag2 && !zelfde ? '' : ' disabled'}>Akkoord geven</button>
-        <button class="knop gevaar" data-actie="fiat-niet-akkoord"${mag2 && !zelfde ? '' : ' disabled'}>Niet akkoord, terug naar 1e beoordeling</button>
-      </div>` : '<p class="dempen">De tweede beoordeling is mogelijk zodra het dossier gereed is gemeld (status "2e beoordeling").</p>'}
+        <button class="knop" data-actie="fiat-akkoord">Akkoord geven</button>
+        <button class="knop gevaar" data-actie="fiat-niet-akkoord">Niet akkoord, terug naar 1e beoordeling</button>
+      </div>`}` : '<p class="dempen">De tweede beoordeling is mogelijk zodra het dossier gereed is gemeld (status "2e beoordeling").</p>'}
   </div>`;
   const historie = `<div class="paneel"><h2>Historie</h2>
     ${(d.historie || []).length ? `<table class="tabel"><thead><tr><th>Tijdstip</th><th>Door</th><th>Actie</th></tr></thead><tbody>${d.historie.map((h) => `<tr><td class="nowrap">${esc(fmt.tijdstip(h.at))}</td><td>${esc(h.door)}</td><td>${esc(/^Toetskader gewijzigd\b/i.test(h.actie) ? 'Toetskader gewijzigd' : h.actie)}</td></tr>`).join('')}</tbody></table>` : '<p class="dempen">Nog geen historie.</p>'}
     <div class="acties" style="margin-top:12px"><button class="knop sec" data-actie="toon-versies">Eerdere versies van dit dossier</button></div>
     <div id="versies"></div>
   </div>`;
-  return `${beoordelingskader(r)}${eerste}${tweede}${historie}`;
+  return `${beoordelingskader(r)}${uitkomsten}${controles}${eerste}${tweede}${historie}`;
 }
 
 export { hoofdbedrijven };

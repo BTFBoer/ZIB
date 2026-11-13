@@ -11,6 +11,7 @@
 //   POST   /api/import                      back-up terugzetten
 //   PUT|GET|DELETE /api/files/:id           documenten in R2
 import { gebruiker } from '../_shared/auth.js';
+import { beveiligDossier, beveiligProfiel, cloudActor, maakImportHerbeoordeling } from '../_shared/fiat.js';
 
 const MAX_BESTAND = 20 * 1024 * 1024;
 const TYPES = new Set(['dossier', 'advieskantoor', 'taak', 'ticket', 'document', 'profiel']);
@@ -42,21 +43,29 @@ async function audit(env, user, actie, recordId, detail = '') {
 
 async function opslaanRecord(env, user, id, type, data, ifVersion, forceer = false) {
   if (!TYPES.has(type)) return { status: 400, body: { fout: `Onbekend recordtype: ${type}` } };
-  const tekst = JSON.stringify(metadataWeg({ ...data, id, type }));
-  if (tekst.length > 950_000) return { status: 413, body: { fout: 'Record te groot (max. ca. 0,9 MB). Sla grote bijlagen op als document.' } };
   const nu = new Date().toISOString();
   const huidig = await env.DB.prepare('SELECT * FROM records WHERE id = ?').bind(id).first();
+  if (huidig && huidig.type !== type) return { status: 422, body: { fout: 'Het recordtype kan niet worden gewijzigd.' } };
+  if (huidig && !forceer && Number(huidig.version) !== Number(ifVersion || 0)) {
+    return { status: 409, body: { fout: 'Versieconflict', huidig: naarRecord(huidig) } };
+  }
+  const record = metadataWeg({ ...data, id, type });
+  const vorigRecord = huidig ? naarRecord(huidig) : null;
+  const herbeoordelen = forceer && type === 'dossier' && !vorigRecord && maakImportHerbeoordeling(record);
+  const actor = cloudActor(user, env);
+  const blokkade = type === 'dossier' ? beveiligDossier(actor, vorigRecord, record, { nu, backUp: forceer })
+    : type === 'profiel' ? beveiligProfiel(actor, id, record, vorigRecord) : null;
+  if (blokkade) return { status: blokkade.status, body: { fout: blokkade.fout } };
+  const tekst = JSON.stringify(record);
+  if (tekst.length > 950_000) return { status: 413, body: { fout: 'Record te groot (max. ca. 0,9 MB). Sla grote bijlagen op als document.' } };
 
   if (!huidig) {
     const res = await env.DB.prepare(`INSERT INTO records (id, type, data, version, deleted, created_at, created_by, updated_at, updated_by)
       VALUES (?1, ?2, ?3, 1, 0, ?4, ?5, ?4, ?5) ON CONFLICT(id) DO NOTHING`).bind(id, type, tekst, nu, user.email).run();
     if (!res.meta.changes) return { status: 409, body: { fout: 'Record is tegelijk aangemaakt door een andere gebruiker.' } };
-    return { status: 200, body: { version: 1, updated_at: nu, updated_by: user.email } };
+    return { status: 200, body: { version: 1, updated_at: nu, updated_by: user.email, herbeoordelen } };
   }
 
-  if (!forceer && Number(huidig.version) !== Number(ifVersion || 0)) {
-    return { status: 409, body: { fout: 'Versieconflict', huidig: naarRecord(huidig) } };
-  }
   const nieuw = Number(huidig.version) + 1;
   const res = await env.DB.prepare(`UPDATE records SET type = ?1, data = ?2, version = ?3, deleted = 0, updated_at = ?4, updated_by = ?5
     WHERE id = ?6 AND version = ?7`).bind(type, tekst, nieuw, nu, user.email, id, huidig.version).run();
@@ -66,7 +75,8 @@ async function opslaanRecord(env, user, id, type, data, ifVersion, forceer = fal
   }
   await env.DB.prepare('INSERT OR IGNORE INTO record_versions (id, version, data, saved_at, saved_by) VALUES (?, ?, ?, ?, ?)')
     .bind(id, huidig.version, huidig.data, huidig.updated_at, huidig.updated_by).run();
-  return { status: 200, body: { version: nieuw, updated_at: nu, updated_by: user.email } };
+  return { status: 200, body: { version: nieuw, updated_at: nu, updated_by: user.email,
+    ...(type === 'dossier' ? { fiat: record.fiat ?? null, fiatteur: record.fiatteur ?? null } : {}) } };
 }
 
 async function records(request, env, user, seg) {
@@ -167,7 +177,7 @@ export async function onRequest(context) {
 
     switch (seg[0]) {
       case 'me':
-        return json({ email: user.email, naam: user.naam });
+        return json({ email: user.email, naam: user.naam, accreditatie: cloudActor(user, env).accreditatie });
       case 'records':
         return records(request, env, user, seg.slice(1));
       case 'files':
@@ -182,13 +192,20 @@ export async function onRequest(context) {
         const body = await request.json();
         const lijst = Array.isArray(body.records) ? body.records.slice(0, 5000) : [];
         let aantal = 0;
+        let geweigerd = 0;
+        let herbeoordelen = 0;
         for (const r of lijst) {
           if (!r || !r.id || !TYPES.has(r.type)) continue;
-          const { status } = await opslaanRecord(env, user, r.id, r.type, r, 0, true);
-          if (status === 200) aantal += 1;
+          const uitkomst = await opslaanRecord(env, user, r.id, r.type, r, 0, true);
+          if (uitkomst.status === 200) {
+            aantal += 1;
+            if (uitkomst.body.herbeoordelen) herbeoordelen += 1;
+          } else {
+            geweigerd += 1;
+          }
         }
         await audit(env, user, 'import', null, `${aantal} records`);
-        return json({ aantal });
+        return json({ aantal, geweigerd, herbeoordelen });
       }
       default:
         return json({ fout: 'Onbekende route' }, 404);

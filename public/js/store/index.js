@@ -7,7 +7,7 @@ import { ApiAdapter } from './api.js';
  */
 export async function kiesAdapter(voorkeur = 'auto') {
   let waarschuwing = '';
-  const statischeHost = /\.github\.io$/i.test(location.hostname) || globalThis.ZIB_DEMO === true;
+  const statischeHost = /\.github\.io$/i.test(location.hostname) || globalThis.ZIB_DEMO === true || globalThis.ZIB_LOCAL_PRIVATE === true;
   if (voorkeur !== 'lokaal' && !statischeHost && typeof fetch === 'function' && location.protocol.startsWith('http')) {
     try {
       const ctrl = new AbortController();

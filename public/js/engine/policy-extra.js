@@ -299,8 +299,10 @@ function berekenToetreding({ dossier, analyses, ctx, nhg, invoer }, verhuur) {
     vergelijkActueelJaar(reeks, invoer, stappen, checks);
     return driejaarsResultaat(ctx.T, reeks, stappen, checks);
   }
-  const bedrag = invoer.nhg ? nhgIndicatie(nhg, stappen) : null;
-  return resultaat(bedrag, stappen, checks);
+  // bijBouwe Basis §4.3.1 verwijst ook buiten NHG naar het NHG-beleid als grondslag.
+  // Sector en ondernemersduur blijven aparte poorten; de verklaring is verplicht.
+  const bedrag = nhgIndicatie(nhg, stappen);
+  return { ...resultaat(bedrag, stappen, checks), perJaar: bedrag === null ? {} : nhg.inkomen.perJaar, box1: nhg?.inkomen?.box1, box2: nhg?.inkomen?.box2 };
 }
 
 function berekenMerius({ dossier, ctx, nhg }) {
@@ -488,7 +490,14 @@ export const EXTRA_PROFIELEN = [
             rond(num(dossier.loondienst.loonJaar) * 0.30)));
         }
       }
-      return resultaat(invoer.nhg ? nhgIndicatie(nhg, stappen) : null, stappen, checks);
+      // a.s.r. §6.5.1: NHG als rekenbasis met aanvullende beoordeling van de combinatie.
+      const combinatie = dossier.loondienst?.meenemen === true;
+      if (combinatie) {
+        checks.push(open('Laat de specialist het gecombineerde inkomen en de afzonderlijke begrenzing vaststellen.'));
+        return resultaat(null, stappen, checks);
+      }
+      const basis = nhgIndicatie(nhg, stappen);
+      return { ...resultaat(basis, stappen, checks), perJaar: basis === null ? {} : nhg.inkomen.perJaar };
     },
   },
   {

@@ -104,7 +104,7 @@ test('Een opgeslagen kaderwijziging opent de beoordeling opnieuw', () => {
   assert.equal(bewaarDossierbeleid(d, { soort: 'IKV', kader: 'ING', metNhg: false }), true);
   assert.equal(d.status, 'beoordeling_1');
   assert.equal(d.fiat, undefined);
-  assert.equal(d.afwijkend.actief, false);
+  assert.equal(d.afwijkend, undefined);
 });
 
 test('Inkomensanalyse vergelijkt alle kaders ook na een eerdere keuze voor NHG', () => {

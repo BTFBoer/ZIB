@@ -230,7 +230,11 @@ function cel(d, k) {
       if (d.soort === 'ANALYSE') return '–';
       if (d.soort === 'NUL') return '€ 0';
       const r = s();
-      if (r.beleid) return r.beleid.bedrag === null ? 'Open' : `${esc(fmt.eur(r.beleid.bedrag))} <span class="dempen klein">${r.beleid.bewijs ? 'bewijsstuk' : 'indicatief'}</span>`;
+      if (r.beleid) {
+        const waarde = r.beleid.bedrag ?? r.beleid.indicatie;
+        return waarde === null ? (r.beleid.methode === 'extern' ? 'Bewijsstuk nodig' : 'Invoer aanvullen')
+          : `${esc(fmt.eur(waarde))} <span class="dempen klein">${r.beleid.bewijs ? 'bewijsstuk' : 'indicatief'}</span>`;
+      }
       return esc(fmt.eur(r.vastgesteld));
     }
     case 'uitkomst': return d.soort === 'ANALYSE' ? pil('neutraal', 'Vergelijking') : pil(s().status);

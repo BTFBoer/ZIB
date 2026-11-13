@@ -66,6 +66,7 @@ Elke push naar `main` publiceert automatisch een nieuwe versie. Het adres wordt 
    - `ACCESS_TEAM_DOMAIN` = `jouwteam.cloudflareaccess.com`
    - `ACCESS_AUD` = de AUD-tag
    - `ALLOWED_EMAILS` = hetzelfde e-mailadres (meerdere komma-gescheiden). Dit is een tweede slot in de API: ook als de Access-policy per ongeluk ruimer staat, komen alleen deze adressen bij de gegevens.
+   - `ZIB_ACCREDITATIES` = JSON met per toegestaan e-mailadres de toegekende accreditatie, bijvoorbeeld `{"acceptant@example.org":"Medium","fiatteur@example.org":"Top+"}`. Beschikbare waarden zijn `Basis`, `Basis+`, `Medium`, `Medium+`, `Top` en `Top+`. Accounts zonder accreditatie kunnen conceptgegevens bewerken. Voor handmatige inkomensbesluiten en fiattering controleert de API deze toekenning en het dossierniveau. De lokale profielkeuze simuleert deze rechten in de browser.
 7. Opnieuw deployen (Deployments → laatste deployment → **Retry deployment**, of een nieuwe push).
 
 De API controleert bij elk verzoek de ondertekende Access-token (handtekening, AUD, uitgever, vervaldatum) en daarna de lijst `ALLOWED_EMAILS`. Zonder `ACCESS_TEAM_DOMAIN` en `ACCESS_AUD` weigert de API alle verzoeken.
@@ -76,7 +77,7 @@ Open de site: je krijgt de inlogpagina van Cloudflare, vult je e-mailadres in en
 
 ### 6. Lokale gegevens meenemen
 
-In de lokale versie: **Downloads → Back-up downloaden**. In de cloudversie: **Downloads → Back-up terugzetten**. Geüploade pdf's zitten niet in de JSON; upload die opnieuw.
+In de lokale versie kies je **Downloads → Back-up downloaden**. In de cloudversie kies je **Downloads → Back-up terugzetten**. Upload de pdf's opnieuw. Nieuwe dossiers uit een JSON-back-up die al in tweede beoordeling waren of een fiat bevatten, beginnen in de eerste beoordeling. De cloud controleert de toegangsrechten op handmatige inkomensbesluiten en beschermt de bestaande fiattering van opgeslagen dossiers. Voor het terugzetten van ondertekende beoordelingen in de database is D1-herstel beschikbaar.
 
 ## Back-ups en herstel
 

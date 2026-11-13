@@ -1028,7 +1028,7 @@ export function bereken(dossier, opties = {}) {
     analyses.filter((a) => a.meenemen && a.checks.some((c) => c.key === 'duur' && c.status === 'niet_akkoord')).forEach((a) => {
       const zonderInkomen = T.every((y) => !rond(a.jaren[y]?.inkomen.totaal ?? 0) && !num(a.jaren[y]?.ibOnd?.dividend));
       if (zonderInkomen && analyses.length > 1) {
-        meldingen.push({ niveau: 'attentie', tekst: `${a.naam} bestaat korter dan ${kader.minMaandenKvK} maanden en levert geen eigen inkomen. Zonder 0-inkomen (beoordelingsverklaring) voldoet het dossier niet aan het toetskader; zet bij de onderneming "0-inkomen / beoordelingsverklaring" aan als het inkomen niet uit deze onderneming komt.` });
+        meldingen.push({ niveau: 'attentie', tekst: `${a.naam} bestaat korter dan ${kader.minMaandenKvK} maanden en levert geen eigen inkomen. Leg het nulbesluit bij Fiattering vast als het inkomen niet uit deze onderneming komt.` });
       }
     });
   }
