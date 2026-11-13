@@ -2,7 +2,7 @@ import { KADERS, KADER_VOLGORDE, kaderVoor } from './kaders.js';
 import * as P from './periods.js';
 import { analyseerOnderneming, box2NHG, box2ABN, box2ASN, box2OPT, slechtste } from './onderneming.js';
 import { dertigProcentToets, totaalASN, totaalKNAB, totaalOPT } from './totaal.js';
-import { beoordeelNul, zkLijst } from './nul.js';
+import { beoordeelNul, zkLijst } from './nulverklaring.js';
 import { Trace, cel, g, p, lijstF, laagsteF } from './trace.js';
 import { documentenlijst } from '../schema/documenten.js';
 import { totalenJaar } from './financieel.js';

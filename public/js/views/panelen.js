@@ -2,7 +2,7 @@
 // (stap Kredieten en verplichtingen) worden gebruikt.
 import { esc, fmt, num, isIngevuld } from '../util.js';
 import { soortOndernemer, RECHTSVORMEN, kaderVoor } from '../engine/kaders.js';
-import { ZK_SOORTEN } from '../engine/nul.js';
+import { ZK_SOORTEN } from '../engine/nulverklaring.js';
 import { bedrag, veld, keuze, vink, tekstvak, melding, icoon } from './ui.js';
 
 const ondOpties = (d, filter = () => true) => (d.ondernemingen || []).filter(filter).map((o) => [o.id, o.naam || '(naamloos)']);

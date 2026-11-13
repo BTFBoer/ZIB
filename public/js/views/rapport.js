@@ -2,7 +2,7 @@ import { esc, fmt, naamAanvrager, num, isIngevuld } from '../util.js';
 import { get } from '../state.js';
 import { RECHTSVORMEN, SOORTEN, kaderVoor, PARAM_LABELS } from '../engine/kaders.js';
 import { organogramGraaf } from '../engine/index.js';
-import { zkLijst, zkTekst } from '../engine/nul.js';
+import { zkLijst, zkTekst } from '../engine/nulverklaring.js';
 import { BALANS_RIJEN, VW_RIJEN } from '../schema/fields.js';
 import { WINST_CORRECTIES, VERMOGENS_CORRECTIES } from '../schema/correcties.js';
 import { balansTotalen, vwTotalen, totalenJaar } from '../engine/financieel.js';

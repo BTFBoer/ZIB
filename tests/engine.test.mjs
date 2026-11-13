@@ -9,7 +9,7 @@ import {
   organogramTekst, organogramGraaf, vergelijkMethoden,
 } from '../public/js/engine/index.js';
 import { bandbreedte, naOnttrekking } from '../public/js/engine/onderneming.js';
-import { zkLijst } from '../public/js/engine/nul.js';
+import { zkLijst } from '../public/js/engine/nulverklaring.js';
 import { KADERS } from '../public/js/engine/kaders.js';
 import * as P from '../public/js/engine/periods.js';
 import { parseBedrag } from '../public/js/util.js';

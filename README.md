@@ -84,7 +84,7 @@ public/                  statische app (geen buildstap nodig)
     index.js             toetsjaren, structuur en organogram, NHG- en ABN-totalen, geldstromen, eindoordeel
     onderneming.js       correcties, ratio's, bandbreedtemodel, overwinst en dubbele balanstoets, box 2
     financieel.js        totalen uit detailposten of totaalposten (BZI)
-    nul.js               beoordeling 0-verklaring, zakelijke kredieten
+    nulverklaring.js     beoordeling 0-verklaring, zakelijke kredieten
     kaders.js            parameters per beleidskader
     periods.js           30/360-periodes, extrapolatiefactor, geldigheid
   js/schema/             invoerposten, correctietypen, rekeningschema, documentenlijsten
