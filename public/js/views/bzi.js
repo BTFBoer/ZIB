@@ -118,7 +118,7 @@ export function weergaveSchakelaar(d, huidig = 'bzi') {
 
 function zijbalk(d, stap, ondId, r, docsOntbrekend) {
   const status = DOSSIER_STATUSSEN[d.status] || d.status;
-  const link = (s, id, label, ico, extra = '') => `<a href="${stapHref(d, s, id)}" class="${s === stap && (id || '') === (ondId || '') ? 'actief' : ''} ${extra}">${ico ? icoon(ico) : ''}<span>${esc(label)}</span></a>`;
+  const link = (s, id, label, ico, extra = '') => `<a href="${stapHref(d, s, id)}" class="${s === stap && (s === 'invoer' || (id || '') === (ondId || '')) ? 'actief' : ''} ${extra}">${ico ? icoon(ico) : ''}<span>${esc(label)}</span></a>`;
   const analyse = (id) => r.ondernemingen.find((a) => a.id === id);
   const boom = hoofdbedrijven(d).map((h) => {
     const kinderen = deelnemingenVan(d, h.id);
@@ -136,6 +136,7 @@ function zijbalk(d, stap, ondId, r, docsOntbrekend) {
     <nav class="bzi-stappen" aria-label="Stappen">
       ${link('overzicht', '', 'Dossieroverzicht', 'map')}
       ${link('algemeen', '', 'Algemeen', 'notitie')}
+      ${link('invoer', '', 'Cijfers invoeren', 'reken')}
       ${link('bedrijven', '', 'Bedrijven', 'organogram')}
       ${boom}
       ${link('boekhouders', '', 'Boekhouders', 'boek')}
@@ -155,7 +156,7 @@ function zijbalk(d, stap, ondId, r, docsOntbrekend) {
 }
 
 export function renderBZI(d, stap, ondId, r, gedeeld = {}) {
-  const dossierTabs = { documenten: 'Documenten', berekening: 'Rekenstappen', bziinvoer: 'BZI-invoer (overzicht)', notities: 'Notities', rapport: 'Rapport', fiat: 'Fiattering en historie' };
+  const dossierTabs = { documenten: 'Documenten', invoer: 'Cijfers invoeren', berekening: 'Rekenstappen', bziinvoer: 'BZI-invoer (overzicht)', notities: 'Notities', rapport: 'Rapport', fiat: 'Fiattering en historie' };
   const geldig = ['algemeen', 'bedrijven', 'bedrijf', 'boekhouders', 'verplichtingen', 'samenvatting', ...Object.keys(dossierTabs)];
   let s = geldig.includes(stap) ? stap : 'algemeen';
   let id = ondId;
@@ -171,6 +172,7 @@ export function renderBZI(d, stap, ondId, r, gedeeld = {}) {
     case 'verplichtingen': inhoud = stapVerplichtingen(d, r); break;
     case 'samenvatting': inhoud = stapSamenvatting(d, r, id); break;
     case 'documenten':
+    case 'invoer':
     case 'berekening':
     case 'bziinvoer':
     case 'notities':

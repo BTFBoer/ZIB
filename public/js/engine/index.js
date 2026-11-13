@@ -8,6 +8,7 @@ import { documentenlijst } from '../schema/documenten.js';
 import { heeftResultaatinvoer, totalenJaar } from './financieel.js';
 import { num, rond, rond2, gemiddelde, isIngevuld, todayISO, naamAanvrager } from '../util.js';
 import { toetsBeleidsprofiel } from './beleid.js';
+import { rekenInvoerStatus } from './reken-invoer.js';
 
 export { KADERS, KADER_VOLGORDE, kaderVoor } from './kaders.js';
 export { dertigProcentToets } from './totaal.js';
@@ -1220,18 +1221,26 @@ export function vergelijkKaders(dossier, ids = KADER_VOLGORDE) {
   };
   return ids.map((id) => {
     try {
-      const r = bereken({ ...basis, kader: id, metNhg: false, soort: basis.soort === 'ANALYSE' ? 'IKV' : basis.soort });
+      const invoerDossier = { ...basis, kader: id, metNhg: false, soort: basis.soort === 'ANALYSE' ? 'IKV' : basis.soort };
+      const r = bereken(invoerDossier);
       // Eerst de concrete voorwaarden per onderneming, daarna de meldingen op dossierniveau.
       const nok = [
         ...r.ondernemingen.filter((a) => a.meenemen !== false || r.familie === 'ABN')
           .flatMap((a) => a.checks.filter((c) => c.status === 'niet_akkoord').map((c) => `${a.naam}: ${c.label}`)),
         ...r.meldingen.filter((m) => m.niveau === 'niet_akkoord').map((m) => m.tekst),
       ];
+      const invoer = rekenInvoerStatus(invoerDossier, r);
+      const invoerBlokkeert = invoer.dossier.some((punt) => punt.blokkeert)
+        || invoer.ondernemingen.some((o) => o.punten.some((punt) => punt.blokkeert));
       return {
         id, kort: r.kaderCfg.kort, naam: r.kaderNaam, versie: r.kaderVersie, nhg: r.kaderCfg.nhg,
         status: r.status, bron: r.bron, berekend: r.berekend, toetsinkomen: r.toetsinkomen, vastgesteld: r.vastgesteld,
-        beleid: r.beleid ? { bedrag: r.beleid.bedrag, indicatie: r.beleid.indicatie, methode: r.beleid.methode } : null,
+        beleid: r.beleid ? {
+          bedrag: r.beleid.bedrag, indicatie: r.beleid.indicatie, methode: r.beleid.methode, bewijs: !!r.beleid.bewijs,
+        } : null,
         box1: r.inkomen?.box1 ?? null, box2: r.inkomen?.box2 ?? null, stappen: r.inkomen?.stappen || [], nok: [...new Set(nok)].slice(0, 6),
+        invoerBlokkeert,
+        toelichtingen: [...new Set(r.meldingen.filter((m) => ['attentie', 'niet_akkoord'].includes(m.niveau)).map((m) => m.tekst))],
         attenties: r.meldingen.filter((m) => m.niveau === 'attentie').length, T: r.T, C: r.C, starter: r.inkomen?.starter || null,
       };
     } catch (e) {

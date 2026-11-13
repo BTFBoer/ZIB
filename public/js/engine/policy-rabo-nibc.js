@@ -1,5 +1,6 @@
 import { addMonthsISO, days360, parseISO } from './periods.js';
 import { fmt, gemiddelde, isIngevuld, num, rond } from '../util.js';
+import { nhgInkomenBeschikbaar } from './financieel.js';
 
 const RABO_BELEID = 'https://media.rabobank.com/asset/8459b3ed-b9e7-4823-8025-b64fcb3f2a56/Acceptatiebeleid-Rabobank-november-2026.pdf';
 const RABO_INDICATIE = 'https://www.rabobank.nl/bedrijven/intermediairs/hypotheek/ondernemer-in-prive/indicatieve-inkomenstool/gebruik-indicatieve-inkomenstool';
@@ -126,7 +127,7 @@ function berekenRabo({ dossier, analyses, ctx, nhg, invoer }) {
   }
 
   if (invoer.nhg === true) {
-    if (Number.isFinite(nhg?.toetsinkomen) && nhg.status !== 'niet_akkoord') {
+    if (nhgInkomenBeschikbaar(nhg) && nhg.status !== 'niet_akkoord') {
       stappen.push(stap('Inkomen volgens NHG-basis', 'NHG Toetskaders IKV', nhg.toetsinkomen));
       return { ...resultaat, bedrag: nhg.toetsinkomen, perJaar: nhg.inkomen?.perJaar };
     }
@@ -144,7 +145,7 @@ function berekenRabo({ dossier, analyses, ctx, nhg, invoer }) {
 
 function basisNIBC(nhg, kortZelfstandig, metNhg) {
   const externFactor = kortZelfstandig && !metNhg ? 0.9 : 1;
-  const bedrag = nhg?.toetsinkomen;
+  const bedrag = nhgInkomenBeschikbaar(nhg) ? nhg.toetsinkomen : null;
   const stappen = [];
   if (Number.isFinite(bedrag)) stappen.push(stap('Inkomen volgens NHG-basis', 'NHG Toetskaders IKV', bedrag));
   if (externFactor < 1 && Number.isFinite(bedrag)) {
@@ -156,7 +157,7 @@ function basisNIBC(nhg, kortZelfstandig, metNhg) {
     checks: [],
     extern: true,
     externFactor,
-    perJaar: nhg?.inkomen?.perJaar,
+    perJaar: bedrag === null ? {} : nhg?.inkomen?.perJaar,
   };
 }
 
@@ -229,7 +230,7 @@ function berekenNIBC({ dossier, analyses, ctx, nhg, invoer }) {
     checks.push(melding('Een afwijkende methode vereist meer dan 36 maanden ondernemerschap en drie volledige jaarrekeningen. Vul de ontbrekende cijfers aan of kies de standaardmethode.'));
     return { ...basis, bedrag: null };
   }
-  if (!Number.isFinite(nhg?.toetsinkomen)) {
+  if (!nhgInkomenBeschikbaar(nhg)) {
     checks.push(melding('Vul eerst de cijfers voor de vergelijking met het NHG-inkomen in.'));
     return { ...basis, bedrag: null };
   }

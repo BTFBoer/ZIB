@@ -1,5 +1,5 @@
 import { fmt, gemiddelde, isIngevuld, num, rond } from '../util.js';
-import { heeftResultaatinvoer } from './financieel.js';
+import { heeftResultaatinvoer, nhgInkomenBeschikbaar } from './financieel.js';
 import { addDaysISO, addMonthsISO, parseISO } from './periods.js';
 
 const bedragIngevuld = (waarde) => isIngevuld(waarde) && Number.isFinite(Number(waarde));
@@ -65,7 +65,7 @@ function fiscaleJaarreeks(dossier, ctx, o, metBijtelling = false) {
 }
 
 function nhgIndicatie(nhg, stappen) {
-  if (!nhg?.inkomen || !Number.isFinite(nhg.toetsinkomen)) return null;
+  if (!nhg?.inkomen || !nhgInkomenBeschikbaar(nhg)) return null;
   stappen.push(stap('Indicatief inkomen volgens NHG', 'NHG-rekenkern, vóór formele beoordeling', nhg.toetsinkomen));
   return nhg.toetsinkomen;
 }

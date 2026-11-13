@@ -21,7 +21,7 @@ const js = execFileSync(npxCli ? process.execPath : 'npx', [...(npxCli ? [npxCli
   '--bundle', '--format=iife', '--minify', '--target=es2020', '--legal-comments=none'],
 { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 }).replace(/<\/script/gi, '<\\/script');
 
-const css = ['app.css', 'werkruimte.css', 'dossier.css'].map((bestand) => readFileSync(path.join(root, 'public/css', bestand), 'utf8')).join('\n');
+const css = ['app.css', 'werkruimte.css', 'dossier.css', 'kerninvoer.css', 'rekenwerkruimte.css'].map((bestand) => readFileSync(path.join(root, 'public/css', bestand), 'utf8')).join('\n');
 const favicon = readFileSync(path.join(root, 'public/favicon.svg'), 'utf8');
 const faviconData = `data:image/svg+xml,${encodeURIComponent(favicon)}`;
 const app = '<div id="app"><div class="pagina"><p class="dempen">ZIB wordt geladen…</p></div></div>';

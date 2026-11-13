@@ -1,4 +1,5 @@
 import { fmt, isIngevuld, gemiddelde, num, rond } from '../util.js';
+import { balansOntbreekt, heeftBedrag, heeftResultaatVoorBelasting, nhgInkomenBeschikbaar, voorraadTotaal } from './financieel.js';
 import { addMonthsISO, opOfNa } from './periods.js';
 import { g, laagsteF, lijstF } from './trace.js';
 
@@ -18,7 +19,7 @@ function vennWeging([oud, middel, laatst]) {
 }
 
 function geefNhg(nhg, stappen, checks) {
-  const bedrag = nhg?.toetsinkomen;
+  const bedrag = nhgInkomenBeschikbaar(nhg) ? nhg.toetsinkomen : null;
   stappen.push(stap('NHG-basis', 'Toetskader IKV Ondernemer 01.2026', bedrag ?? null));
   if (nhg?.status && nhg.status !== 'akkoord') {
     const oorzaken = [...(nhg.meldingen || []), ...(nhg.ondernemingen || []).flatMap((ond) => ond.checks || [])]
@@ -29,13 +30,18 @@ function geefNhg(nhg, stappen, checks) {
   return nhg?.status === 'niet_akkoord' ? null : bedrag ?? null;
 }
 
-function vennBalans(j, voorraad, norm, naam, jaar, stappen, checks) {
-  if (!j?.heeftBalans || j.TVcor <= 0 || j.KVVcor < 0 || j.VAcor < 0) {
+function volledigeBalans(j, jd) {
+  return j?.heeftBalans && (!j.aggBalans || balansOntbreekt(jd).length === 0)
+    && j.TVcor > 0 && j.KVVcor >= 0 && j.VAcor >= 0;
+}
+
+function vennBalans(j, jd, voorraad, norm, naam, jaar, stappen, checks) {
+  if (!volledigeBalans(j, jd)) {
     checks.push(check('attentie', `${naam}: vul de volledige balans over ${jaar} in voor de ratio’s.`));
     return;
   }
   const cr = j.KVVcor ? j.VAcor / j.KVVcor : null;
-  const voorraden = j.aggBalans ? (aanwezig(voorraad) ? num(voorraad) : null) : j.bal?.VOORRADEN ?? null;
+  const voorraden = j.aggBalans ? voorraadTotaal(jd?.bzi) ?? (heeftBedrag(voorraad) ? num(voorraad) : null) : j.bal?.VOORRADEN ?? null;
   const qr = j.KVVcor && voorraden !== null && voorraden >= 0 ? (j.VAcor - voorraden) / j.KVVcor : null;
   const sv = j.EVcor / j.TVcor;
   const wk = j.VAcor - j.KVVcor;
@@ -57,13 +63,14 @@ function vennBox1(j, soort) {
   return num(bron) - aftrek(j) - baten * j.aandeel - overige;
 }
 
-function vennDga(ond, jaren, bedragen, venn2025, invoer, stappen, checks) {
-  const vpb = [invoer.vpbOudste, invoer.vpbMiddelste, invoer.vpbLaatste];
-  const winstAanvrager = jaren.map((j, i) => {
-    if (!j?.heeftResultaatinvoer) return null;
-    if (!j.aggVW) return j.winst.RVBcor * j.aandeel;
-    return aanwezig(vpb[i]) ? (j.winst.RVBcor + num(vpb[i])) * j.aandeel : null;
-  });
+function vennWinstVoorBelasting(j, jd, oudeVpb) {
+  if (!j) return null;
+  if (heeftResultaatVoorBelasting(jd) || (!j.aggVW && j.heeftResultaatinvoer)) return j.winst.RVBcor;
+  return j.heeftResultaatinvoer && heeftBedrag(oudeVpb) ? j.winst.RVBcor + num(oudeVpb) : null;
+}
+
+function vennDga(ond, jaren, bronjaren, winst, bedragen, venn2025, invoer, stappen, checks) {
+  const winstAanvrager = jaren.map((j, i) => winst[i] === null ? null : winst[i] * j.aandeel);
   const uitgekeerd = jaren.map((j) => aanwezig(j?.ibOnd?.dividend) ? num(j.ibOnd.dividend) : null);
   const herleidbaar = uitgekeerd.every((x) => x !== null && x >= 0);
   if (!herleidbaar) checks.push(check('attentie', 'Vul het bruto uitgekeerde dividend per toetsjaar in. Gebruik € 0 als er aantoonbaar niets is uitgekeerd.'));
@@ -88,7 +95,7 @@ function vennDga(ond, jaren, bedragen, venn2025, invoer, stappen, checks) {
       if (venn2025) {
         overwinst = Math.max(0, Math.min(0.5 * gemiddelde(reserves), reserves[2]));
         stappen.push(stap('Overwinst · oktober 2025', '50% × gemiddelde onuitgekeerde winst, maximaal de onuitgekeerde winst van het laatste jaar', overwinst));
-      } else if (jaren.every((j) => j?.heeftBalans && j.TVcor > 0 && j.KVVcor >= 0)) {
+      } else if (jaren.every((j, i) => volledigeBalans(j, bronjaren[i]))) {
         const liquiditeitsruimte = jaren.map((j) => (j.VAcor - j.KVVcor) * j.aandeel);
         const solvabiliteitsruimte = ((jaren[2].EVcor - 0.25 * jaren[2].TVcor) / 0.75) * jaren[2].aandeel;
         const ruimte = Math.max(0, Math.min(gemiddelde(reserves), reserves[2], gemiddelde(liquiditeitsruimte), liquiditeitsruimte[2], solvabiliteitsruimte));
@@ -144,7 +151,8 @@ function berekenVenn({ dossier, analyses, ctx, nhg, invoer = {} }) {
       return resultaat(null);
     }
     if (invoer.verhuurInOnderneming !== 'nee') checks.push(check('attentie', 'Controleer of het NHG-inkomen opbrengsten uit verhuurd onroerend goed bevat.'));
-    return resultaat(geefNhg(nhg, stappen, checks), { methode: 'nhg', perJaar: nhg?.inkomen?.perJaar });
+    const bedrag = geefNhg(nhg, stappen, checks);
+    return resultaat(bedrag, { methode: 'nhg', perJaar: bedrag === null ? {} : nhg?.inkomen?.perJaar });
   }
   const aanvraagDatum = dossier.datumAanvraag || ctx.datum;
   if (!hoofdBron.startdatum) checks.push(check('attentie', 'Vul de inschrijfdatum bij de KvK in voor de 36-maandentoets.'));
@@ -182,10 +190,12 @@ function berekenVenn({ dossier, analyses, ctx, nhg, invoer = {} }) {
   if (invoer.verhuurInOnderneming !== 'nee') {
     checks.push(check('attentie', 'Controleer of de jaarcijfers huurinkomsten bevatten. Verwijder die uit het toetsinkomen met een onderbouwde correctie.'));
   }
-  const winst = jaren.map((j, i) => ib ? reeks[i] : j.heeftResultaatinvoer ? j.winst.RVBcor : null);
+  const bronjaren = T.map((y) => hoofdBron.jaren?.[y]);
+  const vpb = [invoer.vpbOudste, invoer.vpbMiddelste, invoer.vpbLaatste];
+  const winst = jaren.map((j, i) => ib ? reeks[i] : vennWinstVoorBelasting(j, bronjaren[i], vpb[i]));
   for (const i of [1, 2]) {
-    vennBalans(jaren[i], i === 1 ? invoer.voorraadMiddelste : invoer.voorraadLaatste, i === 1 ? 0.2 : 0.25, hoofd.naam, T[i], stappen, checks);
-    if (winst[i] === null) checks.push(check('attentie', `Vul de winst-en-verliesrekening over ${T[i]} in om de winstgevendheid te beoordelen.`));
+    vennBalans(jaren[i], bronjaren[i], i === 1 ? invoer.voorraadMiddelste : invoer.voorraadLaatste, i === 1 ? 0.2 : 0.25, hoofd.naam, T[i], stappen, checks);
+    if (winst[i] === null) checks.push(check('attentie', `Vul het resultaat vóór belasting over ${T[i]} in om de winstgevendheid te beoordelen.`));
     else if (winst[i] < 0) checks.push(check('niet_akkoord', `De gecorrigeerde winst over ${T[i]} is negatief. Venn vereist een resultaat van minstens € 0 in beide laatste kalenderjaren.`));
   }
   const daling = (vorig, actueel) => vorig > 0 ? (vorig - actueel) / vorig : 0;
@@ -198,7 +208,13 @@ function berekenVenn({ dossier, analyses, ctx, nhg, invoer = {} }) {
   }
 
   const controleJaar = hoofd.jaren[ctx.C];
-  const tussenResultaat = controleJaar?.heeftResultaatinvoer && ctx.C === ctx.jaarNu ? controleJaar.winst.RVBcor : null;
+  const controleBron = hoofdBron.jaren?.[ctx.C];
+  let tussenResultaat = null;
+  if (ctx.C === ctx.jaarNu) {
+    tussenResultaat = ib
+      ? controleJaar?.heeftResultaatinvoer ? controleJaar.winst.RVBcor : null
+      : vennWinstVoorBelasting(controleJaar, controleBron);
+  }
   if (opOfNa(ctx.datum, 7, 1)) {
     if (tussenResultaat === null) checks.push(check('attentie', 'Venn verlangt vanaf 1 juli inzicht in de winstgevendheid van het lopende jaar. Vul de tussentijdse winst-en-verliesrekening in.'));
     else if (tussenResultaat < 0) checks.push(check('niet_akkoord', 'Het gerealiseerde tussentijdse resultaat is negatief. Vanaf 1 juli geldt de winsttoets over het lopende jaar.'));
@@ -210,7 +226,9 @@ function berekenVenn({ dossier, analyses, ctx, nhg, invoer = {} }) {
   }
   let box1 = vennWeging(reeks);
   if (invoer.tussentijdsVervangen === true) {
-    if (!opOfNa(ctx.datum, 8, 1) || tussenResultaat === null || !controleJaar?.heeftBalans) {
+    const controleBalans = controleJaar?.heeftBalans
+      && (!controleJaar.aggBalans || balansOntbreekt(controleBron).length === 0);
+    if (!opOfNa(ctx.datum, 8, 1) || tussenResultaat === null || !controleBalans) {
       checks.push(check('attentie', 'Vervanging op verzoek kan vanaf 1 augustus met gerealiseerde cijfers, een tussentijdse balans en controle van de btw-aangiften.'));
     } else if (!ib && !aanwezig(controleJaar.ibOnd?.loon)) {
       checks.push(check('attentie', 'Vul het gerealiseerde arbeidsinkomen uit onderneming over het lopende jaar in voor vervanging.'));
@@ -228,7 +246,7 @@ function berekenVenn({ dossier, analyses, ctx, nhg, invoer = {} }) {
   if (ib || !geconsolideerd) return resultaat(box1.bedrag, { box1: box1.bedrag, perJaar });
   const duurVastgesteld = hoofdBron.startdatum && addMonthsISO(hoofdBron.startdatum, 36) <= aanvraagDatum
     && (!dochter || (dochter.startdatum && addMonthsISO(dochter.startdatum, 36) <= aanvraagDatum));
-  const dga = vennDga(hoofd, jaren, box1.bedrag, venn2025, { ...invoer, overwinst: duurVastgesteld && invoer.overwinst }, stappen, checks);
+  const dga = vennDga(hoofd, jaren, bronjaren, winst, box1.bedrag, venn2025, { ...invoer, overwinst: duurVastgesteld && invoer.overwinst }, stappen, checks);
   return resultaat(dga.bedrag, { box1: box1.bedrag, box2: rond(dga.dividend + dga.overwinst), perJaar });
 }
 
@@ -271,7 +289,8 @@ function berekenIng({ dossier, analyses, ctx, nhg, invoer = {} }) {
   const starter = invoer.ondernemersduur === 'starter' || (invoer.ondernemersduur !== 'drie' && mee.some((a) => a.start && a.start > `${T[0]}-12-31`));
   if (invoer.nhg === true || starter) {
     if (starter) checks.push(check('info', 'ING volgt het NHG-toetskader bij minder dan drie boekjaren als ondernemer (§2.3.3).'));
-    return resultaat(geefNhg(nhg, stappen, checks), { methode: 'nhg', perJaar: nhg?.inkomen?.perJaar, documenten: nhg?.documenten });
+    const bedrag = geefNhg(nhg, stappen, checks);
+    return resultaat(bedrag, { methode: 'nhg', perJaar: bedrag === null ? {} : nhg?.inkomen?.perJaar, documenten: nhg?.documenten });
   }
   const ib = mee.filter((a) => a.soort === 'IB');
   const dga = mee.filter((a) => a.soort === 'VPB');

@@ -39,6 +39,8 @@ import {
 import { plakRooster } from './lijsten.js';
 import { openZoeken, sluitZoeken } from './views/zoeken.js';
 import { organogramSVG } from './views/organogram.js';
+import { heeftControleperiode, werkKerninvoerTellingBij } from './views/kerninvoer.js';
+import { leesKernbedrag, leesKerncijfers } from './schema/kernimport.js';
 
 const app = document.getElementById('app');
 let route = { pagina: 'aanvragen' };
@@ -59,13 +61,13 @@ try { zetThema(localStorage.getItem('zib.thema') || 'systeem'); } catch { /* gee
 // Router en rendering
 // ---------------------------------------------------------------------------
 function parseRoute() {
-  const h = location.hash.replace(/^#\/?/, '');
+  const [h, zoek] = location.hash.replace(/^#\/?/, '').split('?');
   const [p = '', a, b, c] = h.split('/').map((x) => decodeURIComponent(x || ''));
   switch (p) {
     case '':
     case 'klanten':
     case 'aanvragen': return { pagina: 'aanvragen', afgerond: a === 'afgerond' };
-    case 'dossier': return { pagina: 'dossier', id: a, tab: b || '', ondId: c || '' };
+    case 'dossier': return { pagina: 'dossier', id: a, tab: b || '', ondId: c || '', veld: new URLSearchParams(zoek).get('veld') };
     case 'tickets': return a ? { pagina: 'ticket', id: a } : { pagina: 'tickets' };
     default: return { pagina: p };
   }
@@ -127,6 +129,16 @@ export function render({ behoudScroll = false } = {}) {
   document.title = `ZIB | ${titel}`;
   if (behoudScroll) window.scrollTo(0, y);
   naRender();
+  werkKerninvoerTellingBij(app.querySelector('[data-kerninvoer]'));
+  if (!behoudScroll && route.veld && route.pagina === 'dossier') {
+    const el = [...app.querySelectorAll('#tabinhoud [data-bind]')].find((x) => x.dataset.bind === route.veld && !x.disabled);
+    if (el) requestAnimationFrame(() => {
+      if (!el.isConnected) return;
+      for (let p = el.closest('details'); p; p = p.parentElement?.closest('details')) p.open = true;
+      el.focus({ preventScroll: true });
+      el.scrollIntoView({ block: 'center', inline: 'nearest' });
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -208,6 +220,7 @@ const herberekenDossier = debounce(() => {
     const hoofd = resultaat.inkomen?.perHoofdbedrijf?.find((x) => x.id === id);
     if (hoofd) el.textContent = bziVerschil(ondVan(d, id)?.bziWerkelijk, hoofd.berekend);
   });
+  werkKerninvoerTellingBij(app.querySelector('[data-kerninvoer]'));
 }, 150);
 
 /** Alleen de meldingen boven de pagina bijwerken (zonder de hele pagina opnieuw te tekenen). */
@@ -386,6 +399,11 @@ document.addEventListener('input', (e) => {
   if (el.closest('#modaal [data-va]')) { toonVaTotaal(); return; }
   if (!el.matches('[data-bind]')) return;
   if (el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'date') return;
+  if (el.matches('input.bedrag') && el.closest('[data-kerninvoer]')) {
+    const ongeldig = el.value.trim() !== '' && leesKernbedrag(el.value) === null;
+    if (ongeldig) { el.setAttribute('aria-invalid', 'true'); return; }
+    el.removeAttribute('aria-invalid');
+  }
   verwerkBinding(el, false);
 });
 
@@ -409,6 +427,16 @@ document.addEventListener('change', (e) => {
     return;
   }
   if (!el.matches('[data-bind]')) return;
+  if (el.dataset.kernPeriode) {
+    const d = huidigDossier();
+    const j = ondVan(d, /^ond:([^.]+)/.exec(el.dataset.bind)?.[1])?.jaren?.[el.dataset.jaar] || {};
+    const voorstel = { ...j, [el.dataset.kernPeriode]: el.value };
+    if ((j.tot || voorstel.tot) && !heeftControleperiode(voorstel, el.dataset.jaar, resultaat?.datum)) {
+      el.value = j[el.dataset.kernPeriode] || '';
+      toast('Gebruik een einddatum tussen de begindatum en de peildatum.');
+      return;
+    }
+  }
   if (el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'date') verwerkBinding(el, true);
   else if (el.dataset.render) verwerkBinding(el, true);
 });
@@ -445,6 +473,15 @@ document.addEventListener('submit', async (e) => {
 document.addEventListener('focusout', (e) => {
   const el = e.target;
   if (el.matches && el.matches('input.bedrag[data-type="bedrag"]')) {
+    if (el.getAttribute('aria-invalid') === 'true') {
+      const d = huidigDossier();
+      const m = /^ond:([^.]+)\.(.+)$/.exec(el.dataset.bind);
+      const vorige = m ? getPath(ondVan(d, m[1]), m[2]) : getPath(d, el.dataset.bind);
+      el.value = isIngevuld(vorige) ? fmt.getal(vorige, vorige % 1 ? 2 : 0) : '';
+      el.removeAttribute('aria-invalid');
+      toast('Ongeldig bedrag. Gebruik bijvoorbeeld 12.500 of 12.500,50.');
+      return;
+    }
     const v = parseBedrag(el.value);
     el.value = v === null ? '' : fmt.getal(v, v % 1 ? 2 : 0);
   }
@@ -528,26 +565,37 @@ function plakVoorstel(start, rooster) {
   const startCel = start.closest('td');
   const kolom = startCel.cellIndex;
   const rijen = [];
-  for (let veld = start; veld && rijen.length < rooster.length; veld = veldInKolom(veld, 1)) rijen.push(veld.closest('tr'));
+  const kern = !!start.closest('[data-kerninvoer]');
+  if (kern) {
+    const vanaf = start.closest('tr');
+    for (let rij = vanaf; rij && rijen.length < rooster.length; rij = rij.nextElementSibling) {
+      if (rij.hasAttribute('data-kern-rij')) rijen.push(rij);
+    }
+  } else {
+    for (let veld = start; veld && rijen.length < rooster.length; veld = veldInKolom(veld, 1)) rijen.push(veld.closest('tr'));
+  }
   const doelen = [];
   let overgeslagen = 0;
   rooster.forEach((regel, i) => {
     regel.forEach((tekst, j) => {
       if (tekst === '') return;
       const veld = rijen[i]?.cells?.[kolom + j]?.querySelector(ROOSTER_INVOER);
-      const waarde = parseBedrag(tekst);
+      const waarde = kern ? leesKernbedrag(tekst) : parseBedrag(tekst);
       if (!veld || veld.disabled || waarde === null) { overgeslagen += 1; return; }
       doelen.push({ veld, waarde });
     });
   });
   if (!doelen.length) { toast('Niets om te plakken: geen bedragen herkend of geen invoervelden op die plek.'); return; }
+  toonPlakVoorstel(doelen, `<p>${doelen.length} ${doelen.length === 1 ? 'bedrag' : 'bedragen'} vanaf <b>${esc(start.getAttribute('aria-label') || 'het gekozen veld')}</b>.${overgeslagen
+      ? ` ${overgeslagen} ${overgeslagen === 1 ? 'waarde is' : 'waarden zijn'} overgeslagen (geen bedrag, of geen invoerveld op die plek).` : ''}
+      Controleer of de regels op de juiste post staan.</p>`);
+}
+
+function toonPlakVoorstel(doelen, toelichting) {
   plakWacht = doelen;
   const getal = (v) => fmt.getal(v, v % 1 ? 2 : 0);
   openModaal('Plakken in het rooster',
-    `<p>${doelen.length} ${doelen.length === 1 ? 'bedrag' : 'bedragen'} vanaf <b>${esc(start.getAttribute('aria-label') || 'het gekozen veld')}</b>.${overgeslagen
-      ? ` ${overgeslagen} ${overgeslagen === 1 ? 'waarde is' : 'waarden zijn'} overgeslagen (geen bedrag, of geen invoerveld op die plek).` : ''}
-      Berekende totalen en tussenkoppen worden overgeslagen: controleer of de regels op de juiste post staan.</p>
-    <div class="scroll plak-voorbeeld"><table class="tabel compact"><thead><tr><th>Post</th><th class="num">Nu</th><th class="num">Wordt</th></tr></thead><tbody>
+    `${toelichting}<div class="scroll plak-voorbeeld"><table class="tabel compact"><thead><tr><th>Post</th><th class="num">Nu</th><th class="num">Wordt</th></tr></thead><tbody>
       ${doelen.map(({ veld, waarde }) => {
     const nu = parseBedrag(veld.value);
     return `<tr${nu !== null && nu !== waarde ? ' class="gewijzigd"' : ''}><td>${esc(veld.getAttribute('aria-label') || '')}</td><td class="num">${nu === null ? '' : esc(getal(nu))}</td><td class="num"><b>${esc(getal(waarde))}</b></td></tr>`;
@@ -555,9 +603,22 @@ function plakVoorstel(start, rooster) {
     '<button class="knop" data-actie="plak-toepassen">Plakken</button>', { breed: true });
 }
 
+function kernPlakVelden() {
+  return [...app.querySelectorAll('[data-kern-post][data-kern-jaar]')].flatMap((td) => {
+    const veld = td.querySelector('input:not(:disabled)');
+    return veld ? [{ post: td.dataset.kernPost, jaar: td.dataset.kernJaar, veld }] : [];
+  });
+}
+
+function kernSjabloon(velden) {
+  const jaren = [...new Set(velden.map((v) => v.jaar))].sort();
+  const posten = [...new Set(velden.map((v) => v.post))];
+  return [['Post', ...jaren], ...posten.map((p) => [p, ...jaren.map(() => '')])].map((r) => r.join('\t')).join('\r\n');
+}
+
 document.addEventListener('paste', (e) => {
   const el = e.target;
-  if (!isRoosterInvoer(el) || !el.closest('#rooster')) return;
+  if (!isRoosterInvoer(el) || !el.closest('#rooster, [data-kerninvoer]')) return;
   const rooster = plakRooster(e.clipboardData?.getData('text/plain'));
   if (!rooster) return; // één waarde: gewoon plakken in het veld
   e.preventDefault();
@@ -628,7 +689,7 @@ function mailto({ aan = '', bcc = '', onderwerp = '', bericht = '' }) {
 
 function kopieDossier(bron, { status = 'documenten_uploaden', actie = '' } = {}) {
   const kopie = clone(bron);
-  ['id', 'version', 'updated_at', 'updated_by', 'fiat', 'fiatteur', 'meekijken', 'teruggezet'].forEach((k) => delete kopie[k]);
+  ['id', 'version', 'updated_at', 'updated_by', 'fiat', 'fiatteur', 'meekijken', 'teruggezet', 'oefenverklaringen'].forEach((k) => delete kopie[k]);
   for (const o of kopie.ondernemingen || []) delete o.bziWerkelijk;
   for (const i of Object.values(kopie.beleidsinvoer || {})) {
     for (const key of ['ikvBedrag', 'ikvDatum', 'ikvOpsteller']) delete i[key];
@@ -764,12 +825,38 @@ const ACTIES = {
     zetRapportModus(el.dataset.modus);
     render({ behoudScroll: true });
   },
+  'kern-plakken'() {
+    if (!kernPlakVelden().length) { toast('Er zijn geen bewerkbare cijfers voor deze onderneming.'); return; }
+    openModaal('Kerncijfers uit Excel', `<p>Download het lege sjabloon en vul het in Excel in. Kopieer daarna de tabel met de kop <strong>Post</strong> en de jaartallen. Je mag jaarkolommen verplaatsen en lege velden overslaan.</p>
+      <button type="button" class="knop sec klein" data-actie="kern-sjabloon">${icoon('download')} Sjabloon downloaden</button>
+      <label class="veld kern-import"><span>Plak de tabel uit Excel of tekst met puntkomma’s</span><textarea id="kern-plaktekst" rows="7" spellcheck="false"></textarea></label>`,
+    '<button class="knop" data-actie="kern-plak-voorstel">Voorbeeld bekijken</button>', { breed: true });
+  },
+  'kern-sjabloon'() {
+    const s = kernSjabloon(kernPlakVelden());
+    if (window.ZIB_ARTIFACT) {
+      const el = document.getElementById('kern-plaktekst');
+      if (el) { el.value = s; el.focus(); el.select(); }
+    } else downloadBestand('ZIB-kerncijfers.tsv', `\uFEFF${s}`, 'text/tab-separated-values;charset=utf-8');
+  },
+  'kern-plak-voorstel'() {
+    const el = document.getElementById('kern-plaktekst');
+    const { posten, meldingen } = leesKerncijfers(el?.value, kernPlakVelden());
+    const fouten = meldingen.length ? `<div class="kern-import-meldingen"><strong>${meldingen.length} ${meldingen.length === 1 ? 'cel overgeslagen' : 'cellen overgeslagen'}</strong><ul>${meldingen.map((m) => `<li>${esc(m)}</li>`).join('')}</ul></div>` : '';
+    if (!posten.length) {
+      el?.parentElement.querySelector('.kern-import-meldingen')?.remove();
+      el?.insertAdjacentHTML('afterend', fouten || '<p class="kern-import-meldingen">Geen bedragen gevonden.</p>');
+      return;
+    }
+    toonPlakVoorstel(posten, `<p>Controleer de ${posten.length === 1 ? 'wijziging' : `${posten.length} wijzigingen`} voor je ze overneemt. Lege spreadsheetcellen laten bestaande bedragen staan.</p>${fouten}`);
+  },
   'plak-toepassen'() {
     const doelen = plakWacht.filter(({ veld }) => document.body.contains(veld));
     plakWacht = [];
     sluitModaal();
     let opnieuw = false;
     doelen.forEach(({ veld, waarde }) => {
+      veld.removeAttribute('aria-invalid');
       veld.value = veld.dataset.type === 'getal' ? String(waarde).replace('.', ',') : fmt.getal(waarde, waarde % 1 ? 2 : 0);
       verwerkBinding(veld, false);
       if (veld.dataset.render) opnieuw = true;

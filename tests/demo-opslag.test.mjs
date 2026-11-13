@@ -4,7 +4,7 @@ import { beleidVoorbeelden } from '../public/js/data/demo.js';
 import { laadBeleidsvoorbeelden, start, state } from '../public/js/state.js';
 
 test('Demo aanvullen: bestaande en verwijderde dossiers behouden, ontbrekende voorbeelden laden', async () => {
-  const [venn, ing, rabo, nibc] = beleidVoorbeelden();
+  const [venn, ing, rabo, nibc, ...nieuweVoorbeelden] = beleidVoorbeelden();
   const gewijzigd = { ...venn, version: 4, notities: { algemeen: 'Eigen toelichting' } };
   const verwijderd = { ...ing, deleted: true };
   const eigen = { id: 'dos_eigen', type: 'dossier', nummer: rabo.nummer };
@@ -32,6 +32,9 @@ test('Demo aanvullen: bestaande en verwijderde dossiers behouden, ontbrekende vo
     assert.equal(dossiers[rabo.id], undefined);
     assert.equal(dossiers[nibc.id].nummer, 'ZIB-2026-0113');
     assert.equal(state.records.get(nibc.id)?.nummer, 'ZIB-2026-0113');
+    for (const voorbeeld of nieuweVoorbeelden) {
+      assert.equal(state.records.get(voorbeeld.id)?.nummer, voorbeeld.nummer);
+    }
     assert.equal(laadBeleidsvoorbeelden(), 0);
   } finally {
     for (const [key, eigenschap] of Object.entries(oorspronkelijk)) {

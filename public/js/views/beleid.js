@@ -34,17 +34,20 @@ export function beleidInvoer(d, r) {
 export function beleidUitkomst(d, r) {
   const p = r.beleid;
   if (!p) return '';
-  const bedragLabel = p.bewijs ? 'Uitkomst op basis van bewijsstuk' : 'Voorlopige rekenindicatie';
+  const extern = p.methode === 'extern';
+  const bedragLabel = p.bewijs ? 'Uitkomst op basis van bewijsstuk' : extern ? 'Inkomensverklaring of bankbeoordeling' : 'Voorlopige rekenindicatie';
+  const uitkomst = p.bedrag === null ? (extern ? 'Bewijsstuk nodig' : 'Invoer aanvullen') : fmt.eur(p.bedrag);
   return `<div class="beleid-resultaat">
-    <div class="beleid-resultaat-kop"><div><div class="dempen klein">${esc(bedragLabel)}</div><strong>${p.bedrag === null ? 'Nog te bepalen' : esc(fmt.eur(p.bedrag))}</strong></div>
+    <div class="beleid-resultaat-kop"><div><div class="dempen klein">${esc(bedragLabel)}</div><strong>${esc(uitkomst)}</strong></div>
     <div>${pil(r.status, r.status === 'akkoord' ? 'Ter beoordeling' : undefined)} <span class="dempen klein">${esc(METHODE_LABEL[p.methode])}</span></div></div>
-    ${p.methode === 'extern' && p.indicatie !== null ? `<p><b>Eigen rekenindicatie:</b> ${esc(fmt.eur(p.indicatie))}. De verklaring of bankbeoordeling bepaalt het te gebruiken bedrag.</p>` : ''}
+    ${extern && p.indicatie !== null ? `<p><b>Eigen rekenindicatie:</b> ${esc(fmt.eur(p.indicatie))}. De verklaring of bankbeoordeling bepaalt het te gebruiken bedrag.</p>` : ''}
+    ${p.bewijs ? `<p><b>Bewijsstuk:</b> ${esc(p.bewijs.opsteller)} · ${esc(fmt.datum(p.bewijs.datum))}</p>` : ''}
     <p class="dempen klein">Bron: ${esc(r.kaderCfg.bron)} · ${esc(p.versie)}. ${bronnenLink(p.bronUrl)}</p>
     ${p.checks.length ? `<ul class="beleid-checks">${p.checks.map((c) => `<li>${pil(c.status)} <span>${esc(c.tekst)}</span></li>`).join('')}</ul>` : ''}
     ${p.stappen.length ? `<details class="stappen geen-print"><summary>Bekijk ${p.stappen.length} reken- en bewijsstappen</summary><div class="inhoud scroll">
       <table class="tabel"><thead><tr><th>Stap</th><th>Berekening of bron</th><th class="num">Uitkomst</th></tr></thead><tbody>
       ${p.stappen.map((s) => `<tr><th scope="row">${esc(s.label)}</th><td>${esc(s.formule || '')}</td><td class="num">${Number.isFinite(s.waarde) ? esc(fmt.eur(s.waarde)) : esc(s.waarde || '–')}</td></tr>`).join('')}
       </tbody></table></div></details>` : ''}
-    <p class="geen-print"><a href="#/dossier/${encodeURIComponent(d.id)}/klant">Naar de beleidsinvoer</a></p>
+    <p class="geen-print"><a href="#/dossier/${encodeURIComponent(d.id)}/berekening">Invoer en onderbouwing controleren</a> · <a href="#/dossier/${encodeURIComponent(d.id)}/klant">Naar de beleidsinvoer</a></p>
   </div>`;
 }

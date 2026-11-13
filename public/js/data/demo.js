@@ -429,20 +429,83 @@ function deWit() {
   };
 }
 
-export function beleidVoorbeelden() {
-  const sjabloon = jansen();
-  return [
-    ['VENN', 'Venn', '0110', { bronVersie: '2026-07', sector: 'toegestaan', faillissement: 'nee', verhuurInOnderneming: 'nee' }],
-    ['ING', 'ING', '0111', {}],
-    ['RABO', 'Rabobank', '0112', { raboRoute: 'ikv', raboKanaal: 'intermediair' }],
-    ['NIBC', 'NIBC', '0113', { nibcMethode: 'gewogen' }],
-  ].map(([kader, label, nummer, invoer]) => ({
-    ...structuredClone(sjabloon), id: `dos_demo_beleid_${kader.toLowerCase()}`, nummer: `ZIB-2026-${nummer}`, kader, label,
+const sector = { sector: 'toegestaan' };
+const achmea = { ...sector, gelijkeActiviteiten: true, bijtellingGecontroleerd: true, balansBeoordeeld: true };
+const beleidsvoorbeelden = [
+  ['VENN', 'Venn', '0110', { ...sector, bronVersie: '2026-07', faillissement: 'nee', verhuurInOnderneming: 'nee' }],
+  ['ING', 'ING', '0111', { ondernemersduur: 'drie' }],
+  ['RABO', 'Rabobank', '0112', { raboRoute: 'ikv', raboKanaal: 'intermediair' }, 90500],
+  ['NIBC', 'NIBC', '0113', { nibcMethode: 'gewogen', nibcAanboddatum: '2026-09-15' }, 93500],
+  ['ATTENS', 'Attens', '0114', achmea],
+  ['SYNTRUS', 'Syntrus Achmea', '0115', { ...achmea, kanaal: 'direct', raadhuys: false }],
+  ['LLOYDS', 'Lloyds Bank', '0116', { ...sector, balansBeoordeeld: true }, 94000],
+  ['MUNT', 'MUNT Hypotheken', '0117', { ...sector, bestaandeMunt: false }, 91500],
+  ['MERIUS', 'Merius Hypotheken', '0118', {}, 92000],
+  ['NN', 'Nationale-Nederlanden', '0119', {}, 95000],
+  ['ASR', 'a.s.r.', '0120', {}, 89750],
+  ['BIJBOUWE', 'bijBouwe Basis', '0121', { ...sector, toetreding: false }, 90000],
+  ['DYNAMIC', 'Dynamic Verhuurhypotheek', '0122', { ...sector, verhuurDoel: true, toetreding: false, actueelJaarinkomen: 97500 }, 90500],
+  ['BUNQ', 'bunq Easy Mortgage', '0123', { ...sector, gewogen: true }, 96000],
+  ['TULP', 'Tulp Hypotheek', '0124', { ...sector, actueelJaarinkomen: 52500 }, 42500],
+];
+
+function voorbeeldTulp() {
+  const dossier = elAmrani();
+  const [onderneming] = dossier.ondernemingen;
+  onderneming.startdatum = '2025-01-01';
+  delete onderneming.jaren[2024];
+  dossier.ib[2023] = { voorStart: 38000 };
+  dossier.ib[2024] = { voorStart: 42000 };
+  return dossier;
+}
+
+function oefenverklaring(bedrag) {
+  return { bedrag, datum: '2026-08-25', opsteller: 'Fictieve rekenexpert' };
+}
+
+function maakBeleidsvoorbeeld([kader, label, nummer, invoer, oefenbedrag]) {
+  const analyse = kader === 'ANALYSE';
+  const sjabloon = kader === 'TULP' ? voorbeeldTulp() : jansen();
+  const beleidsinvoer = analyse
+    ? Object.fromEntries(beleidsvoorbeelden.map(([id, , , velden]) => [id, id === 'TULP' ? { ...sector } : { ...velden }]))
+    : { [kader]: { ...invoer } };
+  // Oefenverklaringen zijn weergavedata. De rekenkern ontvangt ze nooit als externe bewijsinvoer.
+  const oefenverklaringen = analyse
+    ? Object.fromEntries(beleidsvoorbeelden.filter(([, , , , bedrag]) => bedrag !== undefined)
+      .map(([id, , , , bedrag]) => [id, oefenverklaring(id === 'TULP' ? 92000 : bedrag)]))
+    : oefenbedrag === undefined ? {} : { [kader]: oefenverklaring(oefenbedrag) };
+  let toelichting = 'Vergelijk de beleidsroute, cijferuitkomst en gevraagde onderbouwing.';
+  if (analyse) toelichting = 'Vergelijk alle kaders met dezelfde ingevoerde cijfers. Een oefenverklaring simuleert de externe route.';
+  if (kader === 'TULP') toelichting = 'De ondernemer begon in januari 2025. Gebruik voor 2023 en 2024 het loon vóór de start en voor 2025 de fiscale winst.';
+  if (kader === 'ASR' || kader === 'BIJBOUWE') toelichting = 'Voor deze route stelt een rekenexpert het inkomen vast. De oefenverklaring laat zien hoe zo’n extern bedrag eruitziet.';
+  return {
+    ...sjabloon,
+    id: `dos_demo_beleid_${kader.toLowerCase()}`,
+    nummer: `ZIB-2026-${nummer}`,
+    kader: analyse ? 'NHG' : kader,
+    soort: analyse ? 'ANALYSE' : 'IKV',
+    demo: true,
+    label,
+    status: 'beoordeling_1',
     aanvrager: { voorletters: 'T.', achternaam: `Voorbeeld ${label}` },
-    leningnummer: `DEMO-${nummer}`, uitersteDatum: '', beleidsinvoer: { [kader]: invoer },
-    ...(kader === 'RABO' ? { berekeningsdatum: '2026-11-13' } : {}),
-    notities: { algemeen: 'Fictieve oefencasus. Vergelijk de beleidsroute, cijferuitkomst en gevraagde onderbouwing.' },
-  }));
+    leningnummer: `DEMO-${nummer}`,
+    uitersteDatum: '',
+    beleidsinvoer,
+    oefenverklaringen,
+    ...(kader === 'RABO' || analyse ? { berekeningsdatum: '2026-11-13' } : {}),
+    notities: { algemeen: `Fictieve oefencasus. ${toelichting}` },
+  };
+}
+
+const analyseVoorbeeld = ['ANALYSE', 'Inkomensanalyse', '0125'];
+
+export function beleidsvoorbeeldVoor(kader) {
+  const voorbeeld = kader === 'ANALYSE' ? analyseVoorbeeld : beleidsvoorbeelden.find(([id]) => id === kader);
+  return voorbeeld ? maakBeleidsvoorbeeld(voorbeeld) : null;
+}
+
+export function beleidVoorbeelden() {
+  return [...beleidsvoorbeelden, analyseVoorbeeld].map(maakBeleidsvoorbeeld);
 }
 
 export function demoRecords() {

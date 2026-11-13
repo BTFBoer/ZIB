@@ -11,7 +11,8 @@ import { docAanwezig } from '../schema/documenten.js';
 import { kernPunten, toelichtingRijen } from '../toelichting.js';
 import { pil, STATUS_TEKST, icoon } from './ui.js';
 import { renderTrace } from './trace-view.js';
-import { analyseBedrag, inkomensTabel, kengetallenTabel, methodenTabel, ondernemingenMatrix, weergaveOpties, stip } from './dossier.js';
+import { inkomensTabel, kengetallenTabel, methodenTabel, ondernemingenMatrix, weergaveOpties, stip } from './dossier.js';
+import { analyseBedragVoorDossier } from './rekenwerkruimte.js';
 import { CONTROLES } from './formats.js';
 import { ui, ordeJarenOverzicht, ingeklapt } from './uistate.js';
 import { organogramSVG, organogramNotitie } from './organogram.js';
@@ -449,7 +450,7 @@ export function dossierNotitiesTekst(d, r) {
   const regels = [];
   if (r.inkomensanalyse) {
     regels.push('Inkomensanalyse', `Aanvrager\t${naamAanvrager(d.aanvrager)}`, '', 'Uitkomsten per toetskader');
-    for (const x of vergelijkKaders(d)) regels.push(`${x.kort}\t${analyseBedrag(x)}\t${STATUS_TEKST[x.status] || ''}`);
+    for (const x of vergelijkKaders(d)) regels.push(`${x.kort}\t${analyseBedragVoorDossier(d, x)}\t${STATUS_TEKST[x.status] || ''}`);
     if (n.algemeen) regels.push('', 'Toelichting', n.algemeen);
     if (n.conclusie) regels.push('', 'Conclusie', n.conclusie);
     return regels.join('\n');
