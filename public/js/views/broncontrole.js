@@ -1,5 +1,6 @@
 import { esc, fmt } from '../util.js';
 import { tekstvak } from './ui.js';
+import { hoofduitkomst } from './uitkomst.js';
 
 const labels = { bzi: 'Bron: BZI', horizontaal: 'Bron: horizontaal', verticaal: 'Bron: verticaal', afTeGevenBron: 'Uitkomst in bron', inkomen: 'Inkomen in bron' };
 const bedrag = (waarde) => Number.isFinite(waarde) ? fmt.eur(waarde) : '—';
@@ -55,11 +56,11 @@ export function renderBroncontrole(d, r, { archief = false } = {}) {
   const uitkomsten = Array.isArray(bron.uitkomsten) ? bron.uitkomsten : [];
   const herkomst = Array.isArray(bron.velden) ? bron.velden : [];
   const punten = [...(Array.isArray(bron.controlepunten) ? bron.controlepunten : []), ...(Array.isArray(bron.afwijkingenBijOvername) ? bron.afwijkingenBijOvername : [])];
-  const uitkomst = r.beleid?.bedrag ?? r.beleid?.indicatie ?? (r.beleid ? null : r.toetsinkomen);
+  const uitkomst = hoofduitkomst(r);
   const vergelijking = r.inkomen?.abnBronVergelijking;
   const beoordelingNodig = punten.length && !d.notities?.bronverschilOnderbouwing?.trim();
   return `<section class="paneel" id="fiat-bronvergelijking"><h2>Uitkomst vergeleken met bronbestanden</h2>
-    <p>${archief ? 'Historisch dossier. De uitkomsten hieronder komen uit de bron.' : `<strong>Toetsinkomen in ZIB:</strong> ${!beoordelingNodig && Number.isFinite(uitkomst) ? esc(bedrag(uitkomst)) : 'Nog te beoordelen'} · ${esc(r.kaderCfg.kort)}.`}</p>
+    <p>${archief ? 'Historisch dossier. De uitkomsten hieronder komen uit de bron.' : `<strong>Uitkomst in ZIB:</strong> ${esc(uitkomst.tekst)}${uitkomst.label ? ` <span class="dempen">(${esc(uitkomst.label)})</span>` : ''} · ${esc(r.kaderCfg.kort)}.${beoordelingNodig ? ' <span class="dempen">Onderbouw de bronverschillen hieronder voordat je het dossier gereedmeldt.</span>' : ''}`}</p>
     ${bron.referentieversie ? `<p><strong>Versie in bron:</strong> ${esc(bron.referentieversie)}</p>` : ''}
     ${renderBronUitkomsten(uitkomsten)}
     ${renderAbnBronVergelijking(vergelijking)}

@@ -75,10 +75,13 @@ export function berekenDgaGezamenlijk(d, { T, C, datum }, analyses, perHoofd) {
   if (factor > 0 && factor < 1 && (prognose === null || d.instellingen?.dgaGezamenlijkePrognoseRAAA !== true)) {
     blokkades.push('Voor de starterstoets is een prognose van het gezamenlijke DGA-loon door een RA of AA nodig.');
   }
+  // Zonder prognose bij een starter rekent ZIB met de afslag alleen; de prognose blijft een aandachtspunt.
   const toetsinkomen = berekend === null || laatste === null ? null
     : factor === 1 ? Math.min(berekend, laatste)
-      : factor === 0 ? 0 : prognose === null ? null : rond2(Math.min(berekend * factor, prognose));
-  const inUitkomst = !blokkades.length && Number.isFinite(toetsinkomen);
+      : factor === 0 ? 0 : prognose === null ? rond2(berekend * factor) : rond2(Math.min(berekend * factor, prognose));
+  // De loonpost telt mee zodra hij te berekenen is. Wat nog moet worden onderbouwd (toedeling, voorwaarden,
+  // prognose) staat als aandachtspunt bij Fiattering; het inkomen blijft zichtbaar en herleidbaar.
+  const inUitkomst = Number.isFinite(toetsinkomen) && Number.isFinite(berekend);
   return { perJaar, berekend, toetsinkomen, factor, prognose, inUitkomst, blokkades, ontbreekt,
     compleet: !strijdigeToedeling && ontbreekt.length === 0 && !T.some((y) => perJaar[y].inkomen !== null && !perJaar[y].periodeBekend),
     bronJaren: actieveJaren };

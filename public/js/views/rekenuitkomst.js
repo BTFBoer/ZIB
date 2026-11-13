@@ -3,6 +3,7 @@ import { rekenInvoerStatus } from '../engine/reken-invoer.js';
 import { esc, fmt, gemiddelde } from '../util.js';
 import { heeftControleperiode, kerninvoerPad } from './kerninvoer.js';
 import { icoon, pil } from './ui.js';
+import { hoofduitkomst } from './uitkomst.js';
 
 const LEEG = '—';
 const geld = (v) => Number.isFinite(v) ? fmt.eur(v, Number.isInteger(v) ? 0 : 2) : LEEG;
@@ -47,6 +48,8 @@ function inkomensPosten(d, r, a, p) {
     return !a.isDeelneming && heeftBedrag(bruto) ? Number(bruto) * j.aandeel : null;
   };
   const overwinst = (y) => a.jaren?.[y]?.heeftResultaatinvoer ? b2?.overwinst?.ow?.[y] ?? null : null;
+  // Optimaal telt het aandeel in de winst na Vpb van vennootschappen met zeggenschap per jaar mee (look-through).
+  const winstaandeel = (y) => b2?.model === 'OPT' && b2.keten && a.jaren?.[y]?.actief && Number.isFinite(Number(b2.P?.[y])) ? Number(b2.P[y]) : null;
   const jaren = r.T.filter((y) => a.jaren?.[y]?.meegeteld);
   const C = r.C;
   const heeftC = C && heeftControleperiode(bronJaar(d, a, C) || {}, C, r.datum);
@@ -62,22 +65,26 @@ function inkomensPosten(d, r, a, p) {
   const jaarBedrag = (y) => {
     if (r.beleid && r.ondernemingen.length === 1 && Number.isFinite(r.beleid.perJaar?.[y])) return r.beleid.perJaar[y];
     if (r.familie === 'ABN' || b2?.dividendInTotaal) return samen(box1(y), dividend(y));
+    if (Number.isFinite(winstaandeel(y))) return samen(box1(y), winstaandeel(y));
     return box1(y);
   };
+  const metWinstaandeel = jaren.some((y) => Number.isFinite(winstaandeel(y)));
   return {
     jaarBedrag, extrapolatie, gemiddeld: gem(jaren.map(jaarBedrag)),
     posten: [
       { label: 'Box 1 inkomen', jaar: box1, gemiddelde: gemiddeldBox1, gecorrigeerd: toetsBox1, extrapolatie },
       { label: 'Box 2 inkomen dividend', jaar: dividend, gemiddelde: gemiddeldeDividend, gecorrigeerd: toetsDividend },
-      { label: 'Box 2 inkomen overwinst', jaar: overwinst, gemiddelde: gemiddeldeOverwinst, gecorrigeerd: toetsOverwinst },
+      ...(metWinstaandeel
+        ? [{ label: 'Aandeel winst na Vpb (Optimaal)', jaar: winstaandeel, gemiddelde: gem(jaren.map(winstaandeel)), gecorrigeerd: p?.box2 ?? null }]
+        : [{ label: 'Box 2 inkomen overwinst', jaar: overwinst, gemiddelde: gemiddeldeOverwinst, gecorrigeerd: toetsOverwinst }]),
     ],
     box2Route: b2?.holding ? 'Holdingroute' : { route1: 'Route 1 · dividend', route2: 'Route 2 · overwinst', combinatie: 'Combinatie', geen: 'Geen box 2' }[b2?.route],
   };
 }
 
-function bedrijfsinkomen(r, a, p, gegevens, open) {
-  if (r.inkomensanalyse || r.soort === 'NUL' || a.meenemen === false || a.geconsolideerd || open) return null;
-  if (r.beleid) return r.ondernemingen.length === 1 && r.beleid.methode !== 'extern' ? r.beleid.indicatie : null;
+function bedrijfsinkomen(r, a, p, gegevens) {
+  if (r.inkomensanalyse || r.soort === 'NUL' || a.meenemen === false || a.geconsolideerd) return null;
+  if (r.beleid) return r.ondernemingen.length === 1 ? r.beleid.bedrag ?? r.beleid.indicatie : null;
   if (!p || !r.T.some((y) => Number.isFinite(gegevens.jaarBedrag(y)))) return null;
   if (r.familie === 'ABN') {
     if (p.nul) return 0;
@@ -99,8 +106,11 @@ export function renderInkomenTabel(d, r) {
   const heeftBronDga = analyse && jaren.some((jaar) => heeftBedrag(bronDga(jaar)?.loon));
   const dga = i?.dgaGezamenlijk;
   const kader = analyse ? 'Ingevoerde bedragen' : r.kaderCfg.kort;
-  const basisOpen = !r.beleid && [...ontbreekt.dossier, ...ontbreekt.ondernemingen.flatMap((o) => o.punten)].some((punt) => punt.blokkeert);
-  const kaderbedrag = r.inkomensanalyse ? null : r.soort === 'NUL' ? 0 : r.beleid ? r.beleid.bewijs ? r.beleid.bedrag : null : basisOpen ? null : r.toetsinkomen;
+  // Ontbrekende invoer maakt de uitkomst voorlopig; de bedragen blijven zichtbaar en de open punten staan bij Fiattering.
+  const basisOpen = [...ontbreekt.dossier, ...ontbreekt.ondernemingen.flatMap((o) => o.punten)].some((punt) => punt.blokkeert);
+  const uitkomst = hoofduitkomst(r, { invoerOpen: basisOpen });
+  const kaderbedrag = r.inkomensanalyse ? null : r.soort === 'NUL' ? 0 : r.beleid ? uitkomst.bedrag : r.toetsinkomen;
+  const kaderlabel = r.beleid || (basisOpen && !r.inkomensanalyse && r.soort !== 'NUL') ? uitkomst.label : '';
   const indicatie = r.beleid?.indicatie;
   const vastgesteld = r.vastgesteld;
   const abnModel = i?.abnVaststelling;
@@ -108,8 +118,7 @@ export function renderInkomenTabel(d, r) {
   const gegevens = analyses.map((a) => {
     const p = perOnd.get(a.id);
     const posten = inkomensPosten(d, r, a, p);
-    const open = ontbreekt.ondernemingen.find((o) => o.id === a.id)?.punten.some((punt) => punt.blokkeert);
-    return { a, posten, bedrag: bedrijfsinkomen(r, a, p, posten, open) };
+    return { a, posten, bedrag: bedrijfsinkomen(r, a, p, posten) };
   });
   const invoerBedrag = (a, y) => {
     const j = a.jaren?.[y];
@@ -132,7 +141,7 @@ export function renderInkomenTabel(d, r) {
   }).join('');
   const dgaRij = dga ? `<tr><th scope="row">Gezamenlijk DGA-loon<small>Voor alle eigen vennootschappen</small></th>
     ${jaren.map((y) => geldcel(dga.perJaar?.[y]?.inkomen)).join('')}${geldcel(dga.berekend)}${C ? geldcel(dga.perJaar?.[C]?.geëxtrapoleerd) : ''}
-    ${geldcel(dga.inUitkomst ? dga.toetsinkomen : null)}${voorwaarden ? `<td>${dga.inUitkomst ? '' : pil('attentie', 'Ter beoordeling')}</td>` : ''}</tr>` : '';
+    ${geldcel(dga.inUitkomst ? dga.toetsinkomen : null)}${voorwaarden ? '<td></td>' : ''}</tr>` : '';
   const bronDgaRij = heeftBronDga ? `<tr><th scope="row">Gezamenlijk bruto DGA-loon<small>Op aanvragerniveau</small></th>${jaren.map((y) => geldcel(heeftBedrag(bronDga(y)?.loon) ? Number(bronDga(y).loon) : null)).join('')}</tr>
     <tr><th scope="row">Bijtelling gezamenlijk DGA-loon</th>${jaren.map((y) => geldcel(heeftBedrag(bronDga(y)?.bijtelling) ? Number(bronDga(y).bijtelling) : null)).join('')}</tr>` : '';
   const persoon = (y) => {
@@ -143,6 +152,10 @@ export function renderInkomenTabel(d, r) {
   };
   const persoonRij = jaren.some((y) => Number.isFinite(persoon(y))) ? `<tr><th scope="row">Overig box 1 inkomen</th>${jaren.map((y) => geldcel(persoon(y))).join('')}
     ${analyse ? '' : `${geldcel(gem(r.T.map(persoon)))}${C ? geldcel(null) : ''}${geldcel(i?.row)}${voorwaarden ? '<td></td>' : ''}`}</tr>` : '';
+  // Optimaal: bestendig dividend uit minderheidsbelangen telt per jaar mee in het economisch inkomen.
+  const minderheid = !analyse && !r.beleid ? i?.optimaal?.minderheidPerJaar : null;
+  const minderheidRij = minderheid && r.T.some((y) => Number(minderheid[y])) ? `<tr><th scope="row">Dividend minderheidsbelangen<small>Met trackrecord</small></th>${jaren.map((y) => geldcel(Number.isFinite(Number(minderheid[y])) && y !== C ? Number(minderheid[y]) : null)).join('')}
+    ${geldcel(gem(r.T.map((y) => Number(minderheid[y]) || 0)))}${C ? geldcel(null) : ''}${geldcel(null)}${voorwaarden ? '<td></td>' : ''}</tr>` : '';
   const jaartotaal = (y) => {
     if (r.inkomensanalyse || r.soort === 'NUL') return null;
     if (r.beleid) return r.beleid.perJaar?.[y];
@@ -151,20 +164,31 @@ export function renderInkomenTabel(d, r) {
     return i?.perJaar?.[y] ?? (y === C ? i?.controleReal : null);
   };
   const jaartotalen = jaren.map(jaartotaal);
-  const somGemiddeld = !basisOpen && !r.inkomensanalyse && jaartotalen.some(Number.isFinite) ? i?.gemiddelde : null;
-  const somExtr = C && !basisOpen && !r.inkomensanalyse && Number.isFinite(jaartotaal(C)) ? i?.controleExtr : null;
-  const totaal = r.inkomensanalyse ? LEEG : Number.isFinite(kaderbedrag) ? geld(kaderbedrag) : 'Nog te beoordelen';
+  // Kaders zonder eigen totaalgemiddelde (beleidsprofielen, ABN AMRO) tonen het gemiddelde van de jaartotalen.
+  const somGemiddeld = !r.inkomensanalyse && jaartotalen.some(Number.isFinite)
+    ? (!r.beleid && Number.isFinite(i?.gemiddelde) ? i.gemiddelde : gem(r.T.map(jaartotaal))) : null;
+  const somExtr = C && !r.inkomensanalyse
+    ? (Number.isFinite(jaartotaal(C)) && Number.isFinite(i?.controleExtr) ? i.controleExtr
+      : !r.beleid && r.familie === 'ABN' ? samen(...gegevens.map((x) => x.posten.extrapolatie)) : null) : null;
+  const totaal = r.inkomensanalyse ? LEEG : Number.isFinite(kaderbedrag) ? geld(kaderbedrag) : 'Geen cijfers';
   const aantal = analyse ? jaren.length + 1 : r.T.length + (C ? 2 : 0) + (voorwaarden ? 4 : 3);
   const extraTotaal = (label, v) => `<tr><th scope="row" colspan="${aantal - (voorwaarden ? 2 : 1)}">${esc(label)}</th>${geldcel(v)}${voorwaarden ? '<td></td>' : ''}</tr>`;
+  // Aanpassingen op het totaal (beletperiode, incidenteel jaar) als eigen regel: zo sluiten de ondernemingsregels
+  // aan op het jaartotaal.
+  const vervangen = !analyse && !r.beleid ? [i?.belet, i?.incident].find((x) => x && !x.fout && Number.isFinite(x.nieuw) && Number.isFinite(x.oud) && x.nieuw !== x.oud) : null;
+  const vervangRij = vervangen ? `<tr class="reken-aanpassing"><th scope="row">${esc(vervangen === i?.belet ? `Beletperiode ${vervangen.jaar} vervangen` : `Incidenteel jaar ${vervangen.jaar} vervangen`)}<small>${esc(`${geld(vervangen.oud)} → ${geld(vervangen.nieuw)} · ${vervangen.bron || ''}`)}</small></th>
+    ${jaren.map((y) => geldcel(y === vervangen.jaar ? vervangen.nieuw - vervangen.oud : null)).join('')}${geldcel(null)}${C ? geldcel(null) : ''}${geldcel(null)}${voorwaarden ? '<td></td>' : ''}</tr>` : '';
+  const modelGelijk = Number.isFinite(abnModel?.bedrag) && vastgesteld === abnModel.bedrag;
+  const modelLabel = abnModel ? `ABN AMRO · ${abnModel.methode === 'verticaal' ? 'verticaal' : 'horizontaal'} · ${abnModel.bron === 'bronbestand' ? 'bronbedrag' : 'herberekend'}` : '';
   return `<div class="scroll"><table class="tabel reken-tabel reken-inkomenstabel uitkomsten-tabel" aria-label="Inkomen per onderneming" data-uitkomstentabel>
     <thead><tr><th scope="col" rowspan="2">Onderneming</th><th scope="colgroup" colspan="${aantal - 1}" class="reken-tabelkop">${esc(kader)}</th></tr><tr>
     ${r.T.map((y) => kolom(y)).join('')}${C ? kolom(C, 'Gerealiseerd') : ''}${analyse ? '' : `${kolom('Gemiddelde', 'Na jaarlijkse correcties')}${C ? kolom(C, 'Geëxtrapoleerd') : ''}${kolom('Jaarinkomen', 'Na toetsing')}${voorwaarden ? kolom('Voorwaarden') : ''}`}</tr></thead>
-    <tbody>${dgaRij}${bronDgaRij}${rijen}${persoonRij}${!analyses.length && !persoonRij && !bronDgaRij ? `<tr><td colspan="${aantal}">Geen ondernemingen opgenomen.</td></tr>` : ''}</tbody>
-    ${analyse ? '' : `<tfoot><tr class="totaal"><th scope="row">Toetsinkomen totaal</th>${jaartotalen.map((v) => geldcel(v)).join('')}${geldcel(somGemiddeld)}${C ? geldcel(somExtr) : ''}
-    <td class="num reken-uitkomstbedrag"><strong>${esc(totaal)}</strong></td>${voorwaarden ? '<td></td>' : ''}</tr>
-    ${Number.isFinite(indicatie) && indicatie !== kaderbedrag ? extraTotaal('Berekende indicatie', indicatie) : ''}
-    ${Number.isFinite(abnModel?.bedrag) ? extraTotaal(`ABN AMRO · ${abnModel.methode === 'verticaal' ? 'Verticaal' : 'Horizontaal'} · ${abnModel.bron === 'bronbestand' ? 'Bronbedrag' : 'Herberekend'}`, abnModel.bedrag) : ''}
-    ${Number.isFinite(vastgesteld) && Number.isFinite(kaderbedrag) && vastgesteld !== kaderbedrag ? extraTotaal('Vastgesteld inkomen', vastgesteld) : ''}
+    <tbody>${dgaRij}${bronDgaRij}${rijen}${persoonRij}${minderheidRij}${vervangRij}${!analyses.length && !persoonRij && !bronDgaRij ? `<tr><td colspan="${aantal}">Geen ondernemingen opgenomen.</td></tr>` : ''}</tbody>
+    ${analyse ? '' : `<tfoot><tr class="totaal"><th scope="row">${r.familie === 'ABN' ? 'Toetsinkomen volgens Woonbeleid' : 'Toetsinkomen totaal'}</th>${jaartotalen.map((v) => geldcel(v)).join('')}${geldcel(somGemiddeld)}${C ? geldcel(somExtr) : ''}
+    <td class="num reken-uitkomstbedrag"><strong>${esc(totaal)}</strong>${kaderlabel ? `<small>${esc(kaderlabel)}</small>` : ''}</td>${voorwaarden ? '<td></td>' : ''}</tr>
+    ${Number.isFinite(indicatie) && r.beleid?.bewijs && indicatie !== kaderbedrag ? extraTotaal('Berekende indicatie', indicatie) : ''}
+    ${Number.isFinite(abnModel?.bedrag) && !modelGelijk ? extraTotaal(modelLabel, abnModel.bedrag) : ''}
+    ${Number.isFinite(vastgesteld) && Number.isFinite(kaderbedrag) && vastgesteld !== kaderbedrag && !(r.beleid && !r.beleid.bewijs) ? extraTotaal(modelGelijk ? `Vastgesteld inkomen · ${modelLabel}` : 'Vastgesteld inkomen', vastgesteld) : ''}
     </tfoot>`}</table></div>`;
 }
 
@@ -172,14 +196,13 @@ function renderBedrijfsinkomen(d, r, a) {
   if (r.soort === 'NUL' || r.inkomensanalyse) return '';
   const p = r.inkomen?.perOnderneming?.find((o) => o.id === a.id);
   const posten = inkomensPosten(d, r, a, p);
-  const open = rekenInvoerStatus(d, r).ondernemingen.find((o) => o.id === a.id)?.punten.some((punt) => punt.blokkeert);
   const C = r.C;
   return `<div class="scroll"><table class="tabel reken-tabel reken-toetsingstabel" aria-label="Inkomensposten per onderneming"><thead><tr>
     <th scope="col">Inkomen</th>${r.T.map((y) => kolom(y)).join('')}${kolom('Gemiddelde', 'Na jaarlijkse correcties')}${kolom('Na toetsing')}${C ? kolom(C, 'Geëxtrapoleerd') : kolom('Geen controlejaar')}</tr></thead><tbody>
     ${posten.posten.map((x) => `<tr><th scope="row">${esc(x.label)}</th>${r.T.map((y) => geldcel(x.jaar(y))).join('')}${geldcel(x.gemiddelde)}${geldcel(x.gecorrigeerd)}${geldcel(x.extrapolatie)}</tr>`).join('')}
     ${posten.box2Route ? `<tr><th scope="row">Box 2 route</th><td colspan="${r.T.length + 3}">${esc(posten.box2Route)}</td></tr>` : ''}
     <tr class="reken-toetsing-totaal"><th scope="row">Totaal inkomen</th>${r.T.map((y) => geldcel(posten.jaarBedrag(y))).join('')}${geldcel(posten.gemiddeld)}
-    ${geldcel(bedrijfsinkomen(r, a, p, posten, open))}${geldcel(posten.extrapolatie)}</tr></tbody></table></div>`;
+    ${geldcel(bedrijfsinkomen(r, a, p, posten))}${geldcel(posten.extrapolatie)}</tr></tbody></table></div>`;
 }
 
 function renderRatios(d, r, a) {

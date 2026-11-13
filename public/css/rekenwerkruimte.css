@@ -176,6 +176,8 @@
 .reken-inkomenstabel tbody th, .reken-inkomenstabel tbody td { background: var(--info-bg); }
 .reken-inkomenstabel tfoot th, .reken-inkomenstabel tfoot td { border-top: 2px solid var(--accenttekst); }
 .reken-inkomenstabel tfoot tr.totaal td.reken-uitkomstbedrag { background: var(--att-bg); color: var(--att); }
+.reken-inkomenstabel tfoot td.reken-uitkomstbedrag small { color: inherit; opacity: .85; white-space: normal; }
+.reken-inkomenstabel tbody tr.reken-aanpassing > * { background: var(--vlak); font-style: italic; }
 .reken-toetsingstabel { min-width: 540px; }
 .reken-toetsingstabel tbody th[scope="row"] { background: var(--mint); }
 .reken-toetsingstabel tbody td { background: var(--achtergrond); }

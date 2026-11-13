@@ -161,10 +161,11 @@ export function rekenGrondslag(d, r = bereken(d)) {
   const beleid = r.beleid;
   const ontbreekt = rekenInvoerStatus(d, r);
   const open = [...ontbreekt.dossier, ...ontbreekt.ondernemingen.flatMap((o) => o.punten.map((p) => ({ ...p, onderneming: o.naam, ondId: o.id })))];
+  // Ontbrekende invoer maakt de uitkomst voorlopig, maar verbergt de berekende bedragen niet.
   const blokkeert = open.some((p) => p.blokkeert) || r.bron === 'open' || r.inkomensanalyse;
   const referentie = r.inkomen?.abnVaststelling ?? null;
   const basis = beleid ? beleid.perJaar : r.inkomen?.perJaar;
-  const perJaar = jaren.filter((jaar) => Number.isFinite(basis?.[jaar]) && (beleid || !blokkeert)).map((jaar) => ({
+  const perJaar = jaren.filter((jaar) => Number.isFinite(basis?.[jaar]) && !r.inkomensanalyse).map((jaar) => ({
     jaar, waarde: basis[jaar], type: 'eur', controlejaar: jaar === r.C,
   }));
   return {
@@ -174,9 +175,9 @@ export function rekenGrondslag(d, r = bereken(d)) {
     stappen: rekenstappen(r), regels: k.regels || [], aannames: k.aannames || [], ontbreekt: open,
     voorwaarden: beleid?.checks || [],
     uitkomst: {
-      berekend: beleid ? bedrag(beleid.indicatie) : blokkeert ? null : bedrag(r.berekend),
-      toetsinkomen: beleid ? (beleid.bewijs && r.status !== 'niet_akkoord' ? bedrag(beleid.bedrag) : null) : blokkeert ? null : bedrag(r.toetsinkomen),
-      vastgesteld: beleid && !beleid.bewijs || blokkeert ? null : bedrag(r.vastgesteld),
+      berekend: beleid ? bedrag(beleid.indicatie) : r.inkomensanalyse ? null : bedrag(r.berekend),
+      toetsinkomen: beleid ? (beleid.bewijs && r.status !== 'niet_akkoord' ? bedrag(beleid.bedrag) : null) : r.inkomensanalyse ? null : bedrag(r.toetsinkomen),
+      vastgesteld: beleid && !beleid.bewijs || r.inkomensanalyse ? null : bedrag(r.vastgesteld),
       indicatie: beleid ? bedrag(beleid.indicatie) : null, bewijs: beleid?.bewijs ?? null, referentie,
       open: blokkeert || (beleid?.methode === 'extern' && !beleid.bewijs),
     },

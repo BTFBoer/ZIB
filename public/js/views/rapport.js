@@ -13,6 +13,7 @@ import { pil, STATUS_TEKST, icoon } from './ui.js';
 import { renderTrace } from './trace-view.js';
 import { inkomensTabel, kengetallenTabel, methodenTabel, ondernemingenMatrix, weergaveOpties, stip } from './dossier.js';
 import { analyseBedragVoorDossier } from './rekenwerkruimte.js';
+import { geldExact, hoofduitkomst } from './uitkomst.js';
 import { CONTROLES } from './formats.js';
 import { ui, ordeJarenOverzicht, ingeklapt } from './uistate.js';
 import { organogramSVG, organogramNotitie } from './organogram.js';
@@ -93,7 +94,7 @@ const PUNT_MAX = 6;
 
 /** Historische bedragen uit de rekenkern, in de vaste volgorde oud → nieuw. */
 function inkomensVerloop(d, r) {
-  if (d.soort === 'NUL' || r.inkomen?.gecombineerdDgaOpen) return '';
+  if (d.soort === 'NUL' || !r.inkomen) return '';
   const waarden = ordeJarenOverzicht(r.T).map((jaar) => [jaar, r.inkomen.perJaar?.[jaar]])
     .filter(([, waarde]) => Number.isFinite(waarde));
   if (!waarden.length) return '';
@@ -117,11 +118,14 @@ function kernBlok(d, r, kader) {
     zin = r.nul?.conclusie || '';
   } else if (r.beleid) {
     label = r.beleid.bewijs ? 'Uitkomst op basis van bewijsstuk' : 'Voorlopige rekenindicatie';
-    zin = 'Ter beoordeling volgens de route van de geldverstrekker.';
+    zin = `${hoofduitkomst(r).label}. Ter beoordeling volgens de route van de geldverstrekker.`;
   } else if (r.bron === 'geen') {
-    zin = 'Er kan geen zakelijk inkomen worden afgegeven.';
-  } else if (r.bron === 'open') {
-    zin = 'Beoordeel de broncijfers en het gezamenlijke DGA-loon bij Fiattering.';
+    zin = `Er kan geen zakelijk inkomen worden afgegeven (${hoofduitkomst(r).label.toLowerCase()}).`;
+  } else if (r.familie === 'ABN' && hoofduitkomst(r).soort === 'abn-model') {
+    const model = r.inkomen.abnVaststelling;
+    const verticaal = model.methode === 'verticaal';
+    const ander = verticaal ? model.horizontaal : model.verticaal;
+    zin = `Vastgesteld met de ${verticaal ? 'verticale' : 'horizontale'} methode van ABN AMRO. Toetsinkomen Woonbeleid ${fmt.eur(r.toetsinkomen)}; ${verticaal ? 'horizontaal' : 'verticaal'} ${Number.isFinite(ander) ? geldExact(ander) : 'niet te berekenen'}.`;
   } else if (r.bron === 'afwijkend') {
     label = r.status === 'akkoord' ? 'Afwijkend inkomen (gemotiveerd)' : 'Voorgesteld afwijkend inkomen';
     zin = `Berekend inkomen ${fmt.eur(r.berekend)}; afgegeven wordt het gemotiveerde afwijkende inkomen.`;
@@ -139,10 +143,10 @@ function kernBlok(d, r, kader) {
   return `<section class="kern" id="rap-kern" aria-label="Kern van het rapport" data-beoordelingskader="${esc(r.kader)}">
     <div class="kern-uitkomst ${esc(r.status)}">
       <div class="kern-label">${esc(label)}</div>
-      <div class="bedrag-groot">${esc(isNul ? '€ 0' : r.beleid ? r.beleid.bedrag === null ? 'Nog te bepalen' : fmt.eur(r.beleid.bedrag) : r.bron === 'geen' ? 'Geen inkomen' : r.bron === 'open' ? 'Nog te beoordelen' : fmt.eur(r.vastgesteld))}</div>
+      <div class="bedrag-groot">${esc(hoofduitkomst(r).tekst)}</div>
       <div class="kern-oordeel">${pil(r.status, r.beleid && r.status === 'akkoord' ? 'Ter beoordeling' : undefined)} <span class="rapport-fiatstatus">${esc(status)}</span></div>
       ${zin ? `<p>${esc(zin)}</p>` : ''}
-      ${r.beleid || r.bron === 'open' ? '' : `<p class="dempen klein">Geldig voor bindende offertes uitgebracht tot en met ${esc(fmt.datumLang(r.geldigTot))}.</p>`}
+      ${r.beleid ? '' : `<p class="dempen klein">Geldig voor bindende offertes uitgebracht tot en met ${esc(fmt.datumLang(r.geldigTot))}.</p>`}
     </div>
     <div class="kern-feiten">${kv([
       ['Aanvrager', `<b>${esc(naamAanvrager(a))}</b>${a.geboortedatum ? `, geboren ${esc(fmt.datumLang(a.geboortedatum))}` : ''}`],

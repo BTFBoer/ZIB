@@ -37,6 +37,7 @@ import { renderAnalyseTabel, renderRekenwerkruimte, renderOndernemingBerekening,
 import { dossierWerkbalk } from './dossierwerkbalk.js';
 import { renderFiatBeoordeling } from './fiatbeoordeling.js';
 import { renderBroncontrole } from './broncontrole.js';
+import { hoofduitkomst } from './uitkomst.js';
 
 export const TABS = [
   ['overzicht', 'Dossieroverzicht'],
@@ -85,18 +86,16 @@ export function dossierKop(d, r) {
     label = 'Afwijkend inkomen (gemotiveerd)';
     toelichting = `Berekend inkomen ${fmt.eur(r.berekend)}`;
   } else if (r.beleid) {
-    label = r.beleid.bewijs ? 'Uitkomst op basis van bewijsstuk' : r.beleid.indicatie !== null || r.beleid.bedrag !== null ? 'Voorlopige rekenindicatie' : 'Uitkomst volgens toetskader';
-    toelichting = `${r.kaderCfg.kort} · ${r.kaderVersie}`;
+    label = r.beleid.bewijs ? 'Uitkomst op basis van bewijsstuk' : 'Rekenindicatie';
+    toelichting = `${hoofduitkomst(r).label} · ${r.kaderCfg.kort} · ${r.kaderVersie}`;
   } else if (r.bron === 'geen') {
-    toelichting = 'Voorwaarden niet akkoord: geen zakelijk inkomen afgeven';
-  } else if (r.bron === 'open') {
-    label = 'Zakelijk inkomen';
-    toelichting = 'Bekijk de open invoer bij Fiattering.';
+    toelichting = hoofduitkomst(r).label;
   } else if (r.familie === 'ABN') {
-    label = 'Berekend inkomen (BZI)';
+    const uitkomst = hoofduitkomst(r);
+    label = uitkomst.soort === 'abn-model' ? `Vastgesteld inkomen (${uitkomst.label.replace(/^ABN AMRO · | vastgesteld$/g, '')})` : 'Berekend inkomen (BZI)';
     const ph = r.inkomen?.perHoofdbedrijf || [];
     if (ph.some((x) => !x.nul && !x.voldoet)) toelichting = 'Voldoet niet aan het toetskader: motiveer een afwijking of geef geen inkomen af';
-    else if (r.berekend !== r.toetsinkomen) toelichting = `Toetsinkomen Woonbeleid ${fmt.eur(r.toetsinkomen)}`;
+    else if (uitkomst.bedrag !== r.toetsinkomen) toelichting = `Toetsinkomen Woonbeleid ${fmt.eur(r.toetsinkomen)}`;
   }
   return `<div class="dossierkop" id="dossierkop">
     <div>
@@ -112,7 +111,7 @@ export function dossierKop(d, r) {
     </div>
     <div class="toetsinkomen">
       <div class="label">${esc(label)} ${r.inkomensanalyse ? '' : pil(r.status, r.beleid && r.status === 'akkoord' ? 'Ter beoordeling' : undefined)}</div>
-      ${r.inkomensanalyse ? '' : `<div class="bedrag">${isNul ? '€ 0' : r.beleid ? r.beleid.bedrag !== null || r.beleid.indicatie !== null ? esc(fmt.eur(r.beleid.bedrag ?? r.beleid.indicatie)) : r.beleid.methode === 'extern' ? 'Bewijsstuk nodig' : 'Invoer aanvullen' : r.bron === 'open' ? 'Nog te beoordelen' : esc(fmt.eur(r.vastgesteld))}</div>`}
+      ${r.inkomensanalyse ? '' : `<div class="bedrag">${esc(hoofduitkomst(r).tekst)}</div>`}
       <div class="toelichting">${esc(toelichting)}</div>
     </div>
   </div>`;

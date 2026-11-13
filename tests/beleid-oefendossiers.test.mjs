@@ -40,7 +40,7 @@ test('Voor elk geldverstrekkerprofiel is een ingevuld en doorrekenbaar oefendoss
   assert.equal(beleidsvoorbeeldVoor('TULP').beleidsinvoer.TULP.actueelJaarinkomen, 52500);
 });
 
-test('Het Inkomensanalyse-oefendossier toont voor ieder kader een bedrag of een afzonderlijke oefenverklaring', () => {
+test('Het Inkomensanalyse-oefendossier toont voor ieder kader een berekend bedrag of een rekenindicatie', () => {
   const dossier = beleidsvoorbeeldVoor('ANALYSE');
   assert.equal(dossier.nummer, 'ZIB-2026-0125');
   assert.equal(dossier.demo, true);
@@ -57,7 +57,7 @@ test('Het Inkomensanalyse-oefendossier toont voor ieder kader een bedrag of een 
     assert.ok(dossier.oefenverklaringen[rij.id]?.bedrag > 0, rij.id);
     assert.match(dossier.oefenverklaringen[rij.id]?.opsteller, /^Fictieve /);
   }
-  assert.deepEqual(zonderIndicatie, ['TULP']);
+  assert.deepEqual(zonderIndicatie, []);
 });
 
 test('a.s.r. en bijBouwe tonen bij volledige grondslag een NHG-indicatie, met een afzonderlijk bewijsvereiste', () => {
@@ -75,6 +75,8 @@ test('a.s.r. en bijBouwe tonen bij volledige grondslag een NHG-indicatie, met ee
   const d = beleidsvoorbeeldVoor('ASR');
   d.loondienst = { meenemen: true, actueelPct: 80, loonJaar: 40000 };
   const r = bereken(d);
-  assert.equal(r.beleid.indicatie, null);
+  // De rekenindicatie blijft binnen het maximum van 30% van het jaarloon naast een dienstverband van 80% of meer.
+  assert.equal(r.beleid.indicatie, 12000);
+  assert.equal(r.beleid.bedrag, null);
   assert.equal(r.beleid.stappen.find((x) => x.label.startsWith('Maximum'))?.waarde, 12000);
 });

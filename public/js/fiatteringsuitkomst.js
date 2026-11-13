@@ -8,7 +8,12 @@ export function blokkadeUitkomst(dossier) {
   }
   if (dossier.soort !== 'IKV') return '';
   const uitkomst = bereken(dossier);
-  if (uitkomst.inkomen?.gecombineerdDgaOpen && uitkomst.bron !== 'afwijkend') {
+  // ZIB toont het inkomen altijd; voor de formele vastlegging moet het gezamenlijke DGA-loon wel sluitend zijn,
+  // tenzij het inkomen is vastgesteld met het groepsmodel van ABN AMRO of als gemotiveerd afwijkend inkomen.
+  const dga = uitkomst.inkomen?.dgaGezamenlijk;
+  const model = uitkomst.inkomen?.abnVaststelling;
+  const viaGroepsmodel = Number.isFinite(model?.bedrag) && uitkomst.vastgesteld === model.bedrag;
+  if (dga && uitkomst.bron !== 'afwijkend' && (uitkomst.inkomen.gecombineerdDgaOpen || (dga.blokkades.length && !viaGroepsmodel))) {
     return 'Controleer het gezamenlijke DGA-loon en de toerekening voordat je het inkomen vastlegt.';
   }
   if (uitkomst.beleid?.bedrag === null) return 'Onderbouw eerst het inkomen volgens het gekozen toetskader.';

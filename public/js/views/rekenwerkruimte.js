@@ -121,23 +121,31 @@ function persoonlijkeCijfers(d, jaren, C) {
   </details>`;
 }
 
+const GEEN_CIJFERS = ['Geen cijfers', 'Vul de jaarcijfers in'];
+
+/** Bedrag en herkomst per toetskader. Zodra er cijfers zijn staat er een bedrag; open punten staan erbij. */
 function analyseUitkomst(d, x) {
   if (x.fout) return ['Niet te berekenen', ''];
   if (x.beleid) {
     if (x.beleid.bewijs && Number.isFinite(x.beleid.bedrag)) return [bedrag(x.beleid.bedrag), x.status === 'niet_akkoord' ? 'Bronbedrag · voorwaarden niet akkoord' : 'Op basis van bewijsstuk'];
-    if (Number.isFinite(x.beleid.indicatie)) return [bedrag(x.beleid.indicatie), x.beleid.methode === 'extern' ? 'Indicatie · bewijsstuk of bankbeoordeling nodig' : 'Indicatie'];
+    if (Number.isFinite(x.beleid.indicatie)) {
+      const herkomst = x.beleid.methode === 'extern' ? 'Indicatie · inkomensverklaring vereist'
+        : x.status === 'niet_akkoord' ? 'Indicatie · voorwaarden niet akkoord' : x.invoerBlokkeert ? 'Indicatie · invoer aanvullen' : 'Indicatie volgens beleid';
+      return [bedrag(x.beleid.indicatie), herkomst];
+    }
     if (x.id === 'VENN' && x.status === 'niet_akkoord') return ['Buiten het kader', 'Voorwaarden niet akkoord'];
     const voorbeeld = oefenVoorbeeld(d, x.id);
     if (voorbeeld) return [bedrag(voorbeeld.bedrag), 'Fictieve oefenverklaring'];
-    return ['Nog te bepalen', x.beleid.methode === 'extern' ? (x.id === 'RABO' ? 'IKV of bankbeoordeling nodig' : 'Bewijsstuk of bankbeoordeling nodig') : 'Invoer aanvullen'];
+    return GEEN_CIJFERS;
   }
-  if (Number.isFinite(x.abnVaststelling?.bedrag) && (x.invoerBlokkeert || !Number.isFinite(x.toetsinkomen))) {
+  if (Number.isFinite(x.abnVaststelling?.bedrag) && x.vastgesteld === x.abnVaststelling.bedrag) {
     const methode = x.abnVaststelling.methode === 'verticaal' ? 'verticaal' : 'horizontaal';
-    return [fmt.eur(x.abnVaststelling.bedrag, 2), `ABN-bronmodel · ${methode} · toetsinkomen open`];
+    return [fmt.eur(x.vastgesteld, 2), `ABN AMRO · ${methode} vastgesteld`];
   }
-  if (x.invoerBlokkeert) return ['Nog te bepalen', 'Invoer aanvullen'];
-  if (!Number.isFinite(x.toetsinkomen)) return ['Nog te bepalen', 'Toetsinkomen open'];
-  return [bedrag(x.toetsinkomen), x.bron === 'geen' ? 'Geen inkomen afgegeven' : 'Berekend toetsinkomen'];
+  if (x.bron === 'geen') return Number.isFinite(x.toetsinkomen) ? [bedrag(x.toetsinkomen), 'Voorwaarden niet akkoord · geen inkomen afgegeven'] : GEEN_CIJFERS;
+  const uitkomst = Number.isFinite(x.vastgesteld) ? x.vastgesteld : x.toetsinkomen;
+  if (!Number.isFinite(uitkomst)) return GEEN_CIJFERS;
+  return [bedrag(uitkomst), x.invoerBlokkeert ? 'Indicatie · invoer aanvullen' : 'Berekend toetsinkomen'];
 }
 
 export function analyseBedragVoorDossier(d, uitkomst) {
@@ -153,11 +161,11 @@ function analyseRij(d, x, compact, uitklap) {
   const overige = details.slice(1);
   const uitleg = `${kernreden ? `<p class="reken-kernreden">${esc(kernreden)}</p>` : ''}
     ${overige.length ? `<details class="stappen reken-analyse-uitleg"><summary>Overige aandachtspunten</summary><ul>${overige.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></details>` : ''}`;
-  const model = herkomst.startsWith('ABN-bronmodel') ? x.abnBronVergelijking : null;
+  const model = herkomst.startsWith('ABN AMRO ·') ? x.abnBronVergelijking : null;
   const horizontaal = model && x.abnVaststelling?.methode === 'horizontaal';
-  const box1 = horizontaal ? fmt.eur(model.dga, 2) : !x.beleid && x.invoerBlokkeert ? BEDRAG_LEEG : bedrag(x.box1);
-  const box2 = horizontaal ? fmt.eur(model.uitgekeerd + model.nietUitgekeerd, 2) : !x.beleid && x.invoerBlokkeert ? BEDRAG_LEEG : bedrag(x.box2);
-  const toelichting = horizontaal ? '<small>Bronmodel</small>' : x.beleid && !x.beleid.bewijs && (Number.isFinite(x.box1) || Number.isFinite(x.box2)) ? '<small>Indicatie</small>' : '';
+  const box1 = horizontaal ? fmt.eur(model.dga, 2) : bedrag(x.box1);
+  const box2 = horizontaal ? fmt.eur(model.uitgekeerd + model.nietUitgekeerd, 2) : bedrag(x.box2);
+  const toelichting = horizontaal ? '<small>Groepsmodel</small>' : x.beleid && !x.beleid.bewijs && (Number.isFinite(x.box1) || Number.isFinite(x.box2)) ? '<small>Indicatie</small>' : '';
   return `<tr data-analysekader="${esc(x.id)}"><th scope="row">${esc(x.kort)}<small>${esc(x.versie || '')}</small>${uitklap ? analyseUitklapKnop(d, x.id, x.kort) : ''}</th>
     ${compact && !uitklap ? '' : `<td>${oordeel}</td>`}<td class="num">${esc(box1)}${toelichting}</td><td class="num">${esc(box2)}${toelichting}</td>
     <td class="num"><strong>${esc(waarde)}</strong>${herkomst ? `<small>${esc(herkomst)}</small>` : ''}</td>${compact ? '' : `<td>${uitleg}</td>`}</tr>${uitklap ? analyseUitklapRij(d, x.id, compact ? 5 : 6) : ''}`;

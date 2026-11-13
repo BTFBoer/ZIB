@@ -10,7 +10,9 @@ test('Berekenresultaten tonen inkomen vóór ratio’s, met een link naar de bed
   const h = renderRekenUitkomst(d, r);
   assert.match(h, /id="rekenresultaten-titel" tabindex="-1">Inkomen<.*Ratio’s en voorwaarden/s);
   assert.ok(h.includes(`#/dossier/${d.id}/berekening/${r.ondernemingen[0].id}`));
-  assert.match(h, /Toetsinkomen totaal.*Nog te beoordelen.*Berekende indicatie/s);
+  // Het totaal toont altijd het berekende bedrag; de aard van het bedrag staat eronder.
+  assert.match(h, /Toetsinkomen totaal.*reken-uitkomstbedrag"><strong>€ [\d.]+<\/strong><small>Indicatie/s);
+  assert.doesNotMatch(h, /Nog te (beoordelen|bepalen)/);
   assert.doesNotMatch(h, /id="fiat-controles"|Overige aandachtspunten/);
 });
 
@@ -27,11 +29,31 @@ test('Bedrijfsdetails tonen ingevoerde nul, maar laten ontbrekende winst en onvo
   assert.match(h, /Trend winstgevendheid.*Omlooptijd crediteuren \(dagen\)/s);
 });
 
-test('De ABN-bronmethode verschijnt onder het formele, open toetsinkomen', () => {
+test('De gekozen ABN-bronmethode staat als vastgesteld inkomen onder het toetsinkomen volgens Woonbeleid', () => {
   const d = { ...beleidsvoorbeeldVoor('VENN'), kader: 'ABN' };
   const r = bereken(d);
+  r.vastgesteld = 192908.33;
+  r.inkomen.abnVaststelling = { methode: 'verticaal', bedrag: 192908.33, bron: 'herberekend', horizontaal: 181250.5, verticaal: 192908.33 };
+  const h = renderInkomenTabel(d, r);
+  assert.match(h, /Toetsinkomen volgens Woonbeleid.*Vastgesteld inkomen · ABN AMRO · verticaal · herberekend.*192\.908,33/s);
+  assert.doesNotMatch(h, /Nog te (beoordelen|bepalen)/);
+
+  // Zonder berekenbaar toetsinkomen blijft de herberekende methode zichtbaar.
   r.toetsinkomen = null;
   r.vastgesteld = null;
-  r.inkomen.abnVaststelling = { methode: 'verticaal', bedrag: 192908.33, bron: 'herberekend' };
-  assert.match(renderInkomenTabel(d, r), /Toetsinkomen totaal.*Nog te beoordelen.*ABN AMRO · Verticaal · Herberekend.*192\.908,33/s);
+  assert.match(renderInkomenTabel(d, r), /Geen cijfers.*ABN AMRO · verticaal · herberekend.*192\.908,33/s);
+});
+
+test('Een vervangen beletjaar staat als eigen regel tussen de ondernemingen en het totaal', () => {
+  const d = beleidsvoorbeeldVoor('VENN');
+  d.kader = 'KNAB';
+  d.instellingen = { ...d.instellingen, belet: { actief: true, jaar: 2024, oorzaak: 'Ziekte', motivatie: 'Verklaring boekhouder' } };
+  d.ib[2024].perOnd[d.ondernemingen[0].id].sfw = 30000;
+  const r = bereken(d);
+  const { oud, nieuw } = r.inkomen.belet;
+  assert.ok(nieuw > oud, 'het beletjaar wordt vervangen door het laagste omliggende jaar');
+  assert.equal(r.inkomen.perJaar[2024], nieuw);
+  const h = renderInkomenTabel(d, r);
+  assert.match(h, /class="reken-aanpassing"><th scope="row">Beletperiode 2024 vervangen/);
+  assert.ok(h.includes(`€ ${new Intl.NumberFormat('nl-NL').format(nieuw - oud)}`), 'de regel toont het verschil in het beletjaar');
 });

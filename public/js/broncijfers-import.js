@@ -4,6 +4,7 @@ import { state, lijst, bewaarDossier, volgendDossiernummer, logHistorie } from '
 import { esc, fmt, nowISO } from './util.js';
 import { openModaal, sluitModaal, toast } from './views/ui.js';
 import { maakBronarchief } from './views/bronarchief.js';
+import { hoofduitkomst } from './views/uitkomst.js';
 
 const lokaal = () => globalThis.ZIB_LOCAL_PRIVATE === true && state.modus === 'lokaal';
 const importToegestaan = () => lokaal() || (globalThis.ZIB_HOSTED === true && state.modus === 'cloud' && !!state.me?.email);
@@ -49,11 +50,12 @@ function uitkomsten(p) {
   if (!p.dossier) return '';
   try {
     const r = bereken(p.dossier);
-    const bron = r.beleid?.bedrag ?? r.beleid?.indicatie;
-    const vergelijking = r.inkomen?.abnBronVergelijking?.horizontaal;
-    const bedrag = r.beleid ? (Number.isFinite(bron) ? fmt.eur(bron) : 'Bewijs of cijfers nodig')
-      : r.inkomen?.gecombineerdDgaOpen || p.dossier.broncontrole?.controlepunten?.length ? 'Nog te beoordelen' : fmt.eur(r.toetsinkomen);
-    return `<p><strong>Toetsinkomen:</strong> ${esc(bedrag)} · ${esc(r.kaderCfg.kort)}.</p>${Number.isFinite(vergelijking) ? `<p><strong>Herberekening Excel-methode:</strong> ${esc(fmt.eur(vergelijking, 2))}</p>` : ''}`;
+    const vergelijking = r.inkomen?.abnBronVergelijking;
+    const uitkomst = hoofduitkomst(r);
+    const controle = p.dossier.broncontrole?.controlepunten?.length ? ' Controleer de bronpunten bij Fiattering.' : '';
+    const excel = [['horizontaal', 'Horizontaal'], ['verticaal', 'Verticaal']].filter(([k]) => Number.isFinite(vergelijking?.[k]))
+      .map(([k, label]) => `${label} ${fmt.eur(vergelijking[k], 2)}`).join(' · ');
+    return `<p><strong>Uitkomst:</strong> ${esc(uitkomst.tekst)}${uitkomst.label ? ` (${esc(uitkomst.label)})` : ''} · ${esc(r.kaderCfg.kort)}.${esc(controle)}</p>${excel ? `<p><strong>Herberekening Excel-methode:</strong> ${esc(excel)}</p>` : ''}`;
   } catch { return '<p>ZIB kan met deze invoer nog geen uitkomst geven.</p>'; }
 }
 

@@ -29,10 +29,13 @@ test('Gezamenlijk ABN-loon wordt eenmaal geteld en alleen over afgesloten jaren 
   assert.equal(r.inkomen.box1, 60667, 'de IB-loonuitsplitsing bevestigt dezelfde loonpost en telt dus niet nog eens mee');
   d.ib[2025].perOnd.B.loon += 1;
   r = bereken(d);
-  assert.equal(r.inkomen.dgaGezamenlijk.inUitkomst, false);
-  assert.equal(r.toetsinkomen, null);
-  assert.equal(r.vastgesteld, null);
+  // De loonpost blijft zichtbaar en telt mee; de afwijking staat als aandachtspunt bij Fiattering.
+  assert.equal(r.inkomen.dgaGezamenlijk.inUitkomst, true);
+  assert.equal(r.toetsinkomen, 60000);
+  assert.equal(r.vastgesteld, 60667);
+  assert.equal(r.status, 'attentie');
   assert.match(r.inkomen.dgaGezamenlijk.blokkades.join(' '), /wijkt af van de uitsplitsing/);
+  assert.ok(r.meldingen.some((m) => m.niveau === 'attentie' && /wijkt af van de uitsplitsing/.test(m.tekst)));
 });
 
 test('De groepsvergelijking begrenst ontvangen minderheidsdividend en toont de horizontale werkbladuitkomst afzonderlijk', () => {
@@ -48,7 +51,7 @@ test('De groepsvergelijking begrenst ontvangen minderheidsdividend en toont de h
     jaren: perJaar(() => boekjaar(50000, { internDividend: 80000 })) }));
   let r = bereken(d);
   const bron = r.inkomen.abnBronVergelijking;
-  assert.equal(r.vastgesteld, null, 'de groepsvergelijking vervangt het officiële inkomen niet');
+  assert.equal(r.vastgesteld, 93666.67, 'de gekozen horizontale methode bepaalt het vastgestelde inkomen');
   assert.deepEqual(bron.open, []);
   assert.deepEqual(jaren.map((y) => bron.perJaar[y].minderheidsdividend), [19000, 17000, 20000]);
   assert.equal(bron.dga, 60000);
@@ -61,8 +64,8 @@ test('De groepsvergelijking begrenst ontvangen minderheidsdividend en toont de h
   d.instellingen = { abnVaststelling: 'verticaal', controlejaar: false };
   r = bereken(d);
   assert.deepEqual(r.inkomen.abnVaststelling, { methode: 'verticaal', bedrag: 94333.33, bron: 'herberekend', horizontaal: 93666.67, verticaal: 94333.33 });
-  assert.equal(r.toetsinkomen, null);
-  assert.equal(r.vastgesteld, null);
+  assert.equal(r.toetsinkomen, 60000, 'het toetsinkomen volgens Woonbeleid blijft zichtbaar naast de gekozen methode');
+  assert.equal(r.vastgesteld, 94333.33);
   assert.ok(!r.inkomen.geldstromen.some((s) => s.naar === houder.id && s.perJaar[2025].ontvangen === 25000));
 
   d.ondernemingen.at(-1).meenemen = true;
@@ -73,4 +76,7 @@ test('De groepsvergelijking begrenst ontvangen minderheidsdividend en toont de h
   r = bereken(d);
   assert.equal(r.inkomen.abnBronVergelijking.horizontaal, null);
   assert.match(r.inkomen.abnBronVergelijking.open.join(' '), /vraagt een aansluiting/);
+  // Zonder volledige grondslag voor het groepsmodel volgt het vastgestelde inkomen de standaardberekening.
+  assert.ok(Number.isFinite(r.vastgesteld));
+  assert.ok(r.meldingen.some((m) => m.niveau === 'attentie' && /nog geen volledige grondslag/.test(m.tekst)));
 });

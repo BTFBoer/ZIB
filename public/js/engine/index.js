@@ -1107,7 +1107,8 @@ export function bereken(dossier, opties = {}) {
   if (soort === 'IKV') {
     if (kader.beleid) {
       const profiel = kader.beleid;
-      const nhg = profiel.basis === 'NHG' ? bereken({ ...dossier, kader: 'NHG', afwijkend: undefined }, { zonderReferentie: true }) : null;
+      // De NHG-rekenkern levert de jaarinkomens na correcties; ook voor de rekenindicatie van profielen zonder NHG-basis.
+      const nhg = opties.nhg || bereken({ ...dossier, kader: 'NHG', metNhg: true, soort: 'IKV', afwijkend: undefined }, { zonderReferentie: true });
       beleid = toetsBeleidsprofiel(profiel, dossier, analyses, ctx, nhg);
       tj.rij('Toetskader', { waarde: cel(`${kader.naam}, ${beleid.versie}`, '', 'tekst') });
       const s = trace.sectie(`${profiel.kort} · ${beleid.versie}`, { groep: 'inkomen', kolommen: ['uitkomst'], richtlijn: profiel.bron });
@@ -1184,17 +1185,29 @@ export function bereken(dossier, opties = {}) {
   } else if (afw.actief && isIngevuld(afw.bedrag)) {
     vastgesteld = Math.max(0, rond(num(afw.bedrag)));
     bron = 'afwijkend';
-  } else if (kader.familie === 'ABN' && inkomen.gecombineerdDgaOpen) {
-    vastgesteld = null;
-    bron = 'open';
   } else if (kader.familie === 'ABN') {
     // De rekentool van de bank toont het berekend inkomen ook als het toetskader niet wordt gehaald;
     // de acceptant beslist (afwijkend inkomen, geen inkomen of 0-inkomen).
     const ph = inkomen.perHoofdbedrijf;
-    vastgesteld = Math.max(0, rond(inkomen.vastgesteld));
-    if (ph.length && ph.every((x) => x.nul)) bron = 'nul';
-    else if (ph.some((x) => x.bron === 'afwijkend')) bron = 'afwijkend';
-    else if (vastgesteld === 0 && ph.some((x) => x.bron === 'geen')) bron = 'geen';
+    const model = inkomen.abnVaststelling;
+    if (model && Number.isFinite(model.bedrag)) {
+      // Gekozen bronmethode (horizontaal of verticaal) uit het groepsmodel: dit is het vast te stellen inkomen.
+      vastgesteld = Math.max(0, rond2(model.bedrag));
+    } else {
+      vastgesteld = Math.max(0, rond(inkomen.vastgesteld));
+      if (ph.length && ph.every((x) => x.nul)) bron = 'nul';
+      else if (ph.some((x) => x.bron === 'afwijkend')) bron = 'afwijkend';
+      else if (vastgesteld === 0 && ph.some((x) => x.bron === 'geen')) bron = 'geen';
+      if (model) {
+        const open = inkomen.abnBronVergelijking?.open || [];
+        meldingen.push({ niveau: 'attentie', tekst: `ABN AMRO ${model.methode}: nog geen volledige grondslag voor het groepsmodel${open.length ? ` (${open.slice(0, 3).join(' ')})` : ''}. Het vastgestelde inkomen volgt voorlopig de standaardberekening volgens Woonbeleid.` });
+        if (status === 'akkoord') status = 'attentie';
+      }
+    }
+    if (inkomen.gecombineerdDgaOpen) {
+      meldingen.push({ niveau: 'attentie', tekst: 'Het gezamenlijke DGA-loon is nog niet volledig te berekenen; het inkomen is bepaald met het loon per vennootschap. Vul de ontbrekende loonjaren aan bij de IB-aangifte.' });
+      if (status === 'akkoord') status = 'attentie';
+    }
   } else if (status === 'niet_akkoord') {
     vastgesteld = 0;
     bron = 'geen';
@@ -1260,8 +1273,8 @@ export function bereken(dossier, opties = {}) {
     meldingen,
     vastgesteld: inkomensanalyse ? null : vastgesteld,
     bron: inkomensanalyse ? 'analyse' : bron,
-    berekend: inkomen?.gecombineerdDgaOpen ? null : inkomen ? inkomen.berekend : 0,
-    toetsinkomen: inkomen?.gecombineerdDgaOpen ? null : inkomen ? inkomen.toetsinkomen : 0,
+    berekend: inkomen ? inkomen.berekend : 0,
+    toetsinkomen: inkomen ? inkomen.toetsinkomen : 0,
     documenten: docs,
     trace,
   };

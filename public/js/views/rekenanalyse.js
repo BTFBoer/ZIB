@@ -62,7 +62,7 @@ function uitkomstTabel(r) {
     const methode = u.referentie.methode === 'verticaal' ? 'verticaal' : 'horizontaal';
     rijen.splice(-1, 0, [`Herberekening ABN-bronwerkmap · ${methode}`, u.referentie.bedrag]);
   }
-  return tabel('Bedragen en uitkomst', ['Uitkomst', 'Per jaar'], rijen.map(([label, waarde]) => `<tr><th scope="row">${esc(label)}</th>${waarde === null ? '<td>Nog te beoordelen</td>' : waardecel(waarde, 'eur')}</tr>`));
+  return tabel('Bedragen en uitkomst', ['Uitkomst', 'Per jaar'], rijen.map(([label, waarde]) => `<tr><th scope="row">${esc(label)}</th>${waardecel(waarde, 'eur')}</tr>`));
 }
 
 function groepeer(rijen, sleutel) {
