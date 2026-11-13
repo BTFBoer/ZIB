@@ -93,7 +93,7 @@ const PUNT_MAX = 6;
 
 /** Historische bedragen uit de rekenkern, in de vaste volgorde oud → nieuw. */
 function inkomensVerloop(d, r) {
-  if (d.soort === 'NUL') return '';
+  if (d.soort === 'NUL' || r.inkomen?.gecombineerdDgaOpen) return '';
   const waarden = ordeJarenOverzicht(r.T).map((jaar) => [jaar, r.inkomen.perJaar?.[jaar]])
     .filter(([, waarde]) => Number.isFinite(waarde));
   if (!waarden.length) return '';
@@ -120,6 +120,8 @@ function kernBlok(d, r, kader) {
     zin = 'Ter beoordeling volgens de route van de geldverstrekker.';
   } else if (r.bron === 'geen') {
     zin = 'Er kan geen zakelijk inkomen worden afgegeven.';
+  } else if (r.bron === 'open') {
+    zin = 'Beoordeel de broncijfers en het gezamenlijke DGA-loon bij Fiattering.';
   } else if (r.bron === 'afwijkend') {
     label = r.status === 'akkoord' ? 'Afwijkend inkomen (gemotiveerd)' : 'Voorgesteld afwijkend inkomen';
     zin = `Berekend inkomen ${fmt.eur(r.berekend)}; afgegeven wordt het gemotiveerde afwijkende inkomen.`;
@@ -137,10 +139,10 @@ function kernBlok(d, r, kader) {
   return `<section class="kern" id="rap-kern" aria-label="Kern van het rapport" data-beoordelingskader="${esc(r.kader)}">
     <div class="kern-uitkomst ${esc(r.status)}">
       <div class="kern-label">${esc(label)}</div>
-      <div class="bedrag-groot">${esc(isNul ? '€ 0' : r.beleid ? r.beleid.bedrag === null ? 'Nog te bepalen' : fmt.eur(r.beleid.bedrag) : r.bron === 'geen' ? 'Geen inkomen' : fmt.eur(r.vastgesteld))}</div>
+      <div class="bedrag-groot">${esc(isNul ? '€ 0' : r.beleid ? r.beleid.bedrag === null ? 'Nog te bepalen' : fmt.eur(r.beleid.bedrag) : r.bron === 'geen' ? 'Geen inkomen' : r.bron === 'open' ? 'Nog te beoordelen' : fmt.eur(r.vastgesteld))}</div>
       <div class="kern-oordeel">${pil(r.status, r.beleid && r.status === 'akkoord' ? 'Ter beoordeling' : undefined)} <span class="rapport-fiatstatus">${esc(status)}</span></div>
       ${zin ? `<p>${esc(zin)}</p>` : ''}
-      ${r.beleid ? '' : `<p class="dempen klein">Geldig voor bindende offertes uitgebracht tot en met ${esc(fmt.datumLang(r.geldigTot))}.</p>`}
+      ${r.beleid || r.bron === 'open' ? '' : `<p class="dempen klein">Geldig voor bindende offertes uitgebracht tot en met ${esc(fmt.datumLang(r.geldigTot))}.</p>`}
     </div>
     <div class="kern-feiten">${kv([
       ['Aanvrager', `<b>${esc(naamAanvrager(a))}</b>${a.geboortedatum ? `, geboren ${esc(fmt.datumLang(a.geboortedatum))}` : ''}`],
@@ -316,6 +318,7 @@ function bouwRapport(d, r, modus) {
     : r.beleid ? `<p>${r.beleid.bedrag === null ? 'Het toetsinkomen moet nog worden vastgesteld.' : `${r.beleid.bewijs ? 'Uitkomst op basis van bewijsstuk' : 'Voorlopige rekenindicatie'}: <b>${esc(fmt.eur(r.beleid.bedrag))}</b>.`} Leg de beoordeling volgens de route van de geldverstrekker vast.</p>`
     : r.bron === 'geen'
       ? '<p><b>Er kan géén zakelijk inkomen worden afgegeven.</b></p>'
+      : r.bron === 'open' ? '<p>Het toetsinkomen staat open. Bekijk de onderbouwing bij Fiattering.</p>'
       : `<p>Het ${r.status === 'akkoord' ? 'vastgestelde' : 'voorlopige'} zakelijk inkomen bedraagt <b>${esc(fmt.eur(r.vastgesteld, 2))}</b>${r.bron === 'afwijkend' ? ' (afwijkend inkomen, zie handmatige wijzigingen)' : ''}.</p>
         ${r.status === 'akkoord' ? '<p>De berekende voorwaarden geven geen belemmering. De acceptant beoordeelt de bestendigheid en de onderliggende stukken.</p>' : '<p>Beoordeel de aandachtspunten en leg de onderbouwing vast voordat je het inkomen gebruikt.</p>'}`;
   const controles = n.controles || {};
@@ -500,7 +503,7 @@ export function dossierNotitiesTekst(d, r) {
     regels.push('');
     regels.push('Zakelijk inkomen');
     regels.push(r.beleid ? r.beleid.bedrag === null ? 'Toetsinkomen nog te bepalen.' : `${r.beleid.bewijs ? 'Uitkomst op basis van bewijsstuk' : 'Voorlopige rekenindicatie'}: ${fmt.eur(r.beleid.bedrag)}; ter beoordeling.`
-      : r.bron === 'geen' ? 'Er kan géén zakelijk inkomen worden afgegeven.' : `Het zakelijk inkomen bedraagt ${fmt.eur(r.vastgesteld, 2)}`);
+      : r.bron === 'geen' ? 'Er kan géén zakelijk inkomen worden afgegeven.' : r.bron === 'open' ? 'Het toetsinkomen staat open.' : `Het zakelijk inkomen bedraagt ${fmt.eur(r.vastgesteld, 2)}`);
   }
   if (n.priveTekst) { regels.push('', 'Financiële informatie ondernemer in privé', n.priveTekst); }
   if (n.kredietbestemming) { regels.push('', 'Kredietbestemming en aflossing', n.kredietbestemming); }

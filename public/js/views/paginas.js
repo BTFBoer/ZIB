@@ -266,8 +266,10 @@ function paneelDrive() {
 }
 
 export function renderDownloads() {
+  const sites = state.me?.hosting === 'sites' && state.modus === 'cloud';
   return `${paginakop('Downloads', 'Back-ups, sjablonen en documentenlijsten.')}
-    ${globalThis.ZIB_LOCAL_PRIVATE === true && state.modus === 'lokaal' ? `<section class="paneel"><h2>Broncijfers van echte dossiers</h2><p>Lees het ZIB-broncijfersbestand in, bekijk welke lege velden worden aangevuld en controleer de herkomst. Dit gebeurt in deze lokale werkruimte.</p><label class="knop sec">Broncijfers kiezen<input type="file" accept="application/json,.json" data-broncijfers-bestand class="sr"></label></section>` : ''}
+    ${sites ? `<section class="paneel"><h2>Dossiers uit deze browser</h2><p>Zet dossiers en bijlagen die al in deze browser stonden over naar je ingelogde werkruimte.</p><button type="button" class="knop sec" data-actie="browseroverdracht">Overdracht bekijken</button></section>` : ''}
+    ${sites || (globalThis.ZIB_LOCAL_PRIVATE === true && state.modus === 'lokaal') ? `<section class="paneel"><h2>Broncijfers van echte dossiers</h2><p>Lees het ZIB-broncijfersbestand in en controleer welke velden worden aangevuld.</p><label class="knop sec">Broncijfers kiezen<input type="file" accept="application/json,.json" data-broncijfers-bestand class="sr"></label></section>` : ''}
     ${paneelDrive()}
     <div class="raster-2"${globalThis.ZIB_ARTIFACT ? ' style="margin-top:16px"' : ''}>
       <div class="paneel"><h2>Back-up</h2>

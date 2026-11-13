@@ -272,7 +272,7 @@ export function renderUitkomstentabel(d, r, { controles = false } = {}) {
   };
   const tabel = analyses.length ? `<div class="scroll"><table class="tabel reken-tabel uitkomsten-tabel" data-uitkomstentabel>
     <thead><tr><th scope="col">Onderneming</th>${jaren.map((y) => `<th scope="col" class="num">${esc(y)}${y === r.C ? '<small>Gerealiseerd</small>' : ''}</th>`).join('')}<th scope="col" class="num">Berekend per jaar</th></tr></thead>
-    <tbody>${analyses.map((a) => {
+    <tbody>${r.inkomen?.dgaGezamenlijk ? `<tr class="totaal"><th scope="row">DGA-loon gezamenlijk<small>Voor alle eigen vennootschappen</small></th>${jaren.map((y) => `<td class="num">${esc(bedrag(r.inkomen.dgaGezamenlijk.perJaar?.[y]?.inkomen))}</td>`).join('')}<td class="num"><strong>${esc(bedrag(r.inkomen.dgaGezamenlijk.toetsinkomen))}</strong>${r.inkomen.dgaGezamenlijk.inUitkomst ? '' : '<small>Ter beoordeling</small>'}</td></tr>` : ''}${analyses.map((a) => {
     const p = perOnd.get(a.id);
     const open = ontbreekt.ondernemingen.find((o) => o.id === a.id)?.punten.some((x) => x.blokkeert);
     const heeftHistorie = r.T.some((y) => Number.isFinite(bedragenPerJaar(a, y)));

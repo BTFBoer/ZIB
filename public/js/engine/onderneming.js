@@ -428,9 +428,14 @@ export function analyseerOnderneming(ond, ctx) {
       omlDeb, omlCred,
       geldstroom: {
         managementFee: num(agg.managementFee),
+        managementFeeBron: agg.managementFee,
         internDividend: num(agg.internDividend),
+        internDividendBron: agg.internDividend,
         ontvangenFee: jd.geldstromen?.ontvangenFee || {},
         ontvangenDividend: jd.geldstromen?.ontvangenDividend || {},
+        totaalOntvangenFee: jd.geldstromen?.totaalOntvangenFee,
+        totaalOntvangenDividend: jd.geldstromen?.totaalOntvangenDividend,
+        dividendPriveBruto: jd.geldstromen?.dividendPriveBruto,
         nogTeOntvangenDividend: isIngevuld(jd.geldstromen?.nogTeOntvangenDividend)
           ? num(jd.geldstromen.nogTeOntvangenDividend) : num(jd.balansDetail?.vordOverig?.dividend),
         dividendDGA: jd.geldstromen?.dividendDGA,

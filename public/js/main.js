@@ -44,6 +44,8 @@ import { organogramSVG } from './views/organogram.js';
 import { heeftControleperiode, werkKerninvoerTellingBij } from './views/kerninvoer.js';
 import { leesKernbedrag, leesKerncijfers } from './schema/kernimport.js';
 import { initBroncijfersImport, laadPriveStart } from './broncijfers-import.js';
+import { biedBrowseroverdrachtAan } from './browseroverdracht.js';
+import { renderBronarchief } from './views/bronarchief.js';
 
 const app = document.getElementById('app');
 let route = { pagina: 'aanvragen' };
@@ -79,6 +81,7 @@ function parseRoute(hash = location.hash) {
     case 'aanvragen': return { pagina: 'aanvragen', afgerond: a === 'afgerond' };
     case 'dossier': return { pagina: 'dossier', id: a, tab: b || '', ondId: c || '', veld: new URLSearchParams(zoek).get('veld') };
     case 'tickets': return a ? { pagina: 'ticket', id: a } : { pagina: 'tickets' };
+    case 'bronarchief': return { pagina: 'bronarchief', id: a };
     default: return { pagina: p };
   }
 }
@@ -316,6 +319,7 @@ export function render({ behoudScroll = false } = {}) {
     return;
   }
   if (route.pagina === 'login') {
+    if (state.modus === 'cloud') { navigeerZonderVraag('#/klanten'); return; }
     app.innerHTML = renderLogin();
     document.title = 'ZIB | Aanmelden';
     return;
@@ -344,6 +348,10 @@ export function render({ behoudScroll = false } = {}) {
     case 'faq': inhoud = renderFAQ(); titel = 'FAQ'; break;
     case 'toetskaders': inhoud = renderToetskaders(); titel = 'Toetskaders'; breed = true; break;
     case 'downloads': inhoud = renderDownloads(); titel = 'Downloads'; break;
+    case 'bronarchief':
+      inhoud = state.me?.hosting === 'sites' ? renderBronarchief(lijst('bronarchief'), route.id ? get(route.id) : null) : leeg('Het bronarchief is beschikbaar na aanmelden in de ZIB-werkruimte.');
+      titel = 'Historische brondossiers';
+      break;
     case 'tickets': inhoud = renderTickets(); titel = 'Tickets'; break;
     case 'ticket': inhoud = renderTicket(route.id); titel = 'Ticket'; break;
     case 'mijn-gegevens': inhoud = renderMijnGegevens(); titel = 'Mijn gegevens'; break;
@@ -1104,6 +1112,7 @@ function zetKlapDOM(bak, dicht) {
 }
 
 const ACTIES = {
+  browseroverdracht() { return biedBrowseroverdrachtAan(() => render()); },
   'zoek-open'() { zoekenOpenen(); },
   'dossier-opslaan'() { return dossierOpslaan(); },
   async 'dossier-opslaan-verder'() {
@@ -2310,8 +2319,8 @@ function voerUit(actie, el, e) {
     geschiedenisNummer = history.state?.zibRouteIndex ?? 0;
     history.replaceState({ ...history.state, zibRouteIndex: geschiedenisNummer }, '');
     render();
-    if (globalThis.ZIB_LOCAL_PRIVATE) initBroncijfersImport(() => render());
-    if (!globalThis.ZIB_LOCAL_PRIVATE) initDrive();
+    if (globalThis.ZIB_LOCAL_PRIVATE || globalThis.ZIB_HOSTED) initBroncijfersImport(() => render());
+    if (!globalThis.ZIB_LOCAL_PRIVATE && !globalThis.ZIB_HOSTED) initDrive();
   } catch (e) {
     console.error(e);
     app.innerHTML = `<div class="pagina"><div class="melding niet_akkoord">ZIB kon niet starten: ${esc(e.message || String(e))}</div></div>`;

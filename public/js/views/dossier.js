@@ -1,6 +1,7 @@
 import { esc, fmt, naamAanvrager, num, isIngevuld, getPath } from '../util.js';
 import { get, lijst, state } from '../state.js';
 import { bepaalJaren } from '../engine/index.js';
+import { bronDgaGezamenlijk } from '../engine/abn-aanvrager.js';
 import {
   RECHTSVORMEN, BEROEPSGROEPEN, SOORTEN, kaderLabel, soortOndernemer, KADERS, kaderVoor, PARAM_LABELS, leesPad,
 } from '../engine/kaders.js';
@@ -63,7 +64,7 @@ const TAB_GROEPEN = [
 const dossierPad = (d, tab, ondId = '') => `#/dossier/${encodeURIComponent(d.id)}/${tab}${ondId ? `/${encodeURIComponent(ondId)}` : ''}`;
 
 // Overgang tussen de weergaven: welk tabblad hoort bij welke stap.
-export const NAAR_BZI = { klant: 'algemeen', balans: 'bedrijf', vw: 'bedrijf', diversen: 'bedrijf', ib: 'bedrijf', bziinvoer: 'bziinvoer' };
+export const NAAR_BZI = { klant: 'algemeen', balans: 'bedrijf', vw: 'bedrijf', diversen: 'bedrijf', bziinvoer: 'bziinvoer' };
 export const NAAR_VIIZ = { algemeen: 'klant', bedrijven: 'klant', bedrijf: 'balans', boekhouders: 'notities', verplichtingen: 'klant', samenvatting: 'berekening', bziinvoer: 'bziinvoer' };
 
 // ---------------------------------------------------------------------------
@@ -88,6 +89,9 @@ export function dossierKop(d, r) {
     toelichting = `${r.kaderCfg.kort} · ${r.kaderVersie}`;
   } else if (r.bron === 'geen') {
     toelichting = 'Voorwaarden niet akkoord: geen zakelijk inkomen afgeven';
+  } else if (r.bron === 'open') {
+    label = 'Zakelijk inkomen';
+    toelichting = 'Bekijk de open invoer bij Fiattering.';
   } else if (r.familie === 'ABN') {
     label = 'Berekend inkomen (BZI)';
     const ph = r.inkomen?.perHoofdbedrijf || [];
@@ -108,7 +112,7 @@ export function dossierKop(d, r) {
     </div>
     <div class="toetsinkomen">
       <div class="label">${esc(label)} ${r.inkomensanalyse ? '' : pil(r.status, r.beleid && r.status === 'akkoord' ? 'Ter beoordeling' : undefined)}</div>
-      ${r.inkomensanalyse ? '' : `<div class="bedrag">${isNul ? '€ 0' : r.beleid ? r.beleid.bedrag !== null || r.beleid.indicatie !== null ? esc(fmt.eur(r.beleid.bedrag ?? r.beleid.indicatie)) : r.beleid.methode === 'extern' ? 'Bewijsstuk nodig' : 'Invoer aanvullen' : esc(fmt.eur(r.vastgesteld))}</div>`}
+      ${r.inkomensanalyse ? '' : `<div class="bedrag">${isNul ? '€ 0' : r.beleid ? r.beleid.bedrag !== null || r.beleid.indicatie !== null ? esc(fmt.eur(r.beleid.bedrag ?? r.beleid.indicatie)) : r.beleid.methode === 'extern' ? 'Bewijsstuk nodig' : 'Invoer aanvullen' : r.bron === 'open' ? 'Nog te beoordelen' : esc(fmt.eur(r.vastgesteld))}</div>`}
       <div class="toelichting">${esc(toelichting)}</div>
     </div>
   </div>`;
@@ -203,6 +207,7 @@ export function renderDossier(d, tab, ondId, r, { documenten } = {}) {
       ontbrekend,
       documenten: () => tabDocumenten(d, r, docs),
       invoer: () => renderKerninvoer(d, ond, roosterJaren(d), r),
+      ib: () => tabIB(d, r),
       berekening: () => tabBerekening(d, r, ondId),
       bziinvoer: () => renderBziInvoer(d, r),
       notities: () => tabNotities(d, r),
@@ -648,6 +653,17 @@ function tabIB(d, r) {
   const { jaren, kandidaatC } = roosterJaren(d);
   const kop = `<tr><th>IB-aangifte</th>${jaren.map((y) => `<th><div class="jaarkop"><b>${y}${y === kandidaatC ? ' (lopend jaar)' : ''}</b></div></th>`).join('')}</tr>`;
   let body = '';
+  const dga = r.kader === 'ABN' && (d.ondernemingen || []).some((o) => soortOndernemer(o.rechtsvorm) === 'VPB');
+  if (dga) {
+    body += `<tr class="kop"><td colspan="${jaren.length + 1}">Gezamenlijk DGA-loon van de aanvrager</td></tr>`;
+    for (const [k, label] of [['loon', 'Gezamenlijk bruto DGA-loon'], ['bijtelling', 'Bijtelling privégebruik auto (gezamenlijk)']]) {
+      body += `<tr><th class="ind1" scope="row">${label}</th>${jaren.map((y) => `<td class="invoer">${bedrag(`ib.${y}.dgaGezamenlijk.${k}`, bronDgaGezamenlijk(d, y)?.[k], { label: `${label} ${y}` })}</td>`).join('')}</tr>`;
+    }
+    for (const [k, label] of [['van', 'Gezamenlijk DGA-loon vanaf'], ['tot', 'Gezamenlijk DGA-loon tot en met']]) {
+      body += `<tr><th class="ind1" scope="row">${label}</th>${jaren.map((y) => y === kandidaatC
+        ? `<td>${veld(`${label} ${y}`, `ib.${y}.dgaGezamenlijk.${k}`, bronDgaGezamenlijk(d, y)?.[k], { type: 'datum' })}</td>` : '<td></td>').join('')}</tr>`;
+    }
+  }
   (d.ondernemingen || []).forEach((o) => {
     const soort = soortOndernemer(o.rechtsvorm);
     body += `<tr class="kop"><td colspan="${jaren.length + 1}">${esc(o.naam || '(naamloos)')} (${esc(RECHTSVORMEN[o.rechtsvorm]?.label || '')})</td></tr>`;
@@ -665,6 +681,7 @@ function tabIB(d, r) {
   });
   const s = Object.values(d.salarisStrook || {}).filter((x) => x?.f);
   return `<div class="paneel" style="padding:12px"><p class="dempen klein">Neem de bedragen over uit de ingediende aangiften inkomstenbelasting. Bij een eenmanszaak of vof is de saldo fiscale winst het eigen aandeel. Bij een DGA het loon uit dienstbetrekking. Het lopende jaar: loon over dezelfde periode als de tussentijdse cijfers (rekenknop bij het loon).</p>
+    ${dga ? '<p class="dempen klein">Vul bij ABN AMRO de gezamenlijke bedragen in als de bron alleen een totaal vermeldt. Vul de bijtelling met 0 in als er geen bijtelling was. Als je ook bedragen per onderneming invult, moeten beide reeksen aansluiten.</p>' : ''}
     ${s.length ? `<div style="margin-bottom:8px">${s.map((x) => melding('info', `DGA-inkomen ${esc(String(x.jaar))} uit de salarisstrook${x.strookTm ? ` (t/m ${esc(x.strookTm)})` : ''}: ${esc(x.f)}`)).join('')}</div>` : ''}
     <div class="scroll"><table class="rooster"><thead>${kop}</thead><tbody>${body}</tbody></table></div></div>`;
 }
@@ -704,18 +721,24 @@ export function inkomensTabel(d, r) {
       <tr><td colspan="4"><b>Berekend inkomen</b></td>${TO.map(() => '<td></td>').join('')}${C ? '<td></td>' : ''}<td class="num" colspan="${C ? 3 : 2}"><b>${fmt.eur(ink.toetsinkomen)}</b></td></tr>
       </tbody></table></div>`;
   }
+  const dgaGezamenlijk = ink.dgaGezamenlijk;
+  const dgaRij = dgaGezamenlijk ? `<tr><th scope="row">DGA-loon op aanvragerniveau</th><td>${dgaGezamenlijk.inUitkomst ? '' : 'Ter controle'}</td>
+    ${TO.map((y) => `<td class="num">${fmt.eur(dgaGezamenlijk.perJaar[y]?.inkomen)}</td>`).join('')}
+    <td class="num">${fmt.eur(dgaGezamenlijk.berekend)}</td><td></td><td class="num">${dgaGezamenlijk.inUitkomst ? fmt.eur(dgaGezamenlijk.berekend) : '—'}</td>
+    <td class="num">${dgaGezamenlijk.inUitkomst ? fmt.eur(dgaGezamenlijk.toetsinkomen) : '—'}</td><td class="num">${dgaGezamenlijk.inUitkomst ? fmt.eur(dgaGezamenlijk.berekend) : '—'}</td></tr>` : '';
   const rijen = ink.perHoofdbedrijf.map((o) => {
     const groep = o.groep.slice(1).map((id) => r.ondernemingen.find((a) => a.id === id)?.naam).filter(Boolean);
+    const loonGezamenlijk = o.soort === 'VPB' && dgaGezamenlijk?.inUitkomst;
     return `<tr><td><b>${esc(o.naam)}</b><div class="dempen klein">${esc(o.nul ? '0-inkomen' : o.categorie)}${groep.length ? `; met ${esc(groep.join(', '))}` : ''}</div></td>
       <td>${o.nul ? pil('info', '0-inkomen') : pil(o.toetsStatus, o.voldoet ? 'Voldoet' : 'Voldoet niet')}</td>
-      ${TO.map((y) => `<td class="num${o.perJaar[y]?.meegeteld ? '' : ' dempen'}">${fmt.eur(o.perJaar[y]?.inkomen ?? 0)}${o.perJaar[y]?.dividend ? `<div class="dempen klein">div. ${fmt.getal(o.perJaar[y].dividend)}</div>` : ''}</td>`).join('')}
-      <td class="num">${fmt.eur(o.bziInkomen)}</td><td class="num">${o.bziDividend ? fmt.eur(o.bziDividend) : ''}</td><td class="num"><b>${fmt.eur(o.nul ? 0 : o.berekend)}</b></td>
-      <td class="num">${o.nul ? '' : fmt.eur(o.woonbeleid)}${o.overwinstMee ? `<div class="dempen klein">incl. overwinst ${fmt.getal(o.overwinstMee)}</div>` : ''}</td><td class="num">${fmt.eur(o.bijdrage)}${o.bron === 'afwijkend' ? '<div class="dempen klein">afwijkend</div>' : ''}</td></tr>`;
+      ${TO.map((y) => `<td class="num${o.perJaar[y]?.meegeteld ? '' : ' dempen'}">${loonGezamenlijk ? '—' : fmt.eur(o.perJaar[y]?.inkomen ?? 0)}${o.perJaar[y]?.dividend ? `<div class="dempen klein">div. ${fmt.getal(o.perJaar[y].dividend)}</div>` : ''}</td>`).join('')}
+      <td class="num">${loonGezamenlijk ? '—' : fmt.eur(o.bziInkomen)}</td><td class="num">${o.bziDividend ? fmt.eur(o.bziDividend) : ''}</td><td class="num"><b>${fmt.eur(o.nul ? 0 : loonGezamenlijk ? o.bziDividend : o.berekend)}</b></td>
+      <td class="num">${o.nul ? '' : fmt.eur(loonGezamenlijk ? o.box2 : o.woonbeleid)}${o.overwinstMee ? `<div class="dempen klein">incl. overwinst ${fmt.getal(o.overwinstMee)}</div>` : ''}</td><td class="num">${fmt.eur(loonGezamenlijk ? o.bziDividend : o.bijdrage)}${o.bron === 'afwijkend' ? '<div class="dempen klein">afwijkend</div>' : ''}</td></tr>`;
   }).join('');
   return `<div class="scroll"><table class="tabel"><thead><tr><th>Hoofdbedrijf (met deelnemingen)</th><th>Toetskader</th>
     ${TO.map((y) => `<th class="num">${y}</th>`).join('')}<th class="num">Gem. inkomen</th><th class="num">Gem. dividend</th><th class="num">Berekend (BZI)</th><th class="num">Toets Woonbeleid</th><th class="num">Af te geven</th></tr></thead>
-    <tbody>${rijen}${ink.row ? `<tr><td>Resultaat uit overige werkzaamheden</td><td></td>${T.map(() => '<td></td>').join('')}<td></td><td></td><td class="num">${fmt.eur(ink.row)}</td><td class="num">${fmt.eur(ink.row)}</td><td class="num">${fmt.eur(ink.row)}</td></tr>` : ''}
-    <tr class="totaal"><td colspan="${2 + T.length + 2}">Totaal</td><td class="num">${fmt.eur(ink.berekend)}</td><td class="num">${fmt.eur(ink.toetsinkomen)}</td><td class="num">${fmt.eur(ink.vastgesteld)}</td></tr>
+    <tbody>${dgaRij}${rijen}${ink.row ? `<tr><td>Resultaat uit overige werkzaamheden</td><td></td>${T.map(() => '<td></td>').join('')}<td></td><td></td><td class="num">${fmt.eur(ink.row)}</td><td class="num">${fmt.eur(ink.row)}</td><td class="num">${fmt.eur(ink.row)}</td></tr>` : ''}
+    <tr class="totaal"><td colspan="${2 + T.length + 2}">Totaal</td><td class="num">${fmt.eur(r.berekend) || '—'}</td><td class="num">${fmt.eur(r.toetsinkomen) || '—'}</td><td class="num">${fmt.eur(r.vastgesteld) || 'Nog niet vastgesteld'}</td></tr>
     </tbody></table></div>`;
 }
 

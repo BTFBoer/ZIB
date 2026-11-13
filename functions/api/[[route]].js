@@ -12,9 +12,10 @@
 //   PUT|GET|DELETE /api/files/:id           documenten in R2
 import { gebruiker } from '../_shared/auth.js';
 import { beveiligDossier, beveiligProfiel, cloudActor, maakImportHerbeoordeling } from '../_shared/fiat.js';
+import { wisInkomensWijzigingen } from '../../public/js/engine/beoordelingsrechten.js';
 
 const MAX_BESTAND = 20 * 1024 * 1024;
-const TYPES = new Set(['dossier', 'advieskantoor', 'taak', 'ticket', 'document', 'profiel']);
+const TYPES = new Set(['dossier', 'bronarchief', 'advieskantoor', 'taak', 'ticket', 'document', 'profiel']);
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -41,15 +42,21 @@ async function audit(env, user, actie, recordId, detail = '') {
     .bind(new Date().toISOString(), user.email, actie, recordId, detail).run();
 }
 
-async function opslaanRecord(env, user, id, type, data, ifVersion, forceer = false) {
+async function opslaanRecord(env, user, id, type, data, ifVersion, forceer = false, alleenNieuw = false) {
   if (!TYPES.has(type)) return { status: 400, body: { fout: `Onbekend recordtype: ${type}` } };
   const nu = new Date().toISOString();
   const huidig = await env.DB.prepare('SELECT * FROM records WHERE id = ?').bind(id).first();
+  if (huidig && alleenNieuw) return { status: 409, body: { overgeslagen: true } };
   if (huidig && huidig.type !== type) return { status: 422, body: { fout: 'Het recordtype kan niet worden gewijzigd.' } };
   if (huidig && !forceer && Number(huidig.version) !== Number(ifVersion || 0)) {
     return { status: 409, body: { fout: 'Versieconflict', huidig: naarRecord(huidig) } };
   }
   const record = metadataWeg({ ...data, id, type });
+  if (alleenNieuw && type === 'dossier' && record.nummer) {
+    const dubbel = await env.DB.prepare("SELECT id FROM records WHERE type = 'dossier' AND deleted = 0 AND json_extract(data, '$.nummer') = ? LIMIT 1")
+      .bind(record.nummer).first();
+    if (dubbel) return { status: 409, body: { overgeslagen: true } };
+  }
   const vorigRecord = huidig ? naarRecord(huidig) : null;
   const herbeoordelen = forceer && type === 'dossier' && !vorigRecord && maakImportHerbeoordeling(record);
   const actor = cloudActor(user, env);
@@ -77,6 +84,22 @@ async function opslaanRecord(env, user, id, type, data, ifVersion, forceer = fal
     .bind(id, huidig.version, huidig.data, huidig.updated_at, huidig.updated_by).run();
   return { status: 200, body: { version: nieuw, updated_at: nu, updated_by: user.email,
     ...(type === 'dossier' ? { fiat: record.fiat ?? null, fiatteur: record.fiatteur ?? null } : {}) } };
+}
+
+function dossierVoorOverdracht(bron) {
+  const record = structuredClone(bron);
+  const besluiten = [{ afwijkend: record.afwijkend, besluit: record.inkomensbesluit }, ...(record.ondernemingen || []).map((o) => ({
+    onderneming: o.id, afwijkend: o.afwijkend, besluit: o.inkomensbesluit,
+    geenInkomen: o.geenInkomen || undefined, nulInkomen: o.nulInkomen || undefined, uitgesloten: o.meenemen === false || undefined,
+  }))].filter(({ afwijkend, besluit, geenInkomen, nulInkomen, uitgesloten }) => afwijkend?.actief || besluit || geenInkomen || nulInkomen || uitgesloten);
+  const fiat = record.fiat;
+  const wasGetekend = maakImportHerbeoordeling(record);
+  if (besluiten.length || wasGetekend) {
+    record.eerdereBeoordeling = { status: bron.status, fiat, fiatteur: bron.fiatteur, besluiten };
+    wisInkomensWijzigingen(record);
+    if (record.soort !== 'ANALYSE') record.status = 'beoordeling_1';
+  }
+  return { record, herbeoordelen: besluiten.length > 0 || wasGetekend };
 }
 
 async function records(request, env, user, seg) {
@@ -149,8 +172,10 @@ async function bestanden(request, env, user, seg) {
     return new Response(obj.body, {
       headers: {
         'content-type': obj.httpMetadata?.contentType || 'application/octet-stream',
-        'content-disposition': `inline; filename*=UTF-8''${encodeURIComponent(naam)}`,
+        'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(naam)}`,
         'cache-control': 'private, no-store',
+        'content-security-policy': "default-src 'none'; sandbox",
+        'x-content-type-options': 'nosniff',
       },
     });
   }
@@ -162,22 +187,24 @@ async function bestanden(request, env, user, seg) {
   return json({ fout: 'Methode niet toegestaan' }, 405);
 }
 
-export async function onRequest(context) {
+export async function handelApiVerzoek(context, identificeer) {
   const { request, env, params } = context;
   const seg = Array.isArray(params.route) ? params.route : (params.route ? [params.route] : []);
   try {
     if (seg[0] === 'health') {
-      return json({ ok: true, app: 'ZIB', database: !!env.DB, bestanden: !!env.FILES, access: !!(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD),
-        toegangslijst: !!String(env.ALLOWED_EMAILS || '').trim() });
+      return json({ ok: true, app: 'ZIB', database: !!env.DB, bestanden: !!env.FILES,
+        access: context.hosting === 'sites' || !!(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD),
+        toegangslijst: !!String(env.ALLOWED_EMAILS || env.ZIB_SITE_OWNER_EMAIL || '').trim() });
     }
     if (!env.DB) return json({ fout: 'D1-binding "DB" ontbreekt. Koppel de database in de Pages-instellingen.' }, 500);
-    const user = await gebruiker(request, env);
+    const user = await identificeer(request, env);
     if (!user) return json({ fout: 'Niet ingelogd of Cloudflare Access is niet ingesteld.' }, 401);
     if (user.toegang === false) return json({ fout: `${user.email} heeft geen toegang tot deze ZIB-omgeving.` }, 403);
 
     switch (seg[0]) {
       case 'me':
-        return json({ email: user.email, naam: user.naam, accreditatie: cloudActor(user, env).accreditatie });
+        return json({ email: user.email, naam: user.naam, accreditatie: cloudActor(user, env).accreditatie,
+          ...(context.hosting ? { hosting: context.hosting } : {}) });
       case 'records':
         return records(request, env, user, seg.slice(1));
       case 'files':
@@ -191,21 +218,27 @@ export async function onRequest(context) {
         if (request.method !== 'POST') return json({ fout: 'Methode niet toegestaan' }, 405);
         const body = await request.json();
         const lijst = Array.isArray(body.records) ? body.records.slice(0, 5000) : [];
+        const overdracht = body.mode === 'browser-migration';
+        if (overdracht && context.hosting !== 'sites') return json({ fout: 'Deze overdracht is alleen beschikbaar in de ZIB-werkruimte op Sites.' }, 400);
         let aantal = 0;
         let geweigerd = 0;
         let herbeoordelen = 0;
+        let overgeslagen = 0;
         for (const r of lijst) {
           if (!r || !r.id || !TYPES.has(r.type)) continue;
-          const uitkomst = await opslaanRecord(env, user, r.id, r.type, r, 0, true);
+          if (overdracht && (r.type === 'profiel' || r.deleted || !/^[A-Za-z0-9_-]{4,100}$/.test(r.id))) { overgeslagen += 1; continue; }
+          const bron = overdracht && r.type === 'dossier' ? dossierVoorOverdracht(r) : { record: r };
+          const uitkomst = await opslaanRecord(env, user, r.id, r.type, bron.record, 0, true, overdracht);
           if (uitkomst.status === 200) {
             aantal += 1;
-            if (uitkomst.body.herbeoordelen) herbeoordelen += 1;
-          } else {
+            if (bron.herbeoordelen || uitkomst.body.herbeoordelen) herbeoordelen += 1;
+          } else if (uitkomst.body.overgeslagen) overgeslagen += 1;
+          else {
             geweigerd += 1;
           }
         }
         await audit(env, user, 'import', null, `${aantal} records`);
-        return json({ aantal, geweigerd, herbeoordelen });
+        return json({ aantal, geweigerd, herbeoordelen, overgeslagen });
       }
       default:
         return json({ fout: 'Onbekende route' }, 404);
@@ -213,4 +246,8 @@ export async function onRequest(context) {
   } catch (e) {
     return json({ fout: e.message || String(e) }, 500);
   }
+}
+
+export function onRequest(context) {
+  return handelApiVerzoek(context, gebruiker);
 }

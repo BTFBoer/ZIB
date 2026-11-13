@@ -8,6 +8,9 @@ export function blokkadeUitkomst(dossier) {
   }
   if (dossier.soort !== 'IKV') return '';
   const uitkomst = bereken(dossier);
+  if (uitkomst.inkomen?.gecombineerdDgaOpen && uitkomst.bron !== 'afwijkend') {
+    return 'Controleer het gezamenlijke DGA-loon en de toerekening voordat je het inkomen vastlegt.';
+  }
   if (uitkomst.beleid?.bedrag === null) return 'Onderbouw eerst het inkomen volgens het gekozen toetskader.';
   if (uitkomst.beleid && uitkomst.status === 'niet_akkoord') return 'Verwerk de dossiercontroles in Fiattering.';
   return '';

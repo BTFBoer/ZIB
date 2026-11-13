@@ -101,7 +101,7 @@ export function bewaarProfiel(p) {
 
 export function logUit() {
   if (state.modus === 'cloud') {
-    location.href = '/cdn-cgi/access/logout';
+    location.href = state.me?.hosting === 'sites' ? '/signout-with-chatgpt?return_to=%2F' : '/cdn-cgi/access/logout';
     return;
   }
   lsDel('zib.profiel');

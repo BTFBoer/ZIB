@@ -37,3 +37,23 @@ test('Geen match op naam alleen, niet in oefendossiers en geen nieuw dossier voo
   assert.equal(p.dossier.niveau, 'Top');
   assert.equal(p.dossier.fiat, undefined);
 });
+
+test('Bronimport registreert gezamenlijk DGA-loon met volledige periode en bewaart totalen zonder tegenpartij', () => {
+  const dgaGezamenlijk = { loon: 50000, bijtelling: 0, van: '2025-01-01', tot: '2025-12-31' };
+  const p = structuredClone(bronDossier);
+  p.ib = { 2025: { dgaGezamenlijk, bronnen: Object.fromEntries(Object.keys(dgaGezamenlijk).map((k) => [`dgaGezamenlijk.${k}`, bron])) } };
+  p.abnGroep = { minderheidsdividendInWinst: true, bronnen: { minderheidsdividendInWinst: bron } };
+  const jaar = p.ondernemingen[0].jaren[2025];
+  jaar.geldstromen = { totaalOntvangenDividend: 7500 };
+  jaar.bronnen['geldstromen.totaalOntvangenDividend'] = bron;
+  const [voorstel] = voorstelBroncijfers(pakket(p), [], { nummerVoorNieuw: () => 'ZIB-2026-0099' });
+  assert.deepEqual(voorstel.dossier.ib[2025].dgaGezamenlijk, dgaGezamenlijk);
+  assert.deepEqual(voorstel.dossier.ondernemingen[0].jaren[2025].geldstromen, { totaalOntvangenDividend: 7500 });
+  assert.deepEqual(voorstel.dossier.abnGroep, { minderheidsdividendInWinst: true });
+  assert.equal(voorstel.dossier.afwijkend, undefined);
+
+  const bestaand = { id: 'd', type: 'dossier', kader: 'ABN', aanvrager: identiteit, ondernemingen: [onderneming], ib: { 2025: { perOnd: { o: { loon: 0 } } } } };
+  const [metLoonPerBedrijf] = voorstelBroncijfers(pakket(p), [bestaand]);
+  assert.equal(metLoonPerBedrijf.dossier.ib[2025].dgaGezamenlijk, undefined);
+  assert.match(metLoonPerBedrijf.issues.join(' '), /loon per onderneming/);
+});

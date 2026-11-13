@@ -335,6 +335,8 @@ export function renderAanvragen(afgerond) {
       <div class="werkstart-acties">
         <button class="knop" data-actie="nieuwe-aanvraag">${icoon('plus')} Nieuwe aanvraag</button>
         <a class="knop sec" href="#/toetskaders">${icoon('boek')} Toetskaders</a>
+        ${!afgerond && state.me?.hosting === 'sites' ? '<button type="button" class="knop sec" data-actie="browseroverdracht">Dossiers uit deze browser</button>' : ''}
+        ${state.me?.hosting === 'sites' ? '<a class="knop sec" href="#/bronarchief">Historische brondossiers</a>' : ''}
         ${!afgerond && kanBeleidsvoorbeeldenLaden() ? `<button type="button" class="knop sec" data-actie="beleid-voorbeelden-laden" aria-pressed="${ui.aanvragen.snel === 'beleid-voorbeelden'}">${icoon('map')} Oefendossiers</button>` : ''}
       </div>
     </div>

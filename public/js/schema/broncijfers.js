@@ -1,7 +1,7 @@
 import { getPath, setPath, clone, isIngevuld } from '../util.js';
 import { KADERS, RECHTSVORMEN, kaderVoor } from '../engine/kaders.js';
 import { heeftBalans, heeftVW } from '../engine/financieel.js';
-import { VERMOGENS_CORRECTIES } from './correcties.js';
+import { VERMOGENS_CORRECTIES, WINST_CORRECTIES } from './correcties.js';
 import { JAAR_STATUSSEN, AFGEROND } from './fields.js';
 
 const BALANS = ['ev', 'bt', 'va', 'kvv', 'voorraad', 'vaDetail.rcDirectie'];
@@ -9,6 +9,7 @@ const RESULTAAT = ['omzet', 'nettowinst', 'resultaatVoorBelasting', 'vpb', 'afsc
 const BZI = [...BALANS, ...RESULTAAT, 'managementFee', 'internDividend'];
 const IB = ['sfw', 'loon', 'dividend', 'bijtelling'];
 const PERSOONLIJK = ['voorStart', 'naast', 'uitkeringen', 'row', 'box3'];
+const ABN_BRONKEUZES = ['minderheidsdividendInWinst', 'overwinstMeenemen', 'uitkeringsruimteMaximeren', 'nettowinstExclusiefDeelnemingen'];
 const normal = (s) => String(s ?? '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 const gelijk = (a, b) => !!normal(a) && normal(a) === normal(b);
 const tekst = (v, max = 250) => typeof v === 'string' ? v.trim().slice(0, max) : '';
@@ -97,7 +98,8 @@ export function voorstelBroncijfers(pakket, opgeslagen, { nummerVoorNieuw } = {}
         if (!geldigJaar(y) || !jaar) continue;
         const jd = ond.jaren[y] ||= {};
         const jBron = jaar.bronnen || {};
-        const velden = ['aandeelPct', 'div.aflossingenLVV', ...BZI.map((k) => `bzi.${k}`)];
+        const velden = ['aandeelPct', 'div.aflossingenLVV', 'div.incidenteleBaten', 'div.incidenteleLasten',
+          'geldstromen.totaalOntvangenDividend', 'geldstromen.totaalOntvangenFee', 'geldstromen.dividendPriveBruto', ...BZI.map((k) => `bzi.${k}`)];
         for (const pad of velden) {
           const v = getPath(jaar, pad);
           if (!bedrag(v)) continue;
@@ -112,14 +114,47 @@ export function voorstelBroncijfers(pakket, opgeslagen, { nummerVoorNieuw } = {}
         if (Array.isArray(jaar.vermogensCorrecties) && jaar.vermogensCorrecties.length && jaar.vermogensCorrecties.every((x) => Object.hasOwn(VERMOGENS_CORRECTIES, x.type) && bedrag(x.bedrag))) {
           voeg(jd, 'vermogensCorrecties', jaar.vermogensCorrecties.map((x) => ({ type: x.type, bedrag: x.bedrag, toelichting: tekst(x.toelichting, 800) })), jBron.vermogensCorrecties, ond, y);
         }
+        if (Array.isArray(jaar.winstCorrecties) && jaar.winstCorrecties.length && jaar.winstCorrecties.every((x) => Object.hasOwn(WINST_CORRECTIES, x.type) && bedrag(x.bedrag))) {
+          voeg(jd, 'winstCorrecties', jaar.winstCorrecties.map((x) => ({ type: x.type, bedrag: x.bedrag, toelichting: tekst(x.toelichting, 800) })), jBron.winstCorrecties, ond, y);
+        }
         for (const k of IB) {
           const v = o.ib?.[y]?.[k];
           if (bedrag(v)) voeg(d, `ib.${y}.perOnd.${ond.id}.${k}`, v, jBron[`ib.${k}`], ond, y);
         }
       }
     }
-    for (const [y, jaar] of Object.entries(bron.ib || {})) if (geldigJaar(y)) for (const k of PERSOONLIJK) {
-      if (bedrag(jaar[k])) voeg(d, `ib.${y}.${k}`, jaar[k], jaar.bronnen?.[k], null, y);
+    const abnBron = bron.toetskader?.kader === 'ABN' && bron.toetskader.metNhg === false && kaderVoor(d).id === 'ABN';
+    for (const [y, jaar] of Object.entries(bron.ib || {})) {
+      if (!geldigJaar(y)) continue;
+      for (const k of PERSOONLIJK) {
+        if (bedrag(jaar[k])) voeg(d, `ib.${y}.${k}`, jaar[k], jaar.bronnen?.[k], null, y);
+      }
+      if (!abnBron || !jaar.dgaGezamenlijk) continue;
+      const dga = jaar.dgaGezamenlijk;
+      const dgaVelden = ['loon', 'bijtelling', 'van', 'tot'];
+      if (!bedrag(dga.loon) || !bedrag(dga.bijtelling) || !datum(dga.van) || !datum(dga.tot) || dga.van > dga.tot
+        || !dga.van.startsWith(y) || !dga.tot.startsWith(y)) continue;
+      if (dgaVelden.some((k) => !jaar.bronnen?.[`dgaGezamenlijk.${k}`]?.bestand || !jaar.bronnen?.[`dgaGezamenlijk.${k}`]?.locatie)) continue;
+      const perOnd = Object.values(d.ib?.[y]?.perOnd || {});
+      const bedrijfLoon = (d.ondernemingen || []).some((o) => isIngevuld(o.jaren?.[y]?.vw?.salarisDGA) && o.jaren[y].vw.salarisDGA !== 0);
+      if (bedrijfLoon || perOnd.some((x) => isIngevuld(x.loon))) {
+        issues.push(`${y} · gezamenlijk DGA-loon: loon per onderneming is al ingevuld. Controleer de aansluiting.`);
+        continue;
+      }
+      const huidigDga = d.ib?.[y]?.dgaGezamenlijk || {};
+      if (dgaVelden.some((k) => isIngevuld(huidigDga[k]) && !identiek(huidigDga[k], dga[k]))) {
+        issues.push(`${y} · gezamenlijk DGA-loon: bestaande bedragen en periode behouden. Controleer de aansluiting.`);
+        continue;
+      }
+      for (const k of dgaVelden) {
+        const pad = `dgaGezamenlijk.${k}`;
+        voeg(d, `ib.${y}.${pad}`, dga[k], jaar.bronnen?.[pad], null, y);
+      }
+    }
+    if (abnBron && bron.abnGroep && datum(bron.peildatum)) {
+      for (const k of ABN_BRONKEUZES) {
+        if (typeof bron.abnGroep[k] === 'boolean') voeg(d, `abnGroep.${k}`, bron.abnGroep[k], bron.abnGroep.bronnen?.[k], null, bron.peildatum.slice(0, 4));
+      }
     }
     if (!p.wijzigingen.length) continue;
     d.broncontrole = { ...bron.broncontrole, peildatum: bron.peildatum, referentiebeleid: bron.toetskader?.bron, referentieversie: bron.toetskader?.versie,

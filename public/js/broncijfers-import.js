@@ -3,12 +3,25 @@ import { voorstelBroncijfers } from './schema/broncijfers.js';
 import { state, lijst, bewaarDossier, volgendDossiernummer, logHistorie } from './state.js';
 import { esc, fmt, nowISO } from './util.js';
 import { openModaal, sluitModaal, toast } from './views/ui.js';
+import { maakBronarchief } from './views/bronarchief.js';
 
 const lokaal = () => globalThis.ZIB_LOCAL_PRIVATE === true && state.modus === 'lokaal';
+const importToegestaan = () => lokaal() || (globalThis.ZIB_HOSTED === true && state.modus === 'cloud' && !!state.me?.email);
 
 function voorstel(pakket) {
   const [prefix, volg] = volgendDossiernummer().split(/-(?=\d+$)/);
-  return voorstelBroncijfers(pakket, lijst('dossier'), { nummerVoorNieuw: (i) => `${prefix}-${String(Number(volg) + i).padStart(4, '0')}` });
+  const dossiers = voorstelBroncijfers(pakket, lijst('dossier'), { nummerVoorNieuw: (i) => `${prefix}-${String(Number(volg) + i).padStart(4, '0')}` });
+  if (state.me?.hosting === 'sites') {
+    for (const p of dossiers) {
+      if (p.dossier) continue;
+      const bron = pakket.dossiers.find((d) => d.match === p.match && d.archief === true);
+      if (!bron) continue;
+      const archief = maakBronarchief(bron);
+      if (state.records.has(archief.id)) continue;
+      p.archief = archief;
+    }
+  }
+  return dossiers;
 }
 
 /** Alleen de lokale werkbestanden kunnen een voorbereide werkkopie bevatten. */
@@ -37,17 +50,19 @@ function uitkomsten(p) {
   try {
     const r = bereken(p.dossier);
     const bron = r.beleid?.bedrag ?? r.beleid?.indicatie;
-    const bedrag = r.beleid ? (Number.isFinite(bron) ? fmt.eur(bron) : 'Bewijs of cijfers nodig') : fmt.eur(r.toetsinkomen);
-    return `<p><strong>Nieuwe rekenuitkomst in ZIB:</strong> ${esc(bedrag)} · ${esc(r.kaderCfg.kort)}. Dit dossier is nog in beoordeling.</p>`;
+    const vergelijking = r.inkomen?.abnBronVergelijking?.horizontaal;
+    const bedrag = r.beleid ? (Number.isFinite(bron) ? fmt.eur(bron) : 'Bewijs of cijfers nodig')
+      : r.inkomen?.gecombineerdDgaOpen || p.dossier.broncontrole?.controlepunten?.length ? 'Nog te beoordelen' : fmt.eur(r.toetsinkomen);
+    return `<p><strong>Toetsinkomen:</strong> ${esc(bedrag)} · ${esc(r.kaderCfg.kort)}.</p>${Number.isFinite(vergelijking) ? `<p><strong>Herberekening Excel-methode:</strong> ${esc(fmt.eur(vergelijking, 2))}</p>` : ''}`;
   } catch { return '<p>ZIB kan met deze invoer nog geen uitkomst geven.</p>'; }
 }
 
 export function initBroncijfersImport(ververs) {
   let pakket = null;
   let handtekening = '';
-  const sign = (plannen) => JSON.stringify(plannen.map((p) => [p.dossier?.id, p.dossier?.version, p.wijzigingen]));
+  const sign = (plannen) => JSON.stringify(plannen.map((p) => [p.dossier?.id, p.dossier?.version, p.archief?.id, p.wijzigingen]));
   document.addEventListener('change', async (e) => {
-    if (!e.target.matches('[data-broncijfers-bestand]') || !lokaal()) return;
+    if (!e.target.matches('[data-broncijfers-bestand]') || !importToegestaan()) return;
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
@@ -56,10 +71,10 @@ export function initBroncijfersImport(ververs) {
       pakket = JSON.parse(await file.text());
       const plannen = voorstel(pakket);
       handtekening = sign(plannen);
-      const uitvoerbaar = plannen.filter((p) => p.dossier).length;
-      openModaal('Broncijfers controleren', `<p>Controleer de herkomst en kies welke voorstellen je lokaal wilt opslaan. Alleen lege velden worden gevuld.</p>
+      const uitvoerbaar = plannen.filter((p) => p.dossier || p.archief).length;
+      openModaal('Broncijfers controleren', `<p>Controleer de herkomst en kies welke voorstellen je wilt opslaan. Alleen lege velden worden gevuld.</p>
         ${plannen.map((p, i) => `<details class="stappen"${plannen.length === 1 ? ' open' : ''}><summary>${esc([p.match.aanvrager?.voorletters, p.match.aanvrager?.achternaam, p.match.nummer || p.match.onderneming].filter(Boolean).join(' · '))} · ${p.wijzigingen.length} velden</summary>
-        <div class="inhoud">${p.dossier ? `<label class="check"><input type="checkbox" data-broncijfers-keuze="${i}"${p.nieuw ? '' : ' checked'}><span>${p.nieuw ? 'Maak een nieuw dossier in eerste beoordeling' : 'Vul het bestaande dossier aan'}</span></label>` : ''}${uitkomsten(p)}
+        <div class="inhoud">${p.dossier || p.archief ? `<label class="check"><input type="checkbox" data-broncijfers-keuze="${i}"${p.nieuw || p.archief ? '' : ' checked'}><span>${p.archief ? 'Bewaar bij historische bron­dossiers' : p.nieuw ? 'Maak een nieuw dossier in eerste beoordeling' : 'Vul het bestaande dossier aan'}</span></label>` : ''}${uitkomsten(p)}
         ${p.issues.length ? `<ul>${p.issues.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}
         ${(p.broncontrole?.controlepunten || []).length ? `<ul>${p.broncontrole.controlepunten.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}
         ${p.wijzigingen.length ? `<div class="scroll bron-import-tabel"><table class="tabel compact"><thead><tr><th>Onderneming</th><th>Jaar</th><th>Post</th><th>Waarde</th><th>Bron</th></tr></thead><tbody>${p.wijzigingen.map((x) => `<tr><td>${esc(x.onderneming)}</td><td>${x.jaar}</td><td>${esc(x.pad)}</td><td>${esc(typeof x.waarde === 'number' ? fmt.getal(x.waarde, x.waarde % 1 ? 2 : 0) : Array.isArray(x.waarde) ? `${x.waarde.length} correcties` : x.waarde)}</td><td>${esc(x.bestand)} · ${esc(x.locatie)}</td></tr>`).join('')}</tbody></table></div>` : ''}
@@ -68,7 +83,7 @@ export function initBroncijfersImport(ververs) {
   });
   document.addEventListener('click', async (e) => {
     const knop = e.target.closest('[data-broncijfers-opslaan]');
-    if (!knop || !pakket || !lokaal()) return;
+    if (!knop || !pakket || !importToegestaan()) return;
     const gekozen = [...document.querySelectorAll('[data-broncijfers-keuze]:checked')].map((el) => Number(el.dataset.broncijfersKeuze));
     if (!gekozen.length) { toast('Kies minstens één dossier.'); return; }
     const plannen = voorstel(pakket);
@@ -77,16 +92,17 @@ export function initBroncijfersImport(ververs) {
     const bewaard = [];
     for (const i of gekozen) {
       const p = plannen[i];
-      if (!p?.dossier) continue;
-      const d = p.dossier;
+      if (!p?.dossier && !p?.archief) continue;
+      const d = p.dossier || p.archief;
       if (p.nieuw) { d.aangemaakt = nowISO(); d.statusDatum = d.aangemaakt; }
-      logHistorie(d, `${p.wijzigingen.length} velden overgenomen uit lokale broncijfers; controleer de uitkomst bij Fiattering.`);
-      if (await bewaarDossier(d)) bewaard.push(d.id);
+      logHistorie(d, `${p.wijzigingen.length} velden overgenomen uit broncijfers. Controleer de uitkomst bij Fiattering.`);
+      if (await bewaarDossier(d)) bewaard.push(d);
     }
     pakket = null;
     sluitModaal();
-    if (bewaard.length === 1) location.hash = `#/dossier/${encodeURIComponent(bewaard[0])}/fiat`;
+    if (bewaard.length === 1 && bewaard[0].type === 'dossier') location.hash = `#/dossier/${encodeURIComponent(bewaard[0].id)}/fiat`;
+    else if (bewaard.some((d) => d.type === 'bronarchief')) location.hash = '#/bronarchief';
     else ververs?.();
-    toast(`${bewaard.length} van ${gekozen.length} ${gekozen.length === 1 ? 'dossier' : 'dossiers'} lokaal opgeslagen.`);
+    toast(`${bewaard.length} van ${gekozen.length} ${gekozen.length === 1 ? 'dossier' : 'dossiers'} opgeslagen.`);
   });
 }

@@ -93,6 +93,7 @@ export function bziKop(d, r) {
   let bedragTekst = isNul ? '€ 0' : fmt.eur(r.vastgesteld);
   let sub = '';
   if (isNul) { label = '0-verklaring'; sub = r.nul?.maandlastCorrectie ? `Maandlastcorrectie € ${fmt.getal(r.nul.maandlastCorrectie)} per maand` : ''; }
+  else if (r.bron === 'open') { label = 'Toetsinkomen'; bedragTekst = 'Nog niet vastgesteld'; sub = 'Controleer het gezamenlijke DGA-loon in Fiattering.'; }
   else if (r.bron === 'afwijkend') { label = 'Afwijkend inkomen'; sub = `Berekend ${fmt.eur(r.berekend)}`; }
   else if (r.bron === 'geen') { label = 'Af te geven inkomen'; sub = r.berekend > 0 ? `Geen inkomen af te geven (berekend ${fmt.eur(r.berekend)})` : 'Geen inkomen af te geven'; bedragTekst = fmt.eur(0); }
   else if (r.bron === 'nul') { label = '0-inkomen afgegeven'; }
@@ -149,6 +150,7 @@ function zijbalk(d, stap, ondId, r, docsOntbrekend) {
       <a href="${stapHref(d, 'documenten', '')}" class="${stap === 'documenten' ? 'actief' : ''}">${icoon('document')}<span>Documenten</span>${docsOntbrekend ? `<span class="teller">${docsOntbrekend}</span>` : ''}</a>
       ${link('berekening', '', 'Rekenstappen', 'reken')}
       ${link('bziinvoer', '', 'BZI-invoer (overzicht)', 'lijst')}
+      ${link('ib', '', 'IB-aangifte', 'lijst')}
       ${link('notities', '', 'Notities', 'notitie')}
       ${link('rapport', '', 'Rapport', 'document')}
       ${link('fiat', '', 'Fiattering en historie', 'check')}
@@ -157,7 +159,7 @@ function zijbalk(d, stap, ondId, r, docsOntbrekend) {
 }
 
 export function renderBZI(d, stap, ondId, r, gedeeld = {}) {
-  const dossierTabs = { documenten: 'Documenten', invoer: 'Cijfers invoeren', berekening: 'Rekenstappen', bziinvoer: 'BZI-invoer (overzicht)', notities: 'Notities', rapport: 'Rapport', fiat: 'Fiattering en historie' };
+  const dossierTabs = { documenten: 'Documenten', invoer: 'Cijfers invoeren', berekening: 'Rekenstappen', bziinvoer: 'BZI-invoer (overzicht)', ib: 'IB-aangifte', notities: 'Notities', rapport: 'Rapport', fiat: 'Fiattering en historie' };
   const geldig = ['algemeen', 'bedrijven', 'bedrijf', 'boekhouders', 'verplichtingen', 'samenvatting', ...Object.keys(dossierTabs)];
   let s = geldig.includes(stap) ? stap : 'algemeen';
   let id = ondId;
@@ -176,6 +178,7 @@ export function renderBZI(d, stap, ondId, r, gedeeld = {}) {
     case 'invoer':
     case 'berekening':
     case 'bziinvoer':
+    case 'ib':
     case 'notities':
     case 'rapport':
     case 'fiat': inhoud = `${s === 'rapport' ? '' : `<h1>${esc(dossierTabs[s])}</h1>`}${gedeeld[s]?.() || ''}`; break;

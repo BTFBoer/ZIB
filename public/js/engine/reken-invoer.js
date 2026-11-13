@@ -33,6 +33,7 @@ export function rekenInvoerStatus(d, r) {
   const T3 = T.at(-1);
   const C = r.C ?? (T3 + 1);
   const kader = r.kader;
+  const dgaGezamenlijk = kader === 'ABN' ? r.inkomen?.dgaGezamenlijk : null;
   const p = d.beleidsinvoer?.[kader] || {};
   const achmea = ['ATTENS', 'SYNTRUS'].includes(kader);
   const tulpBunq = ['TULP', 'BUNQ'].includes(kader);
@@ -97,6 +98,13 @@ export function rekenInvoerStatus(d, r) {
     return parseISO(start) && r.datum >= addMonthsISO(start, 36);
   };
 
+  if (dgaGezamenlijk?.blokkades.length) {
+    const jaar = dgaGezamenlijk.ontbreekt[0] || T3;
+    dossier.push({ key: 'dgaGezamenlijk', label: 'Gezamenlijk DGA-loon controleren', paneel: 'ib',
+      bind: `ib.${jaar}.dgaGezamenlijk.loon`, jaren: dgaGezamenlijk.ontbreekt,
+      melding: dgaGezamenlijk.blokkades.join(' '), blokkeert: true });
+  }
+
   const bewijsVelden = ['ikvBedrag', 'ikvDatum', 'ikvOpsteller'];
   const bewijsBegonnen = r.kaderCfg?.beleid?.ikvOptioneel && bewijsVelden.some((key) => gevuld(p[key]));
   const extern = r.beleid?.methode === 'extern';
@@ -131,7 +139,7 @@ export function rekenInvoerStatus(d, r) {
         const jaren = T.filter((y) => y >= eersteJaar && jaarBron(o, y).meetellen !== false);
         const recent = jaren.slice(-1);
         if (vpb(o)) {
-          ibBedrag(o, 'loon', jaren.filter((y) => !heeftBedrag(jaarBron(o, y).vw?.salarisDGA)), 'Neem het fiscale arbeidsinkomen uit de eigen onderneming over.');
+          if (!dgaGezamenlijk) ibBedrag(o, 'loon', jaren.filter((y) => !heeftBedrag(jaarBron(o, y).vw?.salarisDGA)), 'Neem het fiscale arbeidsinkomen uit de eigen onderneming over.');
         } else {
           resultaat(o, jaren.filter((y) => !heeftBedrag(ib(o, y).sfw)), 'Vul het resultaat uit de jaarcijfers of het saldo fiscale winst in.', true);
         }
@@ -143,7 +151,7 @@ export function rekenInvoerStatus(d, r) {
         if (periodeJaar && periodeJaar >= eersteJaar) {
           resultaat(o, [periodeJaar], 'Vul het resultaat over de gevraagde periode in voor de tussentijdse toets.');
         }
-        if (r.C && r.C >= eersteJaar && vpb(o)) {
+        if (r.C && r.C >= eersteJaar && vpb(o) && !dgaGezamenlijk) {
           ibBedrag(o, 'loon', [r.C].filter((y) => !heeftBedrag(jaarBron(o, y).vw?.salarisDGA)), 'Vul het gerealiseerde DGA-loon over de controleperiode in.', false);
         }
       }
