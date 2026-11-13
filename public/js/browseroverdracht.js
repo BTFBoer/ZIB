@@ -38,6 +38,11 @@ export async function biedBrowseroverdrachtAan(ververs) {
       for (const doc of documenten) {
         if (!state.records.has(doc.dossierId)) continue;
         try {
+          if (doc.opslag === 'demo' && oefendossier(state.records.get(doc.dossierId))) {
+            const r = await state.adapter.importAll({ app: 'ZIB', formaat: 1, mode: 'browser-migration', records: [doc] });
+            if (r.aantal) bestanden += 1;
+            continue;
+          }
           const bestand = await lokaal.getFile(doc.id);
           if (!bestand) { ontbrekend += 1; continue; }
           await state.adapter.putFile(doc.id, new File([bestand], doc.naam || 'Document', { type: bestand.type || doc.mime }));
@@ -49,7 +54,7 @@ export async function biedBrowseroverdrachtAan(ververs) {
       const over = selectie.filter((d) => state.records.has(d.id)).length;
       sluitModaal();
       ververs();
-      toast(`${over} dossiers, ${bestanden} bijlagen overgezet.${ontbrekend ? ` ${ontbrekend} bijlagen staan nog in de oorspronkelijke browser.` : ''}${resultaat.herbeoordelen ? ` ${resultaat.herbeoordelen} dossiers vragen herbeoordeling.` : ''}${resultaat.geweigerd ? ` ${resultaat.geweigerd} records konden niet worden bewaard.` : ''}`);
+      toast(`${over} dossiers, ${bestanden} documentregels overgezet.${ontbrekend ? ` ${ontbrekend} bestanden konden niet worden overgezet.` : ''}${resultaat.herbeoordelen ? ` ${resultaat.herbeoordelen} dossiers vragen herbeoordeling.` : ''}${resultaat.geweigerd ? ` ${resultaat.geweigerd} records konden niet worden bewaard.` : ''}`);
     } catch (err) { toast(err.message || 'De overdracht kon niet worden voltooid.'); }
     finally { knop.disabled = false; }
   });

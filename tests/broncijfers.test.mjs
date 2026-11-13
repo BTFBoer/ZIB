@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { voorstelBroncijfers } from '../public/js/schema/broncijfers.js';
 import { totalenJaar } from '../public/js/engine/financieel.js';
+import { beveiligDossier } from '../functions/_shared/fiat.js';
 
 const bron = { bestand: 'bron.xlsx', locatie: 'C4' };
 const onderneming = { id: 'o', naam: 'Testbedrijf', rechtsvorm: 'BV', aandeelPct: 100 };
@@ -56,4 +57,17 @@ test('Bronimport registreert gezamenlijk DGA-loon met volledige periode en bewaa
   const [metLoonPerBedrijf] = voorstelBroncijfers(pakket(p), [bestaand]);
   assert.equal(metLoonPerBedrijf.dossier.ib[2025].dgaGezamenlijk, undefined);
   assert.match(metLoonPerBedrijf.issues.join(' '), /loon per onderneming/);
+});
+
+test('De import bewaart uitsluitingen voor het ABN-bronmodel zonder een handmatig inkomensbesluit te nemen', () => {
+  const p = structuredClone(bronDossier);
+  p.nieuw.ondernemingen.push({ id: 'minderheid', naam: 'Deelneming', rechtsvorm: 'BV', parentId: 'o', aandeelPct: 25, meenemen: false });
+  p.abnGroep = { minderheidsdividendInWinst: true, bronnen: { minderheidsdividendInWinst: bron } };
+  const [{ dossier }] = voorstelBroncijfers(pakket(p), [], { nummerVoorNieuw: () => 'ZIB-2026-0099' });
+  const actor = { naam: 'Aanvragerbeheer', rol: 'acceptant', accreditatie: '' };
+  assert.deepEqual(dossier.abnGroep.uitgeslotenOndernemingen, ['minderheid']);
+  assert.equal(dossier.ondernemingen[1].meenemen, true);
+  assert.equal(beveiligDossier(actor, null, dossier), null);
+  dossier.ondernemingen[1].meenemen = false;
+  assert.equal(beveiligDossier(actor, null, dossier).status, 403);
 });

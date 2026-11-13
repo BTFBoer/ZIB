@@ -90,6 +90,7 @@ export function initBroncijfersImport(ververs) {
     if (sign(plannen) !== handtekening) { pakket = null; sluitModaal(); toast('Een dossier is intussen gewijzigd. Open het broncijfersbestand opnieuw.'); return; }
     knop.disabled = true;
     const bewaard = [];
+    let fout = '';
     for (const i of gekozen) {
       const p = plannen[i];
       if (!p?.dossier && !p?.archief) continue;
@@ -97,12 +98,13 @@ export function initBroncijfersImport(ververs) {
       if (p.nieuw) { d.aangemaakt = nowISO(); d.statusDatum = d.aangemaakt; }
       logHistorie(d, `${p.wijzigingen.length} velden overgenomen uit broncijfers. Controleer de uitkomst bij Fiattering.`);
       if (await bewaarDossier(d)) bewaard.push(d);
+      else fout ||= state.opslag.fout;
     }
     pakket = null;
     sluitModaal();
     if (bewaard.length === 1 && bewaard[0].type === 'dossier') location.hash = `#/dossier/${encodeURIComponent(bewaard[0].id)}/fiat`;
     else if (bewaard.some((d) => d.type === 'bronarchief')) location.hash = '#/bronarchief';
     else ververs?.();
-    toast(`${bewaard.length} van ${gekozen.length} ${gekozen.length === 1 ? 'dossier' : 'dossiers'} opgeslagen.`);
+    toast(`${bewaard.length} van ${gekozen.length} ${gekozen.length === 1 ? 'dossier' : 'dossiers'} opgeslagen.${fout ? ` ${fout}` : ''}`);
   });
 }

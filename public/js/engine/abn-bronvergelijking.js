@@ -3,14 +3,14 @@ import { balansOntbreekt, heeftBedrag, heeftVW } from './financieel.js';
 
 const getal = (waarde) => heeftBedrag(waarde) ? Number(waarde) : null;
 
-function ontvangenMinderheidsdividend(ouder, jaar, opties, perId, structuur, zeggenschap) {
+function ontvangenMinderheidsdividend(ouder, jaar, opties, perId, structuur, zeggenschap, opgenomenInBron) {
   const j = ouder.jaren?.[jaar] || {};
   const aandeelOuder = zeggenschap(ouder.id, jaar)?.belangJaar(jaar) ?? 0;
   const kandidaten = structuur.kinderen(ouder.id).filter((link) => link.pctJaar(jaar) > 0);
   const minderheidsLinks = kandidaten.filter((link) => {
     const kind = perId.get(link.kind);
     const belang = zeggenschap(link.kind, jaar);
-    return kind?.soort === 'VPB' && !kind.meenemen && !kind.geconsolideerd && belang?.keten === false && belang.belangJaar(jaar) <= 0.5;
+    return kind?.soort === 'VPB' && !opgenomenInBron(kind) && !kind.geconsolideerd && belang?.keten === false && belang.belangJaar(jaar) <= 0.5;
   });
   if (!opties.minderheidsdividendInWinst || aandeelOuder <= 0) return 0;
   const totaal = getal(j.geldstroom?.totaalOntvangenDividend);
@@ -49,7 +49,9 @@ export function vergelijkAbnBronmodel(d, ctx, analyses, st, dga, zeggenschap, ov
   const laatste = T.at(-1);
   const perId = new Map(analyses.map((a) => [a.id, a]));
   const ondernemingen = new Map((d.ondernemingen || []).map((o) => [o.id, o]));
-  const relevanteBV = new Set(analyses.filter((a) => a.soort === 'VPB' && a.meenemen && !a.geconsolideerd && ondernemingen.get(a.id)?.actief !== false).map((a) => a.id));
+  const uitgesloten = Array.isArray(opties.uitgeslotenOndernemingen) ? new Set(opties.uitgeslotenOndernemingen) : null;
+  const opgenomenInBron = (a) => uitgesloten ? !uitgesloten.has(a.id) : a.meenemen;
+  const relevanteBV = new Set(analyses.filter((a) => a.soort === 'VPB' && opgenomenInBron(a) && !a.geconsolideerd && ondernemingen.get(a.id)?.actief !== false).map((a) => a.id));
   const open = [];
   const perJaar = {};
   if (dga?.factor !== 1 || !dga.compleet || !T.every((jaar) => Number.isFinite(dga.perJaar[jaar]?.inkomen))) open.push('De herleidbare loonreeks voor drie volledige boekjaren ontbreekt.');
@@ -88,7 +90,7 @@ export function vergelijkAbnBronmodel(d, ctx, analyses, st, dga, zeggenschap, ov
         winst += j.winst.NWcor * belang;
         winstAanwezig = true;
       }
-      const dividend = ontvangenMinderheidsdividend(a, jaar, opties, perId, st, zeggenschap);
+      const dividend = ontvangenMinderheidsdividend(a, jaar, opties, perId, st, zeggenschap, opgenomenInBron);
       if (dividend === null) open.push(`${jaar}: ontvangen minderheidsdividend bij ${a.naam} vraagt een aansluiting op de betaalde dividenden en de belangen.`);
       else minderheidsdividend += dividend;
       if (balansOntbreekt(o?.jaren?.[jaar]).length || j.liqRuimte === null || (direct > 0 && j.solvRuimte === null)) balansCompleet = false;

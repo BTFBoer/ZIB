@@ -43,7 +43,7 @@ function maakNieuw(bron, nummer) {
     ...(o.extraParents?.length ? { extraParents: o.extraParents.map((p) => ({ id: tekst(p.id, 50), pct: p.pct,
       ...(geldigJaar(String(p.vanaf)) ? { vanaf: Number(p.vanaf) } : {}), ...(geldigJaar(String(p.tot)) ? { tot: Number(p.tot) } : {})
     })).filter((p) => bedrag(p.pct) && p.pct >= 0 && p.pct <= 100) } : {}),
-    actief: true, meenemen: o.meenemen !== false, jaren: {},
+    actief: true, meenemen: true, jaren: {},
   }));
   const ids = new Set(ondernemingen.map((o) => o.id));
   if (!ondernemingen.length || ids.size !== ondernemingen.length || ondernemingen.some((o) => !/^[\w-]+$/.test(o.id) || !o.naam || !o.rechtsvorm
@@ -154,6 +154,11 @@ export function voorstelBroncijfers(pakket, opgeslagen, { nummerVoorNieuw } = {}
     if (abnBron && bron.abnGroep && datum(bron.peildatum)) {
       for (const k of ABN_BRONKEUZES) {
         if (typeof bron.abnGroep[k] === 'boolean') voeg(d, `abnGroep.${k}`, bron.abnGroep[k], bron.abnGroep.bronnen?.[k], null, bron.peildatum.slice(0, 4));
+      }
+      // De werkmap bepaalt de modelopstelling. Een uitsluiting voor de formele uitkomst vraagt een apart besluit.
+      if (nieuw) {
+        const uitsluitingen = bron.nieuw.ondernemingen.filter((o) => o.meenemen === false).map((o) => tekst(o.id, 50));
+        if (uitsluitingen.length) d.abnGroep = { ...d.abnGroep, uitgeslotenOndernemingen: uitsluitingen };
       }
     }
     if (!p.wijzigingen.length) continue;

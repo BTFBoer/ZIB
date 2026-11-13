@@ -58,6 +58,10 @@ test('De groepsvergelijking begrenst ontvangen minderheidsdividend en toont de h
   assert.equal(bron.horizontaal, 93666.67);
   assert.ok(!r.inkomen.geldstromen.some((s) => s.naar === houder.id && s.perJaar[2025].ontvangen === 25000));
 
+  d.ondernemingen.at(-1).meenemen = true;
+  d.abnGroep.uitgeslotenOndernemingen = ['Minderheid'];
+  assert.equal(bereken(d).inkomen.abnBronVergelijking.horizontaal, 93666.67);
+
   d.ondernemingen.push(bv('Meerderheid', { parentId: houder.id, aandeelPct: 100, jaren: perJaar(() => boekjaar(20000, { internDividend: 40000 })) }));
   r = bereken(d);
   assert.equal(r.inkomen.abnBronVergelijking.horizontaal, null);
