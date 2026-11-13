@@ -6,6 +6,7 @@ import { renewiRecords } from '../public/js/data/demo-renewi.js';
 import { demoRecords } from '../public/js/data/demo.js';
 import { balansTotalen, vwTotalen } from '../public/js/engine/financieel.js';
 import { bereken, vergelijkKaders } from '../public/js/engine/index.js';
+import { BASIS_KADERS } from '../public/js/engine/kaders.js';
 
 const dossier = () => structuredClone(renewiRecords()[0]);
 
@@ -48,8 +49,8 @@ test('Renewi: correcties na belastingen geven de nettowinst toe te rekenen aan d
   assert.equal(a.jaren[2025].winst.NWcor, -5100000);
 });
 
-test('Renewi: alle kaders niet akkoord (buitenland, verlies laatste jaar, solvabiliteit, liquiditeit)', () => {
-  const v = vergelijkKaders(dossier());
+test('Renewi: alle vijf basiskaders niet akkoord (buitenland, verlies laatste jaar, solvabiliteit, liquiditeit)', () => {
+  const v = vergelijkKaders(dossier(), BASIS_KADERS);
   assert.equal(v.length, 5);
   v.forEach((x) => {
     assert.ok(!x.fout, `${x.kort}: ${x.fout}`);

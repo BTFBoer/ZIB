@@ -1,6 +1,7 @@
 import { esc, fmt, naamAanvrager, todayISO } from '../util.js';
 import { lijst, get, state, opslagvoorkeur, mijnNaam } from '../state.js';
-import { kaderLabel, SOORTEN, KADERS, KADER_VOLGORDE, PARAM_LABELS, leesPad } from '../engine/kaders.js';
+import { kaderLabel, SOORTEN, KADERS, BASIS_KADERS, KADER_VOLGORDE, PARAM_LABELS, leesPad } from '../engine/kaders.js';
+import { BELEIDSPROFIELEN, METHODE_LABEL } from '../engine/beleid.js';
 import { CATEGORIEEN } from '../schema/documenten.js';
 import { RUBRIEKEN, postVoorRekening } from '../schema/rekeningschema.js';
 import { BALANS_RIJEN, VW_RIJEN } from '../schema/fields.js';
@@ -89,7 +90,7 @@ export function emailFormulier({ aan = '', bcc = '', onderwerp = '', bericht = '
 // ---------------------------------------------------------------------------
 const FAQ = [
   ['Welke toetskaders zitten in ZIB?',
-    'Vijf: NHG (Toetskaders Inkomensverklaring Ondernemer 2026-1), ABN AMRO (Woonbeleid, rekentool BZI), ASN Bank (voorheen de Volksbank, Risk Policy voor geaccrediteerde partijen v1.5), Knab (acceptatiegids 2026 en concept toetskader 2024.013) en Optimaal, een eigen referentiekader. Je kiest per dossier het kader dat de uitkomst bepaalt; op het tabblad Berekening en in het rapport zie je hetzelfde dossier volgens alle vijf naast elkaar. Onder Toetskaders staat per kader de bron, de regels en wat een interpretatie is.'],
+    'Je kiest het toetskader per dossier bij Klantgegevens. Onder Toetskaders zie je per geldverstrekker de bron en of ZIB een indicatie berekent, NHG gebruikt of om een verklaring vraagt. Onder Berekening kun je de routes vergelijken.'],
   ['Wat is het Optimaal toetskader en waarom zo?',
     'Een poging om het inkomen zo eerlijk en realistisch mogelijk te bepalen: wat de ondernemer werkelijk verdient en duurzaam kan onttrekken, zonder de toevalligheden van één kader. Een DGA met zeggenschap telt loon plus zijn aandeel in de winst na Vpb (dividend komt uit dezelfde winst en telt niet nog eens), maar alleen voor zover die winst na een dubbele balanstoets en uit vrije reserves uitkeerbaar is. Recente jaren wegen zwaarder (1-2-3, maximaal 10% boven het gemiddelde en maximaal het laatste jaar). Een lager lopend jaar weegt mee naar rato van de lengte van de periode, sterke schommelingen kosten een afslag, en dividend uit een minderheidsbelang telt alleen met een trackrecord en tot de winst van de deelneming. Starters met relevante ervaring krijgen geen afslag. De parameters zijn per dossier instelbaar.'],
   ['Wat is de holdingroute (ABN AMRO 3.63)?',
@@ -157,7 +158,7 @@ function kenmerken(k) {
 }
 
 export function renderToetskaders() {
-  const ids = KADER_VOLGORDE;
+  const ids = BASIS_KADERS;
   const publiekeBronnen = {
     NHG: ['https://www.nhg.nl/het-krijgen-van-nhg/een-hypotheek-voor-ondernemers', 'Toetskader en documentenlijst bij NHG'],
     ABN: ['https://www.abnamro.nl/nl/prive/hypotheken/hypotheek-berekenen/inkomen.html', 'Publieke toelichting van ABN AMRO'],
@@ -178,21 +179,25 @@ export function renderToetskaders() {
       ${k.instelbaar?.length ? `<p class="dempen klein">Instelbaar per dossier: ${esc(k.instelbaar.map((p) => `${(PARAM_LABELS[p] || [p])[0]} (standaard ${PARAM_LABELS[p]?.[1] === 'pct' ? pctK(leesPad(k, p)) : String(leesPad(k, p)).replace('.', ',')})`).join('; '))}.</p>` : ''}
     </div></details>`;
   }).join('');
-  return `${paginakop('Toetskaders', 'Vijf kaders in één rekenkern: wat ze vragen, waar ze verschillen en waar ZIB interpreteert.')}
-    ${melding('info', 'Kies het kader per dossier bij Klantgegevens. Op het tabblad Berekening en in het rapport staat hetzelfde dossier volgens alle vijf kaders naast elkaar. De kaders van ABN AMRO, ASN Bank en Knab zijn in eigen woorden vertaald uit (interne) beleidsdocumenten: eigen interpretatie, geen officiële publicatie van de bank. Controleer bij twijfel de actuele versie bij de geldverstrekker.')}
-    <div class="paneel"><h2>Naast elkaar</h2><div class="scroll"><table class="tabel compact"><thead><tr><th></th>${ids.map((id) => `<th><a href="#/toetskaders" data-actie="naar-kader" data-kader="${id}">${esc(KADERS[id].kort)}</a></th>`).join('')}</tr></thead><tbody>${rijen}</tbody></table></div></div>
-    ${kaarten}
-    <details class="stappen paneel kader-kaart"><summary>Andere geldverstrekkers <span class="dempen klein">Handmatig toetsen</span></summary>
-      <div class="inhoud">
-        <p>Deze bronnen hebben geen eigen berekening in ZIB. Controleer per aanvraag welke versie geldt, of NHG van toepassing is en of de geldverstrekker een eigen rekenexpert of beoordelingsroute vereist.</p>
-        <ul>
-          <li><a href="https://www.attens.nl/voor-adviseurs/documenten-en-formulieren" target="_blank" rel="noopener noreferrer">Attens · acceptatiegids voor adviseurs</a></li>
-          <li><a href="https://www.rabobank.nl/bedrijven/intermediairs/hypotheek/aan-de-slag/rabobank-intermediair-gids" target="_blank" rel="noopener noreferrer">Rabobank · actueel acceptatiebeleid en documentenlijst</a></li>
-          <li>NIBC · <a href="https://nibc.nl/media/zzqnjuq1/hypotheekgids-2026.pdf" target="_blank" rel="noopener noreferrer">Hypotheekgids §5.2</a> en <a href="https://nibc.nl/media/pidhezud/werkinstructie_toetsinkomen_ondernemers-202601.pdf" target="_blank" rel="noopener noreferrer">werkinstructie toetsinkomen ondernemers</a>. NHG is de basis; zonder NHG zijn onder voorwaarden specifieke afwijkingen mogelijk.</li>
-          <li>ING en Syntrus Achmea · raadpleeg de geldende acceptatiegids en controleer de route voor ondernemersinkomen.</li>
-        </ul>
-      </div>
-    </details>`;
+  const profielen = BELEIDSPROFIELEN.map((p) => `<details class="stappen paneel kader-kaart" id="kader-${esc(p.id)}" data-beleid-kaart>
+    <summary>${esc(p.kort)} <span class="dempen klein">${esc(METHODE_LABEL[p.methode])}</span></summary>
+    <div class="inhoud"><p><b>${esc(p.versie)}</b> · ${esc(p.bron)}</p>
+      ${p.bronStatus ? `<p class="dempen">${esc(p.bronStatus)}</p>` : ''}
+      ${p.bronUrl && /^https:\/\//i.test(p.bronUrl) ? `<p><a href="${esc(p.bronUrl)}" target="_blank" rel="noopener noreferrer">Beleidsbron openen</a></p>` : ''}
+      ${(p.bronnen || []).filter((b) => /^https:\/\//i.test(b.url)).map((b) => `<p><a href="${esc(b.url)}" target="_blank" rel="noopener noreferrer">${esc(b.label)}</a></p>`).join('')}
+      <ul>${p.regels.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+    </div></details>`).join('');
+  return `${paginakop('Toetskaders', 'Kies per dossier een kader en zie hoe het inkomen wordt bepaald.')}
+    ${melding('info', 'Een rekenindicatie, NHG-rekenbasis en geregistreerde inkomensverklaring worden apart getoond. Kies de geldverstrekker bij Klantgegevens voor de juiste invoer en documentencheck.')}
+    <section class="blok" aria-label="Geldverstrekkers">
+      <h2>Geldverstrekkers</h2><label class="veld" style="max-width:380px;margin:10px 0"><span>Zoek een geldverstrekker</span><input type="search" data-beleid-zoek placeholder="Bijv. Venn, Rabobank of ING"></label>
+      <p class="dempen" id="beleid-leeg" hidden>Geen geldverstrekker gevonden.</p>
+      <div class="beleid-catalogus">${profielen}</div>
+      <p class="dempen klein" style="margin-top:12px">De productmatrix van augustus 2024 is een historische vergelijking. Voor de routes hierboven gebruiken we de productgids of werkinstructie per geldverstrekker.</p>
+    </section>
+    <details class="stappen paneel kader-kaart"><summary>Basiskaders naast elkaar</summary><div class="inhoud">
+      <div class="scroll"><table class="tabel compact"><thead><tr><th></th>${ids.map((id) => `<th><a href="#/toetskaders" data-actie="naar-kader" data-kader="${id}">${esc(KADERS[id].kort)}</a></th>`).join('')}</tr></thead><tbody>${rijen}</tbody></table></div>
+    </div></details>${kaarten}`;
 }
 
 export function renderFAQ() {
@@ -343,7 +348,7 @@ export function renderMijnGegevens() {
         ${state.modus === 'lokaal' ? `<div class="acties" style="margin-top:12px"><button class="knop sec" data-actie="demo-laden">Demodossiers laden</button>
           <button class="knop gevaar" data-actie="lokaal-wissen">Alle lokale gegevens wissen</button></div>` : ''}
       </div>
-      <div class="paneel"><h2>Over ZIB</h2><p>Rekenkern met vijf toetskaders: NHG (01.2026), ABN AMRO Woonbeleid, ASN Bank (Risk Policy v1.5), Knab (acceptatiegids 2026 en concept 2024.013) en het eigen kader Optimaal. De kaders van de banken zijn eigen vertalingen van hun beleid, geen officiële publicaties. Het berekende inkomen is een hulpmiddel; de beoordeling en motivering blijven bij de acceptant.</p></div>
+      <div class="paneel"><h2>Over ZIB</h2><p>De <a href="#/toetskaders">toetskaders</a> tonen per geldverstrekker de rekenroute, bewijsstukken en beleidsbron. De beoordeling en motivering blijven bij de acceptant.</p></div>
     </div>`;
 }
 

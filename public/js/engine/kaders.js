@@ -1,3 +1,5 @@
+import { BELEIDSPROFIELEN } from './beleid.js';
+
 // Beleidskaders als configuratie. De rekenkern leest uitsluitend deze parameters (geen vergelijkingen
 // op de naam van een kader), zodat een kader een extra object is. Teksten zijn samenvattingen in eigen
 // woorden met een verwijzing naar het onderdeel van de bron; bronteksten worden niet overgenomen.
@@ -411,7 +413,22 @@ export const KADERS = {
   },
 };
 
-export const KADER_VOLGORDE = ['NHG', 'ABN', 'ASN', 'KNAB', 'OPT'];
+export const BASIS_KADERS = ['NHG', 'ABN', 'ASN', 'KNAB', 'OPT'];
+for (const profiel of BELEIDSPROFIELEN) {
+  KADERS[profiel.id] = {
+    id: profiel.id, naam: profiel.kort, kort: profiel.kort, versie: profiel.versie,
+    bron: profiel.bron, bronStatus: profiel.bronStatus, regels: profiel.regels,
+    bestemdVoor: profiel.kort, beleid: profiel,
+    familie: 'BELEID', totaal: 'BELEID', nhg: false,
+    // Rekengegevens en ratio's zijn beschikbaar voor de profielberekening; NHG-normen worden niet overgenomen.
+    correctieModel: 'NEUTRAAL', minMaandenKvK: 0, liquiditeitMin: 1, solvabiliteitMin: 0.25,
+    definitiefVerplichtVanaf: profiel.definitiefVanaf || { m: 1, d: 1 },
+    geldigheidMaanden: profiel.ikvGeldigheid ?? 6,
+    box3ZonderBewijs: 0, toetsen: {}, positieveCorrecties: true,
+    inkomensberekening: profiel.regels,
+  };
+}
+export const KADER_VOLGORDE = [...BASIS_KADERS, ...BELEIDSPROFIELEN.map((p) => p.id)];
 
 /** Labels van de instelbare parameters (pad → [label, eenheid]). */
 export const PARAM_LABELS = {
@@ -446,7 +463,7 @@ export function kaderLabel(id) {
 
 /** Keuzelijst voor een kader: { id: naam }. */
 export function kaderOpties() {
-  return Object.fromEntries(KADER_VOLGORDE.map((id) => [id, `${KADERS[id].kort}: ${KADERS[id].naam.replace(/^.*?: /, '')}`]));
+  return Object.fromEntries(KADER_VOLGORDE.map((id) => [id, KADERS[id].beleid ? KADERS[id].kort : `${KADERS[id].kort}: ${KADERS[id].naam.replace(/^.*?: /, '')}`]));
 }
 
 function zetPad(obj, pad, waarde) {
@@ -473,6 +490,7 @@ export function kaderVoor(idOfDossier, instellingen) {
   const basis = KADERS[id] || KADERS.NHG;
   const inst = instellingen ?? (typeof idOfDossier === 'object' ? idOfDossier?.instellingen : null) ?? {};
   const over = inst.kaderParams?.[basis.id];
+  if (basis.beleid) return { ...basis, nhg: idOfDossier?.beleidsinvoer?.[basis.id]?.nhg === true };
   if (!over || !basis.instelbaar?.length) return basis;
   const k = { ...basis };
   let gewijzigd = false;

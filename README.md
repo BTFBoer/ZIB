@@ -2,7 +2,7 @@
 
 ZIB is een webapplicatie voor acceptanten zakelijk inkomen. Je voert per klantdossier de jaarcijfers in, ZIB berekent het bestendig zakelijk inkomen, toetst de voorwaarden en maakt een herleidbare rapportage met alle rekenstappen. De opzet volgt de rekensoftware voor inkomensverklaringen (ViiZ): volledige balans en W&V, normalisaties, overwinst met dubbele balanstoets, rekenstappen met formules en een uitgebreid rapport. Voor ABN AMRO-dossiers vertaalt ZIB de uitkomst bovendien naar de invoer van de rekentool van de bank (BZI).
 
-Vijf toetskaders; per dossier kies je het kader dat de uitkomst bepaalt, en op het tabblad Berekening en in het rapport staat hetzelfde dossier volgens alle vijf naast elkaar:
+Vijf basiskaders en vijftien aanvullende geldverstrekkerprofielen. Je kiest per dossier het kader. Het tabblad Berekening laat het gekozen kader en de basiskaders zien, met de overige geldverstrekkers in een uitklapbare vergelijking:
 
 | Kader | Inkomensverklaring (IKV) |
 |---|---|
@@ -11,6 +11,8 @@ Vijf toetskaders; per dossier kies je het kader dat de uitkomst bepaalt, en op h
 | **ASN Bank** (voorheen de Volksbank) – Risk Policy v1.5 | Gemiddelde 3 jaar (verlies telt mee); DGA: loon + winst na Vpb + dividend bij > 50% met dubbele balanstoets (CR ≥ 1, solvabiliteit ≥ 20%), max. loon + winst laatste jaar; starters 75%/90% over werkelijke maanden; max. drie entiteiten |
 | **Knab** – acceptatiegids 2026 en concept toetskader 2024.013 | 1-3-4-methode zonder NHG (acceptatiegids; 1-2-3 uit het concept instelbaar), max. 10% boven 1-1-1 en 20% boven NHG; starters 1-1-1 met 80%/90%; beletperiode; dividend per jaar in het totaal; risicosectoren |
 | **Optimaal** – eigen referentiekader | Economisch inkomen (loon + aandeel in de winst na Vpb met zeggenschap, look-through met groepseliminatie, minderheidsdividend met trackrecord), 1-2-3-weging, lopend jaar naar rato, uitkeerbaarheid, afslag voor beweeglijkheid; parameters instelbaar |
+
+**Aanvullende profielen:** Venn, ING, Rabobank, NIBC, Attens, Syntrus Achmea, Lloyds Bank, MUNT Hypotheken, Merius, Nationale-Nederlanden, a.s.r., bijBouwe Basis, Dynamic Verhuurhypotheek, bunq Easy Mortgage en Tulp Hypotheken. Afhankelijk van de route berekent ZIB een indicatie, gebruikt het de NHG-basis of registreert het een verplichte inkomensverklaring of bankbeoordeling. Zie [docs/GELDVERSTREKKERS.md](docs/GELDVERSTREKKERS.md) voor de bronnen en de grenzen van de berekeningen.
 
 De 0-verklaring (nul-inkomen) beoordeelt verplichtingen, zekerheden, kasstroom en verlies → € 0 met eventuele maandlastcorrectie. De kaders van ABN AMRO, ASN Bank en Knab zijn in eigen woorden vertaald uit (interne) beleidsdocumenten: eigen interpretatie, geen officiële publicatie. Zie [docs/REKENREGELS.md](docs/REKENREGELS.md) en de pagina Toetskaders in de app.
 

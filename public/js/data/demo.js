@@ -429,12 +429,28 @@ function deWit() {
   };
 }
 
+function beleidVoorbeelden() {
+  const sjabloon = jansen();
+  return [
+    ['VENN', 'Venn', '0110', { bronVersie: '2026-07', sector: 'toegestaan', faillissement: 'nee', verhuurInOnderneming: 'nee' }],
+    ['ING', 'ING', '0111', {}],
+    ['RABO', 'Rabobank', '0112', { raboRoute: 'ikv', raboKanaal: 'intermediair' }],
+    ['NIBC', 'NIBC', '0113', { nibcMethode: 'gewogen' }],
+  ].map(([kader, label, nummer, invoer]) => ({
+    ...structuredClone(sjabloon), id: `dos_demo_beleid_${kader.toLowerCase()}`, nummer: `ZIB-2026-${nummer}`, kader, label,
+    aanvrager: { voorletters: 'T.', achternaam: `Voorbeeld ${label}` },
+    leningnummer: `DEMO-${nummer}`, uitersteDatum: '', beleidsinvoer: { [kader]: invoer },
+    ...(kader === 'RABO' ? { berekeningsdatum: '2026-11-13' } : {}),
+    notities: { algemeen: 'Fictieve oefencasus. Vergelijk de beleidsroute, cijferuitkomst en gevraagde onderbouwing.' },
+  }));
+}
+
 export function demoRecords() {
   return [
     { id: 'adv_demo_westland', type: 'advieskantoor', naam: 'Hypotheekhuis Voorbeeld', afm: '12000001', contactpersoon: 'J. van Leeuwen', email: 'info@hypotheekhuis.example', telefoon: '0100 000000', plaats: 'Naaldwijk', aangemaakt: nu },
     { id: 'adv_demo_vandijk', type: 'advieskantoor', naam: 'Van Dijk Financieel Advies (demo)', afm: '12000002', contactpersoon: 'E. van Dijk', email: 'advies@vandijk.example', telefoon: '0100 000001', plaats: 'Leiden', aangemaakt: nu },
     { id: 'adv_demo_rijnmond', type: 'advieskantoor', naam: 'Rijnmond Hypotheken (demo)', afm: '12000003', contactpersoon: 'K. Bos', email: 'kantoor@rijnmond.example', telefoon: '0100 000002', plaats: 'Rotterdam', aangemaakt: nu },
-    vanDalen(), jansen(), deVries(), bakker(), elAmrani(), visser(), mulder(), deWit(), ...renewiRecords(),
+    vanDalen(), jansen(), deVries(), bakker(), elAmrani(), visser(), mulder(), deWit(), ...renewiRecords(), ...beleidVoorbeelden(),
     { id: 'taak_demo_1', type: 'taak', titel: 'Btw-aangifte Q2 2026 opvragen', dossierId: 'dos_demo_elamrani', toegewezenAan: 'A. de Groot', deadline: '2026-10-07', status: 'open', door: 'A. de Groot', aangemaakt: nu },
     { id: 'taak_demo_2', type: 'taak', titel: '2e beoordeling uitvoeren', dossierId: 'dos_demo_devries', toegewezenAan: 'R. Smit', deadline: '2026-10-03', status: 'open', door: 'A. de Groot', aangemaakt: nu },
     { id: 'taak_demo_3', type: 'taak', titel: 'Google check en KvK-adrescheck vastleggen', dossierId: 'dos_demo_bakker', toegewezenAan: 'A. de Groot', deadline: '2026-10-05', status: 'open', door: 'A. de Groot', aangemaakt: nu },

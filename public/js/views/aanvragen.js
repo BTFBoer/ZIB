@@ -4,7 +4,7 @@
 import { esc, fmt, naamAanvrager, todayISO } from '../util.js';
 import { lijst, get, state } from '../state.js';
 import { bereken } from '../engine/index.js';
-import { soortOndernemer, KADERS } from '../engine/kaders.js';
+import { soortOndernemer, KADERS, KADER_VOLGORDE } from '../engine/kaders.js';
 import { AFGEROND, DOSSIER_STATUSSEN } from '../schema/fields.js';
 import { docAanwezig } from '../schema/documenten.js';
 import { deadlineKlasse, deadlineTekst, kolomFilterPast } from '../lijsten.js';
@@ -22,7 +22,7 @@ export function samenvatting(d) {
   let r;
   try {
     const res = bereken(d);
-    r = { status: res.status, vastgesteld: res.vastgesteld, soort: res.soort, bron: res.bron, berekend: res.berekend,
+    r = { status: res.status, vastgesteld: res.vastgesteld, soort: res.soort, bron: res.bron, berekend: res.berekend, beleid: res.beleid,
       vereist: (res.documenten || []).filter((x) => x.verplicht).map((x) => ({ categorie: x.categorie, aantal: x.aantal })) };
   } catch (e) {
     r = { status: 'attentie', vastgesteld: 0, fout: e.message };
@@ -34,7 +34,7 @@ export function samenvatting(d) {
 export function soortAanvraagTekst(d) {
   const k = KADERS[d.kader];
   const label = d.label || (k && d.kader !== 'NHG' ? k.kort : '');
-  const nhg = k?.nhg ? 'met NHG' : 'zonder NHG';
+  const nhg = (k?.beleid ? d.beleidsinvoer?.[k.id]?.nhg : k?.nhg) ? 'met NHG' : 'zonder NHG';
   return `${d.soort === 'NUL' ? '0-verklaring' : 'IKV'} ${label} ${nhg}`.replace(/\s+/g, ' ').trim();
 }
 
@@ -224,7 +224,12 @@ function cel(d, k) {
     case 'advies': return esc(get(d.advieskantoorId)?.naam || '');
     case 'via': return esc(d.via || '');
     case 'opdrachtnemer': return esc(d.label || '');
-    case 'inkomen': return d.soort === 'NUL' ? '€ 0' : esc(fmt.eur(s().vastgesteld));
+    case 'inkomen': {
+      if (d.soort === 'NUL') return '€ 0';
+      const r = s();
+      if (r.beleid) return r.beleid.bedrag === null ? 'Open' : `${esc(fmt.eur(r.beleid.bedrag))} <span class="dempen klein">${r.beleid.bewijs ? 'bewijsstuk' : 'indicatief'}</span>`;
+      return esc(fmt.eur(r.vastgesteld));
+    }
     case 'uitkomst': return pil(s().status);
     default: return '';
   }
@@ -373,6 +378,7 @@ export const SOORT_KEUZES = [
   ['IKV|ASN', 'Inkomensverklaring zonder NHG (ASN Bank, voorheen de Volksbank)'],
   ['IKV|KNAB', 'Inkomensverklaring zonder NHG (Knab)'],
   ['IKV|OPT', 'Inkomensverklaring volgens het Optimaal toetskader (referentie)'],
+  ...KADER_VOLGORDE.filter((id) => KADERS[id].beleid).map((id) => [`IKV|${id}`, KADERS[id].kort]),
   ['NUL|ABN', '0-verklaring / beoordelingsverklaring zonder NHG'],
   ['NUL|NHG', '0-verklaring / beoordelingsverklaring met NHG'],
 ];
@@ -383,9 +389,9 @@ export function modaalNieuweKlant() {
     <label class="veld"><span>Voorletter(s) klant *</span><input name="voorletters" autocomplete="off"></label>
     <label class="veld"><span>Tussenvoegsel</span><input name="tussenvoegsel" autocomplete="off"></label>
     <label class="veld"><span>Achternaam klant *</span><input name="achternaam" autocomplete="off"></label>
-    <fieldset class="keuzes"><legend>Soort aanvraag *</legend>
-      ${SOORT_KEUZES.map(([k, l], i) => `<label class="check"><input type="radio" name="soortkader" value="${k}"${i === 1 ? ' checked' : ''}><span>${esc(l)}</span></label>`).join('')}
-    </fieldset>
+    <label class="veld"><span>Soort aanvraag en toetskader *</span><select name="soortkader">
+      ${SOORT_KEUZES.map(([k, l], i) => `<option value="${esc(k)}"${i === 1 ? ' selected' : ''}>${esc(l)}</option>`).join('')}
+    </select></label>
     <div class="raster-2" style="grid-template-columns:1fr 1fr;gap:12px">
       <label class="veld"><span>Geldverstrekker (label)</span><select name="label">${['ABN AMRO', 'Florius', 'Moneyou', 'ASN Bank', 'Knab', 'Overig'].map((x) => `<option>${x}</option>`).join('')}</select></label>
       <label class="veld"><span>Hypotheekaanvraagnummer</span><input name="leningnummer" autocomplete="off"></label>

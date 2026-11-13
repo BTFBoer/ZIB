@@ -46,8 +46,11 @@ function aggBV(id, naam, extra = {}, jaarExtra = {}, bzi = {}) {
   return { id, naam, rechtsvorm: 'BV', startdatum: '2012-01-01', aandeelPct: 100, jaren, ...extra };
 }
 
-test('Kaders: vijf kaders, elk met familie, totaal en bron', () => {
-  assert.deepEqual(KADER_VOLGORDE, ['NHG', 'ABN', 'ASN', 'KNAB', 'OPT']);
+test('Kaders: basiskaders en alle aanvullende geldverstrekkers', () => {
+  assert.deepEqual(KADER_VOLGORDE, [
+    'NHG', 'ABN', 'ASN', 'KNAB', 'OPT', 'VENN', 'ING', 'RABO', 'NIBC',
+    'ATTENS', 'SYNTRUS', 'LLOYDS', 'MUNT', 'MERIUS', 'NN', 'ASR', 'BIJBOUWE', 'DYNAMIC', 'BUNQ', 'TULP',
+  ]);
   KADER_VOLGORDE.forEach((id) => {
     const k = KADERS[id];
     assert.ok(k.familie && k.totaal && k.correctieModel && k.bron && k.regels?.length, id);
@@ -208,9 +211,9 @@ test('Optimaal: holding met minderheidsbelang telt alleen ontvangen dividend met
   assert.equal(r.toetsinkomen, 100000);
 });
 
-test('Vergelijking: één dossier, vijf uitkomsten', () => {
+test('Vergelijking: één dossier, alle beschikbare toetskaders', () => {
   const v = vergelijkKaders(ezDossier({ kader: 'NHG', sfw: [30000, 40000, 60000] }));
-  assert.equal(v.length, 5);
+  assert.equal(v.length, KADER_VOLGORDE.length);
   const per = Object.fromEntries(v.map((x) => [x.id, x.toetsinkomen]));
   assert.equal(per.NHG, 43333);
   assert.equal(per.KNAB, 47667);

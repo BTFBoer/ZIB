@@ -72,6 +72,17 @@
 .kader-kaart { scroll-margin-top: 76px; margin-top: 12px; }
 .kader-kaart > summary { cursor: pointer; font-weight: 700; }
 .kader-kaart > summary .dempen { font-weight: 500; margin-left: 6px; }
+.beleid-catalogus { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(310px, 100%), 1fr)); align-items: start; gap: 10px; }
+.beleid-catalogus .kader-kaart { margin: 0; }
+.beleid-catalogus [hidden] { display: none !important; }
+.beleid-invoer { margin: 16px 0; }
+.beleid-invoer h3 { margin-top: 16px; }
+.beleid-hint { margin: 12px 0 0; }
+.beleid-resultaat { border: 1px solid var(--lijn); border-radius: var(--radius); padding: 16px; background: var(--mint-zacht); }
+.beleid-resultaat-kop { display: flex; align-items: center; justify-content: space-between; gap: 8px 20px; flex-wrap: wrap; margin-bottom: 10px; }
+.beleid-resultaat-kop strong { font-size: 24px; }
+.beleid-checks { list-style: none; padding: 0; margin: 10px 0; }
+.beleid-checks li { display: flex; align-items: baseline; gap: 8px; margin: 5px 0; }
 @media (max-width: 650px) {
   .werkstart { min-height: unset; }
   .werkstart-illustratie { opacity: .32; width: 65%; }

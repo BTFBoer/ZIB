@@ -79,7 +79,7 @@ export function balansCorrecties(b = {}, div = {}, { kader, soort, beroepsgroep,
     add(['vaPos', 'evPos', 'tvPos'], 'box3', 'Box 3 vermogen (ingezet bij deze onderneming)', num(div.box3Ingezet));
     add(['vaPos', 'evPos', 'tvPos'], 'surplusOntvangen', 'Surplus werkkapitaal ontvangen van groep', num(div.surplusOntvangen));
     add(['evPos'], 'overigPos', 'Overige positieve correctie eigen vermogen', num(div.balansOverigPositief));
-  } else {
+  } else if (kader.correctieModel !== 'NEUTRAAL') {
     const factor = kader.goodwillFactor(beroepsgroep);
     const goodwill = (v('ivaGoodwillEV') + v('ivaGoodwillNietEV')) * factor;
     const label = factor === 1 ? 'Immateriële vaste activa'
@@ -90,10 +90,12 @@ export function balansCorrecties(b = {}, div = {}, { kader, soort, beroepsgroep,
       add(['evNeg', 'tvNeg'], 'leningDGA', 'Lening directie (activazijde)', v('fvaDGA'));
     }
   }
-  add(['vaNeg'], 'gRekening', 'Liquide middelen niet ter vrije beschikking (G-rekening)', v('liquideNietVrij'));
-  add(['vaNeg', 'evNeg', 'tvNeg'], 'dubieus', 'Dubieuze debiteuren zonder voorziening', num(div.dubieuzeDebiteuren));
-  add(['vaNeg', 'evNeg', 'tvNeg'], 'surplusIngezet', 'Surplus werkkapitaal ingezet bij groep', num(div.surplusIngezet));
-  add(['evNeg', 'tvNeg'], 'overigNeg', 'Overige negatieve correctie', num(div.balansOverigNegatief));
+  if (kader.correctieModel !== 'NEUTRAAL') {
+    add(['vaNeg'], 'gRekening', 'Liquide middelen niet ter vrije beschikking (G-rekening)', v('liquideNietVrij'));
+    add(['vaNeg', 'evNeg', 'tvNeg'], 'dubieus', 'Dubieuze debiteuren zonder voorziening', num(div.dubieuzeDebiteuren));
+    add(['vaNeg', 'evNeg', 'tvNeg'], 'surplusIngezet', 'Surplus werkkapitaal ingezet bij groep', num(div.surplusIngezet));
+    add(['evNeg', 'tvNeg'], 'overigNeg', 'Overige negatieve correctie', num(div.balansOverigNegatief));
+  }
 
   // Handmatige vermogenscorrecties (types zoals in de rekentool van de bank)
   hand.forEach((x, i) => {
@@ -695,7 +697,14 @@ export function analyseerOnderneming(ond, ctx) {
     res.maxOnttrekkenNvt = `Geen zeggenschap (belang ${p(res.aandeel)}): onttrekken kan alleen via een dividendbesluit van de aandeelhouders.`;
   }
 
-  res.status = slechtste(checks.map((c) => c.status));
+  if (kader.beleid && ctx.soort !== 'NUL') {
+    // Alleen algemene invoerfouten blijven staan. Ratio- en winstnormen komen uit het profiel.
+    res.checks = checks.filter((c) => /^(balans|plausibel)/.test(c.key));
+    delete res.maxOnttrekken;
+    delete res.benodigdBox3;
+    delete res.benodigdBox3Detail;
+  }
+  res.status = res.checks.length ? slechtste(res.checks.map((c) => c.status)) : 'nvt';
   bouwTraceOnderneming(res, ctx, kolLabels);
   return res;
 }

@@ -290,7 +290,13 @@ function verwerkBinding(el, magRenderen) {
     // Handmatige keuzes die de uitkomst bepalen, komen in de historie (wie, wanneer, wat).
     if (magRenderen) {
       const bind = el.dataset.bind || '';
-      if (bind === 'kader') logHistorie(doel.obj, `Toetskader gewijzigd naar ${kaderLabel(waarde)}`);
+      if (bind === 'kader') {
+        logHistorie(doel.obj, `Toetskader gewijzigd naar ${kaderLabel(waarde)}`);
+        if (KADERS[waarde]?.beleid) {
+          doel.obj.label = KADERS[waarde].kort;
+          doel.obj.weergave = 'viiz';
+        }
+      }
       const afw = /^(?:ond:([^.]+)\.)?afwijkend\.(actief|bedrag|motivatie)$/.exec(bind);
       if (afw) {
         const ond = afw[1] ? ondVan(doel.obj, afw[1]) : null;
@@ -352,6 +358,13 @@ function verwerkKolomfilter(el) {
 
 document.addEventListener('input', (e) => {
   const el = e.target;
+  if (el.matches('[data-beleid-zoek]')) {
+    const zoek = el.value.toLocaleLowerCase('nl').trim();
+    const kaarten = [...document.querySelectorAll('[data-beleid-kaart]')];
+    for (const k of kaarten) k.hidden = !k.querySelector('summary').textContent.toLocaleLowerCase('nl').includes(zoek);
+    document.getElementById('beleid-leeg').hidden = kaarten.some((k) => !k.hidden);
+    return;
+  }
   if (verwerkKolomfilter(el)) return;
   if (el.matches('[data-filter]')) {
     filters[el.dataset.filter] = el.type === 'checkbox' ? el.checked : el.value;
@@ -572,6 +585,9 @@ function kopieDossier(bron, { status = 'documenten_uploaden', actie = '' } = {})
   const kopie = clone(bron);
   ['id', 'version', 'updated_at', 'updated_by', 'fiat', 'fiatteur', 'meekijken', 'teruggezet'].forEach((k) => delete kopie[k]);
   for (const o of kopie.ondernemingen || []) delete o.bziWerkelijk;
+  for (const i of Object.values(kopie.beleidsinvoer || {})) {
+    for (const key of ['ikvBedrag', 'ikvDatum', 'ikvOpsteller']) delete i[key];
+  }
   return nieuw('dossier', {
     ...kopie, nummer: volgendDossiernummer(), status, statusDatum: nowISO(), datumAanvraag: todayISO(),
     behandelaar: mijnNaam(), historie: [{ at: nowISO(), door: mijnNaam(), actie: actie || `Kopie gemaakt van dossier ${bron.nummer}` }],
@@ -728,12 +744,12 @@ const ACTIES = {
   'aanvraag-aanmaken'() {
     const m = document.getElementById('modaal');
     if (!modaalVeld('voorletters') || !modaalVeld('achternaam')) { toast('Vul de voorletters en de achternaam in.'); return; }
-    const keuzeEl = m.querySelector('input[name="soortkader"]:checked');
+    const keuzeEl = m.querySelector('select[name="soortkader"]');
     const [soort, kader] = (keuzeEl?.value || 'IKV|ABN').split('|');
     const d = nieuw('dossier', {
       nummer: volgendDossiernummer(), soort, kader, status: 'documenten_uploaden', statusDatum: nowISO(), datumAanvraag: todayISO(),
       niveau: 'Basis', behandelaar: mijnNaam(), advieskantoorId: modaalVeld('advieskantoor'), berekeningsdatum: todayISO(),
-      label: modaalVeld('label') || 'ABN AMRO', afdeling: 'IMV', leningnummer: modaalVeld('leningnummer'),
+      label: KADERS[kader]?.beleid?.kort || modaalVeld('label') || 'ABN AMRO', afdeling: 'IMV', leningnummer: modaalVeld('leningnummer'),
       uitersteDatum: modaalVeld('uiterste'), spoed: !!modaalVeld('spoed'),
       aanvrager: { voorletters: modaalVeld('voorletters'), tussenvoegsel: modaalVeld('tussenvoegsel'), achternaam: modaalVeld('achternaam') },
       instellingen: { controlejaar: true, initieelAantalOndernemingen: 1, box2Route: 'route1' },
@@ -1404,6 +1420,8 @@ const ACTIES = {
   // ---- Dossier: fiattering ------------------------------------------------
   'gereed-melden'() {
     const d = huidigDossier();
+    if (d.soort === 'IKV' && resultaat?.beleid && resultaat.status === 'niet_akkoord') { toast('Los de afgewezen voorwaarden op voordat je het dossier gereed meldt.'); return; }
+    if (d.soort === 'IKV' && resultaat?.beleid?.bedrag === null) { toast('Onderbouw eerst het inkomen volgens het gekozen toetskader.'); return; }
     const p = state.profiel || {};
     if (!magFiatteren(p.accreditatie || 'Basis', d.niveau || 'Basis', 1)) { toast('Je accreditatie is niet toereikend om dit dossier gereed te melden.'); return; }
     d.fiat = d.fiat || {};
@@ -1419,6 +1437,7 @@ const ACTIES = {
   },
   'fiat-akkoord'() {
     const d = huidigDossier();
+    if (d.soort === 'IKV' && resultaat?.beleid && (resultaat.beleid.bedrag === null || resultaat.status === 'niet_akkoord')) { toast('Het toetskader geeft nog geen onderbouwd inkomen voor fiattering.'); return; }
     const ant = d.fiat?.tweede?.antwoorden || {};
     const open = FIAT_VRAGEN.filter(([k]) => !ant[k]?.antwoord);
     if (open.length) { toast('Beantwoord eerst alle vragen.'); return; }

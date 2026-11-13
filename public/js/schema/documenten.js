@@ -2,6 +2,8 @@
 // aan een regel van de lijst, zodat het tabblad Documenten kan tonen wat nog ontbreekt.
 
 export const CATEGORIEEN = {
+  ikv: 'Inkomensverklaring ondernemer / beoordeling geldverstrekker',
+  beoordelingsverklaring: 'Beoordelingsverklaring onderneming',
   kvk: 'Uittreksel KvK',
   ib_aangifte: 'IB-aangifte',
   ib_aanslag: 'IB-aanslag',
@@ -24,6 +26,9 @@ export const CATEGORIEEN = {
   verklaring_boekhouder: 'Verklaring vaste boekhouder/accountant',
   samenwerking: 'VOF-/maatschapsovereenkomst',
   dividendbeleid: 'Dividendbeleid / aandeelhoudersbesluit',
+  aandeelhouderschap: 'Bewijs van aandeelhouderschap',
+  dividendbewijs: 'Bewijs van ontvangen bruto dividend',
+  bankafschrift: 'Bankafschrift met bijschrijvingen',
   leningovereenkomst: 'Overeenkomst lening directie',
   grootboek: 'Grootboek- of saldibalans',
   overig: 'Overig',
@@ -42,6 +47,17 @@ export function documentenlijst(d, ctx) {
   const lijst = [];
   const { T = [], C, heeftVPB, heeftSamenwerking, sbi45 } = ctx;
   const jaren3 = T.join(', ');
+  const profiel = ctx.kaderCfg?.beleid;
+  if (profiel) {
+    const invoer = d.beleidsinvoer?.[profiel.id] || {};
+    const items = ctx.beleid?.documenten ?? (typeof profiel.documenten === 'function' ? profiel.documenten({ ctx, dossier: d, invoer }) : profiel.documenten) ?? [];
+    const regels = items.map((x) => item(x.categorie, x.naam, x.wanneer, x));
+    if (d.soort === 'NUL' && typeof profiel.documenten !== 'function') return [item('ikv', 'Beoordelingsverklaring geldverstrekker', 'Controleer of voor dit product een 0-verklaring wordt geaccepteerd')];
+    if ((ctx.beleid?.methode ?? profiel.methode) === 'extern' && !regels.some((x) => x.categorie === 'ikv')) {
+      regels.unshift(item('ikv', 'Inkomensverklaring ondernemer of bankbeoordeling', 'Voor deze route; controleer de erkende opsteller en geldigheid'));
+    }
+    return regels;
+  }
 
   if (d.soort === 'NUL') {
     const actief = (d.ondernemingen || []).some((o) => o.actief !== false);

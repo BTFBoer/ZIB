@@ -114,6 +114,9 @@ function kernBlok(d, r, kader) {
   if (isNul) {
     label = '0-verklaring';
     zin = r.nul?.conclusie || '';
+  } else if (r.beleid) {
+    label = r.beleid.bewijs ? 'Uitkomst op basis van bewijsstuk' : 'Voorlopige rekenindicatie';
+    zin = 'Ter beoordeling volgens de route van de geldverstrekker.';
   } else if (r.bron === 'geen') {
     zin = 'Er kan geen zakelijk inkomen worden afgegeven.';
   } else if (r.bron === 'afwijkend') {
@@ -133,17 +136,17 @@ function kernBlok(d, r, kader) {
   return `<section class="kern" id="rap-kern" aria-label="Kern van het rapport">
     <div class="kern-uitkomst ${esc(r.status)}">
       <div class="kern-label">${esc(label)}</div>
-      <div class="bedrag-groot">${esc(isNul ? '€ 0' : r.bron === 'geen' ? 'Geen inkomen' : fmt.eur(r.vastgesteld))}</div>
-      <div class="kern-oordeel">${pil(r.status)} <span class="rapport-fiatstatus">${esc(status)}</span></div>
+      <div class="bedrag-groot">${esc(isNul ? '€ 0' : r.beleid ? r.beleid.bedrag === null ? 'Nog te bepalen' : fmt.eur(r.beleid.bedrag) : r.bron === 'geen' ? 'Geen inkomen' : fmt.eur(r.vastgesteld))}</div>
+      <div class="kern-oordeel">${pil(r.status, r.beleid && r.status === 'akkoord' ? 'Ter beoordeling' : undefined)} <span class="rapport-fiatstatus">${esc(status)}</span></div>
       ${zin ? `<p>${esc(zin)}</p>` : ''}
-      <p class="dempen klein">Geldig voor bindende offertes uitgebracht tot en met ${esc(fmt.datumLang(r.geldigTot))}.</p>
+      ${r.beleid ? '' : `<p class="dempen klein">Geldig voor bindende offertes uitgebracht tot en met ${esc(fmt.datumLang(r.geldigTot))}.</p>`}
     </div>
     <div class="kern-feiten">${kv([
       ['Aanvrager', `<b>${esc(naamAanvrager(a))}</b>${a.geboortedatum ? `, geboren ${esc(fmt.datumLang(a.geboortedatum))}` : ''}`],
       adres ? ['Adres', esc(adres)] : null,
       ['Dossier', esc([d.nummer, SOORTEN[d.soort] || d.soort].filter(Boolean).join(' · '))],
       ['Bestemd voor', esc(r.familie === 'ABN' ? (d.label || 'ABN AMRO') : kader.bestemdVoor)],
-      ['Toetskader', esc(`${kader.naam}, ${kader.versie}`)],
+      ['Toetskader', esc(`${kader.naam}, ${r.kaderVersie}`)],
       ['Toetsjaren', esc(`${r.T.join(', ')}${r.C ? `; controlejaar ${r.C}` : ''}`)],
       ['Behandelaar', esc(d.behandelaar || '')],
       ['Fiatteur', esc(f.tweede?.naam || d.fiatteur || '')],
@@ -285,6 +288,7 @@ function bouwRapport(d, r, modus) {
   // ---- 6. Conclusie en beoordeling ------------------------------------------------------------
   const zakelijk = isNul
     ? `<p><b>${esc(r.nul.conclusie)}</b></p>${r.nul.nhgOpmerking ? `<p class="dempen">${esc(r.nul.nhgOpmerking)}</p>` : ''}`
+    : r.beleid ? `<p>${r.beleid.bedrag === null ? 'Het toetsinkomen moet nog worden vastgesteld.' : `${r.beleid.bewijs ? 'Uitkomst op basis van bewijsstuk' : 'Voorlopige rekenindicatie'}: <b>${esc(fmt.eur(r.beleid.bedrag))}</b>.`} Leg de beoordeling volgens de route van de geldverstrekker vast.</p>`
     : r.bron === 'geen'
       ? '<p><b>Er kan géén zakelijk inkomen worden afgegeven.</b></p>'
       : `<p>Het ${r.status === 'akkoord' ? 'vastgestelde' : 'voorlopige'} zakelijk inkomen bedraagt <b>${esc(fmt.eur(r.vastgesteld, 2))}</b>${r.bron === 'afwijkend' ? ' (afwijkend inkomen, zie handmatige wijzigingen)' : ''}.</p>
@@ -298,9 +302,9 @@ function bouwRapport(d, r, modus) {
       ['Datum afgifte', esc(fmt.datum(r.datum))],
       ['Niveau', esc(d.niveau || 'Basis')],
       ['Eerste fiatteur', esc(f.eerste?.naam || d.behandelaar || '')],
-      ['Geldig tot', esc(fmt.datum(r.geldigTot))],
+      r.beleid ? null : ['Geldig tot', esc(fmt.datum(r.geldigTot))],
       ['KYC', n.kyc ? 'Ja' : 'Nee'],
-      [isNul ? '0-inkomen' : `Berekend inkomen${kader.nhg ? ' (NHG)' : ' (zonder NHG)'}`, esc(isNul ? '€ 0' : fmt.eur(r.berekend))],
+      r.beleid ? null : [isNul ? '0-inkomen' : `Berekend inkomen${kader.nhg ? ' (NHG)' : ' (zonder NHG)'}`, esc(isNul ? '€ 0' : fmt.eur(r.berekend))],
       !isNul && afw.actief ? ['Afwijkend inkomen', esc(fmt.eur(num(afw.bedrag)))] : null,
       r.rc?.maandlast ? ['Maandlast R/C directie', esc(fmt.eur(r.rc.maandlast))] : null,
     ])}
@@ -325,14 +329,14 @@ function bouwRapport(d, r, modus) {
     ['Advieskantoor', esc(adv?.naam || 'Niet vastgelegd')],
     ['Ondernemer', esc(naamAanvrager(a))],
     ['Soort aanvraag', esc(SOORTEN[d.soort] || d.soort)],
-    ['Gehanteerd toetskader', esc(`${kader.naam}, ${kader.versie}`)],
+    ['Gehanteerd toetskader', esc(`${kader.naam}, ${r.kaderVersie}`)],
     ['Status bron', esc(kader.bronStatus || '')],
     kader.aangepast ? ['Aangepaste parameters', esc(Object.entries(kader.aangepast).map(([k, v]) => `${(PARAM_LABELS[k] || [k])[0]}: ${PARAM_LABELS[k]?.[1] === 'pct' ? `${String(Math.round(v * 1000) / 10).replace('.', ',')}%` : String(v).replace('.', ',')}`).join('; '))] : null,
     ['Nationale Hypotheek Garantie', kader.nhg ? 'Ja' : 'Nee'],
     ['Aantal ondernemingen met direct of indirect belang', String(onds.length)],
     ['Ondernemingen', esc(onds.map((o) => o.naam).join(', '))],
     ['Datum vaststelling', esc(fmt.datumLang(r.datum))],
-    ['Geldig voor bindende offertes uitgebracht tot en met', esc(fmt.datumLang(r.geldigTot))],
+    r.beleid ? null : ['Geldig voor bindende offertes uitgebracht tot en met', esc(fmt.datumLang(r.geldigTot))],
   ])}
     ${uitgangspunten.length ? `<h3>Toetsjaren en controlejaar</h3>${kv(uitgangspunten.map((x) => [x.label, esc(x.uitkomst)]))}` : ''}
     ${bronRijen ? `<h3>Documentencheck</h3><p class="dempen klein">Geregistreerd geeft aan dat een stuk in het dossier staat. Controleer zelf inhoud en geldigheid.</p><div class="scroll"><table class="tabel"><thead><tr><th scope="col">Bronstuk</th><th scope="col">Periode of toepassing</th><th scope="col">Dossierstatus</th></tr></thead><tbody>${bronRijen}</tbody></table></div>` : ''}`);
@@ -462,7 +466,8 @@ export function dossierNotitiesTekst(d, r) {
     regels.push(d.afwijkend?.actief ? `Afwijkend inkomen ${fmt.eur(num(d.afwijkend.bedrag))}: ${d.afwijkend.motivatie || ''}` : 'Geen handmatige wijzigingen.');
     regels.push('');
     regels.push('Zakelijk inkomen');
-    regels.push(r.bron === 'geen' ? 'Er kan géén zakelijk inkomen worden afgegeven.' : `Het zakelijk inkomen bedraagt ${fmt.eur(r.vastgesteld, 2)}`);
+    regels.push(r.beleid ? r.beleid.bedrag === null ? 'Toetsinkomen nog te bepalen.' : `${r.beleid.bewijs ? 'Uitkomst op basis van bewijsstuk' : 'Voorlopige rekenindicatie'}: ${fmt.eur(r.beleid.bedrag)}; ter beoordeling.`
+      : r.bron === 'geen' ? 'Er kan géén zakelijk inkomen worden afgegeven.' : `Het zakelijk inkomen bedraagt ${fmt.eur(r.vastgesteld, 2)}`);
   }
   if (n.priveTekst) { regels.push('', 'Financiële informatie ondernemer in privé', n.priveTekst); }
   if (n.kredietbestemming) { regels.push('', 'Kredietbestemming en aflossing', n.kredietbestemming); }
