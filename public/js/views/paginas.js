@@ -1,6 +1,7 @@
 import { esc, fmt, naamAanvrager, todayISO } from '../util.js';
 import { lijst, get, state, opslagvoorkeur, mijnNaam } from '../state.js';
-import { kaderLabel, SOORTEN, KADERS, KADER_VOLGORDE, PARAM_LABELS, leesPad } from '../engine/kaders.js';
+import { kaderLabel, SOORTEN, KADERS, BASIS_KADERS, KADER_VOLGORDE, PARAM_LABELS, leesPad } from '../engine/kaders.js';
+import { BELEIDSPROFIELEN, METHODE_LABEL } from '../engine/beleid.js';
 import { CATEGORIEEN } from '../schema/documenten.js';
 import { RUBRIEKEN, postVoorRekening } from '../schema/rekeningschema.js';
 import { BALANS_RIJEN, VW_RIJEN } from '../schema/fields.js';
@@ -89,7 +90,7 @@ export function emailFormulier({ aan = '', bcc = '', onderwerp = '', bericht = '
 // ---------------------------------------------------------------------------
 const FAQ = [
   ['Welke toetskaders zitten in ZIB?',
-    'Vijf: NHG (Toetskaders Inkomensverklaring Ondernemer 2026-1), ABN AMRO (Woonbeleid, rekentool BZI), ASN Bank (voorheen de Volksbank, Risk Policy voor geaccrediteerde partijen v1.5), Knab (acceptatiegids 2026 en concept toetskader 2024.013) en Optimaal, een eigen referentiekader. Je kiest per dossier het kader dat de uitkomst bepaalt; op het tabblad Berekening en in het rapport zie je hetzelfde dossier volgens alle vijf naast elkaar. Onder Toetskaders staat per kader de bron, de regels en wat een interpretatie is.'],
+    'Je kiest en bewaart het toetskader per dossier bij Klantgegevens. Met NHG geldt het NHG-toetskader. Kies Inkomensanalyse als je de uitkomsten van alle geldverstrekkers naast elkaar wilt zien. Onder Toetskaders vind je de bron en de rekenroute per geldverstrekker.'],
   ['Wat is het Optimaal toetskader en waarom zo?',
     'Een poging om het inkomen zo eerlijk en realistisch mogelijk te bepalen: wat de ondernemer werkelijk verdient en duurzaam kan onttrekken, zonder de toevalligheden van één kader. Een DGA met zeggenschap telt loon plus zijn aandeel in de winst na Vpb (dividend komt uit dezelfde winst en telt niet nog eens), maar alleen voor zover die winst na een dubbele balanstoets en uit vrije reserves uitkeerbaar is. Recente jaren wegen zwaarder (1-2-3, maximaal 10% boven het gemiddelde en maximaal het laatste jaar). Een lager lopend jaar weegt mee naar rato van de lengte van de periode, sterke schommelingen kosten een afslag, en dividend uit een minderheidsbelang telt alleen met een trackrecord en tot de winst van de deelneming. Starters met relevante ervaring krijgen geen afslag. De parameters zijn per dossier instelbaar.'],
   ['Wat is de holdingroute (ABN AMRO 3.63)?',
@@ -157,22 +158,46 @@ function kenmerken(k) {
 }
 
 export function renderToetskaders() {
-  const ids = KADER_VOLGORDE;
+  const ids = BASIS_KADERS;
+  const publiekeBronnen = {
+    NHG: ['https://www.nhg.nl/het-krijgen-van-nhg/een-hypotheek-voor-ondernemers', 'Toetskader en documentenlijst bij NHG'],
+    ABN: ['https://www.abnamro.nl/nl/prive/hypotheken/hypotheek-berekenen/inkomen.html', 'Publieke toelichting van ABN AMRO'],
+    KNAB: ['https://www.knab.nl/particulier/hypotheken/knab-hypotheek/ondernemers', 'Ondernemersbeleid en acceptatiegids bij Knab'],
+  };
   const rijen = kenmerken(KADERS.NHG).map(([label], i) => `<tr><td><b>${esc(label)}</b></td>${ids.map((id) => `<td>${esc(kenmerken(KADERS[id])[i][1])}</td>`).join('')}</tr>`).join('');
   const kaarten = ids.map((id) => {
     const k = KADERS[id];
-    return `<div class="paneel" id="kader-${id}"><h2>${esc(k.kort)} <span class="dempen klein">${esc(k.versie)}</span></h2>
+    const bron = publiekeBronnen[id];
+    return `<details class="stappen paneel kader-kaart" id="kader-${id}">
+      <summary>${esc(k.kort)} <span class="dempen klein">${esc(k.versie)}</span></summary>
+      <div class="inhoud">
       <p class="klein"><b>${esc(k.naam)}</b>. ${esc(k.bestemdVoor)}.</p>
       <p class="dempen klein">Bron: ${esc(k.bron)}. ${esc(k.bronStatus || '')}</p>
+      ${bron ? `<p><a href="${bron[0]}" target="_blank" rel="noopener noreferrer">${bron[1]}</a></p>` : ''}
       <h3>Regels</h3><ul>${k.regels.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
       ${k.aannames?.length ? `<h3>Interpretaties en aannames</h3><ul>${k.aannames.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
       ${k.instelbaar?.length ? `<p class="dempen klein">Instelbaar per dossier: ${esc(k.instelbaar.map((p) => `${(PARAM_LABELS[p] || [p])[0]} (standaard ${PARAM_LABELS[p]?.[1] === 'pct' ? pctK(leesPad(k, p)) : String(leesPad(k, p)).replace('.', ',')})`).join('; '))}.</p>` : ''}
-    </div>`;
+    </div></details>`;
   }).join('');
-  return `${paginakop('Toetskaders', 'Vijf kaders in één rekenkern: wat ze vragen, waar ze verschillen en waar ZIB interpreteert.')}
-    ${melding('info', 'Kies het kader per dossier bij Klantgegevens. Op het tabblad Berekening en in het rapport staat hetzelfde dossier volgens alle vijf kaders naast elkaar. De kaders van ABN AMRO, ASN Bank en Knab zijn in eigen woorden vertaald uit (interne) beleidsdocumenten: eigen interpretatie, geen officiële publicatie van de bank. Controleer bij twijfel de actuele versie bij de geldverstrekker.')}
-    <div class="paneel"><h2>Naast elkaar</h2><div class="scroll"><table class="tabel compact"><thead><tr><th></th>${ids.map((id) => `<th><a href="#/toetskaders" data-actie="naar-kader" data-kader="${id}">${esc(KADERS[id].kort)}</a></th>`).join('')}</tr></thead><tbody>${rijen}</tbody></table></div></div>
-    ${kaarten}`;
+  const profielen = BELEIDSPROFIELEN.map((p) => `<details class="stappen paneel kader-kaart" id="kader-${esc(p.id)}" data-beleid-kaart>
+    <summary>${esc(p.kort)} <span class="dempen klein">${esc(METHODE_LABEL[p.methode])}</span></summary>
+    <div class="inhoud"><p><b>${esc(p.versie)}</b> · ${esc(p.bron)}</p>
+      ${p.bronStatus ? `<p class="dempen">${esc(p.bronStatus)}</p>` : ''}
+      ${p.bronUrl && /^https:\/\//i.test(p.bronUrl) ? `<p><a href="${esc(p.bronUrl)}" target="_blank" rel="noopener noreferrer">Beleidsbron openen</a></p>` : ''}
+      ${(p.bronnen || []).filter((b) => /^https:\/\//i.test(b.url)).map((b) => `<p><a href="${esc(b.url)}" target="_blank" rel="noopener noreferrer">${esc(b.label)}</a></p>`).join('')}
+      <ul>${p.regels.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+    </div></details>`).join('');
+  return `${paginakop('Toetskaders', 'Kies per dossier een kader en zie hoe het inkomen wordt bepaald.')}
+    ${melding('info', 'Een rekenindicatie, NHG-rekenbasis en geregistreerde inkomensverklaring worden apart getoond. Kies de geldverstrekker bij Klantgegevens voor de juiste invoer en documentencheck.')}
+    <section class="blok" aria-label="Geldverstrekkers">
+      <h2>Geldverstrekkers</h2><label class="veld" style="max-width:380px;margin:10px 0"><span>Zoek een geldverstrekker</span><input type="search" data-beleid-zoek placeholder="Bijv. Venn, Rabobank of ING"></label>
+      <p class="dempen" id="beleid-leeg" hidden>Geen geldverstrekker gevonden.</p>
+      <div class="beleid-catalogus">${profielen}</div>
+      <p class="dempen klein" style="margin-top:12px">De productmatrix van augustus 2024 is een historische vergelijking. Voor de routes hierboven gebruiken we de productgids of werkinstructie per geldverstrekker.</p>
+    </section>
+    <details class="stappen paneel kader-kaart"><summary>Basiskaders naast elkaar</summary><div class="inhoud">
+      <div class="scroll"><table class="tabel compact"><thead><tr><th></th>${ids.map((id) => `<th><a href="#/toetskaders" data-actie="naar-kader" data-kader="${id}">${esc(KADERS[id].kort)}</a></th>`).join('')}</tr></thead><tbody>${rijen}</tbody></table></div>
+    </div></details>${kaarten}`;
 }
 
 export function renderFAQ() {
@@ -194,7 +219,7 @@ export function renderHulp() {
       <div class="paneel"><h2>Snel op weg</h2>
         <p><b>Zoeken:</b> Ctrl+K (of de knop Zoeken) springt naar een dossier, een tabblad van het open dossier, een pagina of een actie. Zoek op naam, dossiernummer, aanvraagnummer, onderneming of KvK-nummer.</p>
         <p><b>Lijsten:</b> filter per kolom in de rij onder de kolomkoppen, of met de snelfilters (te laat, binnen twee dagen, spoed, open taken, mijn dossiers). Met Kolommen kies je welke kolommen je ziet. Een rode uiterste datum is verstreken, een oranje valt binnen twee dagen.</p>
-        <p><b>Nieuwe klant:</b> knop rechtsonder in de aanvragenlijst. Kies de soort aanvraag (met of zonder NHG, inkomensverklaring of 0-verklaring).</p>
+        <p><b>Nieuwe aanvraag:</b> knop bovenaan de aanvragenlijst. Kies de soort aanvraag (met of zonder NHG, inkomensverklaring of 0-verklaring).</p>
         <p><b>Voortgang:</b> de stip voor een tabblad laat zien of het compleet is (rond), aandacht vraagt (ruit), een fout bevat (vierkant) of nog leeg is (ring). Onder elk tabblad staan Vorige en Volgende om het dossier van links naar rechts te doorlopen.</p>
         <p><b>Invoer:</b> met Enter en de pijltjes omhoog en omlaag loop je door een kolom. Een kolom of blok uit een spreadsheet plak je in één keer: ZIB toont eerst wat waar terechtkomt.</p>
         <p><b>Volgorde van de jaren:</b> in de invoer staat het meest recente jaar links (van nieuw naar oud); overzichten zoals de berekening, de samenvatting en het rapport lopen van oud naar nieuw.</p>
@@ -202,7 +227,7 @@ export function renderHulp() {
         <p><b>BZI-weergave:</b> de stappen van de rekentool van de bank: Algemeen, Bedrijven, per bedrijf de cijfers per jaar met correcties, Boekhouders, Geldstromen en verplichtingen, Samenvatting. De notities staan rechts. Kies in Mijn gegevens of ABN AMRO-dossiers standaard in deze weergave openen.</p>
         <p><b>Overwinst:</b> per hoofdbedrijf in te stellen, met de dubbele balanstoets (Berekening of de stap van het hoofdbedrijf).</p>
         <p><b>Berekening:</b> de balk bovenaan springt naar een onderdeel of onderneming. Formules in de rekenstappen zet je aan of uit; panelen klap je in via de kop. Bij drie of meer ondernemingen starten de ondernemingen die akkoord zijn ingeklapt.</p>
-        <p><b>Rapport:</b> Kort toont de kern (uitkomst, aandachtspunten, toelichting op de berekening, kengetallen en conclusie); Uitgebreid voegt de vergelijking van toetskaders, geldstromen en als bijlagen de rekenstappen en cijfers toe. De inhoudsopgave loopt mee. Print of sla op als pdf; met "Kopieer dossiernotities" plak je de samenvatting in een ander systeem.</p>
+        <p><b>Rapport</b> Kort toont de uitkomst, de aandachtspunten, de berekening, de kengetallen en de conclusie. Uitgebreid voegt de geldstromen, rekenstappen en cijfers toe. Bij Inkomensanalyse toont het rapport de uitkomsten per toetskader. Je kunt het rapport afdrukken of opslaan als pdf. Met "Kopieer dossiernotities" plak je de samenvatting in een ander systeem.</p>
         <p><b>Beoordeling:</b> meld gereed voor de 2e beoordeling; een collega met de juiste accreditatie geeft akkoord via Meekijken.</p>
       </div>
     </div>`;
@@ -241,7 +266,10 @@ function paneelDrive() {
 }
 
 export function renderDownloads() {
+  const sites = state.me?.hosting === 'sites' && state.modus === 'cloud';
   return `${paginakop('Downloads', 'Back-ups, sjablonen en documentenlijsten.')}
+    ${sites ? `<section class="paneel"><h2>Dossiers uit deze browser</h2><p>Zet dossiers en bijlagen die al in deze browser stonden over naar je ingelogde werkruimte.</p><button type="button" class="knop sec" data-actie="browseroverdracht">Overdracht bekijken</button></section>` : ''}
+    ${sites || (globalThis.ZIB_LOCAL_PRIVATE === true && state.modus === 'lokaal') ? `<section class="paneel"><h2>Broncijfers van echte dossiers</h2><p>Lees het ZIB-broncijfersbestand in en controleer welke velden worden aangevuld.</p><label class="knop sec">Broncijfers kiezen<input type="file" accept="application/json,.json" data-broncijfers-bestand class="sr"></label></section>` : ''}
     ${paneelDrive()}
     <div class="raster-2"${globalThis.ZIB_ARTIFACT ? ' style="margin-top:16px"' : ''}>
       <div class="paneel"><h2>Back-up</h2>
@@ -301,15 +329,18 @@ export function renderTicket(id) {
 // ---------------------------------------------------------------------------
 export function renderMijnGegevens() {
   const p = state.profiel || {};
+  const cloud = state.modus === 'cloud';
   const thema = (() => { try { return localStorage.getItem('zib.thema') || 'systeem'; } catch { return 'systeem'; } })();
   return `${paginakop('Mijn gegevens')}
     <div class="raster-2">
       <div class="paneel"><h2>Profiel</h2><div class="raster-3">
         ${veld('Naam', 'naam', p.naam, { rec: '__profiel' })}
         ${veld('Initialen', 'initialen', p.initialen, { rec: '__profiel' })}
-        ${veld('E-mail', 'email', p.email, { rec: '__profiel', type: 'email' })}
-        ${keuze('Rol', 'rol', { acceptant: 'Acceptant zakelijk inkomen', fiatteur: 'Fiatteur', adviseur: 'Adviseur', beheer: 'Beheer' }, p.rol || 'acceptant', { rec: '__profiel' })}
-        ${keuze('Accreditatie', 'accreditatie', ACCREDITATIES, p.accreditatie || 'Medium', { rec: '__profiel', hint: 'Bepaalt welke dossierniveaus je mag fiatteren.' })}
+        ${cloud ? `<div class="veld"><span>E-mail</span><b>${esc(state.me?.email || '')}</b></div>
+          <div class="veld"><span>Accreditatie</span><b>${esc(state.me?.accreditatie || 'Geen toegekend')}</b><small>Toegekend door de beheerder van de omgeving.</small></div>` : `
+          ${veld('E-mail', 'email', p.email, { rec: '__profiel', type: 'email' })}
+          ${keuze('Rol', 'rol', { acceptant: 'Acceptant zakelijk inkomen', fiatteur: 'Fiatteur', adviseur: 'Adviseur', beheer: 'Beheer' }, p.rol || 'acceptant', { rec: '__profiel' })}
+          ${keuze('Accreditatie (lokale demo)', 'accreditatie', ACCREDITATIES, p.accreditatie || 'Medium', { rec: '__profiel', hint: 'Simuleert welke dossierniveaus je mag fiatteren in deze browser.' })}`}
       </div></div>
       <div class="paneel"><h2>Weergave</h2><div class="raster-3" style="grid-template-columns:1fr">
         <label class="veld"><span>Thema</span><select data-actie="thema"><option value="systeem"${thema === 'systeem' ? ' selected' : ''}>Volg systeem</option><option value="light"${thema === 'light' ? ' selected' : ''}>Licht</option><option value="dark"${thema === 'dark' ? ' selected' : ''}>Donker</option></select></label>
@@ -320,10 +351,10 @@ export function renderMijnGegevens() {
         <p>Huidige opslag: <b>${esc(state.adapter?.omschrijving || '')}</b>${state.modus === 'cloud' ? ` (ingelogd als ${esc(state.me?.email || '')})` : ''}.</p>
         ${state.modus === 'lokaal' ? melding('attentie', 'Lokale opslag is gebonden aan deze browser en dit apparaat. Wissen van browsergegevens betekent dat de dossiers weg zijn. Gebruik de cloudopslag of maak regelmatig een back-up.') : melding('akkoord', 'Gegevens worden centraal opgeslagen; elke wijziging bewaart ook de vorige versie.')}
         <label class="veld" style="margin-top:12px"><span>Voorkeur</span><select data-actie="opslagvoorkeur"><option value="auto"${opslagvoorkeur() === 'auto' ? ' selected' : ''}>Automatisch (cloud als beschikbaar)</option><option value="lokaal"${opslagvoorkeur() === 'lokaal' ? ' selected' : ''}>Altijd lokaal</option></select></label>
-        ${state.modus === 'lokaal' ? `<div class="acties" style="margin-top:12px"><button class="knop sec" data-actie="demo-laden">Demodossiers laden</button>
+        ${state.modus === 'lokaal' ? `<div class="acties" style="margin-top:12px">${globalThis.ZIB_LOCAL_PRIVATE ? '' : '<button class="knop sec" data-actie="demo-laden">Demodossiers laden</button>'}
           <button class="knop gevaar" data-actie="lokaal-wissen">Alle lokale gegevens wissen</button></div>` : ''}
       </div>
-      <div class="paneel"><h2>Over ZIB</h2><p>Rekenkern met vijf toetskaders: NHG (01.2026), ABN AMRO Woonbeleid, ASN Bank (Risk Policy v1.5), Knab (acceptatiegids 2026 en concept 2024.013) en het eigen kader Optimaal. De kaders van de banken zijn eigen vertalingen van hun beleid, geen officiële publicaties. Het berekende inkomen is een hulpmiddel; de beoordeling en motivering blijven bij de acceptant.</p></div>
+      <div class="paneel"><h2>Over ZIB</h2><p>De <a href="#/toetskaders">toetskaders</a> tonen per geldverstrekker de rekenroute, bewijsstukken en beleidsbron. De beoordeling en motivering blijven bij de acceptant.</p></div>
     </div>`;
 }
 
@@ -335,7 +366,7 @@ export function renderLogin() {
     <div class="raster-3" style="grid-template-columns:1fr">
       <label class="veld"><span>Naam</span><input id="login-naam" type="text" autocomplete="name" placeholder="Bijv. A. de Groot"></label>
       <label class="veld"><span>Initialen</span><input id="login-initialen" type="text" placeholder="AdG"></label>
-      <label class="veld"><span>Accreditatie</span><select id="login-accreditatie">${ACCREDITATIES.map((a) => `<option${a === 'Medium' ? ' selected' : ''}>${a}</option>`).join('')}</select></label>
+      <label class="veld"><span>Accreditatie (lokale demo)</span><select id="login-accreditatie">${ACCREDITATIES.map((a) => `<option${a === 'Medium' ? ' selected' : ''}>${a}</option>`).join('')}</select></label>
     </div>
     <div class="acties" style="margin-top:16px"><button class="knop" data-actie="login">Aanmelden</button></div>
     <p class="dempen klein" style="margin-top:14px">Lokale modus: aanmelden legt alleen je naam vast in deze browser. In de cloudversie log je in via Cloudflare Access.</p>

@@ -1,0 +1,212 @@
+.rekenwerkruimte {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.rekenwerkruimte[hidden] { display: none; }
+
+.reken-paneel {
+  min-width: 0;
+  border: 1px solid var(--lijn);
+  border-radius: var(--radius);
+  padding: clamp(14px, 2vw, 22px);
+  background: var(--vlak);
+  scroll-margin-top: 96px;
+}
+
+.reken-paneel-kop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 16px;
+}
+
+.reken-metriek dt {
+  color: var(--grijs);
+  font-weight: 650;
+  font-size: 13px;
+}
+
+.reken-metrieken {
+  display: flex;
+  flex: 1 1 295px;
+  flex-wrap: wrap;
+  align-content: center;
+  gap: 7px;
+  margin: 0;
+}
+
+.reken-metriek {
+  flex: 1 1 135px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--lijn);
+  border-radius: 8px;
+  background: var(--vlak);
+}
+
+.reken-metriek dd {
+  margin: 3px 0 0;
+  font-size: 18px;
+  font-weight: 740;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.reken-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+  color: var(--accenttekst);
+  font-size: 13px;
+  font-weight: 660;
+}
+
+.reken-link:hover { text-decoration: underline; }
+.reken-link .ico { width: 14px; height: 14px; flex-shrink: 0; }
+.reken-paneel-kop { margin-bottom: 8px; }
+.reken-paneel-kop h3 { margin: 0; font-size: 18px; }
+.reken-paneel-kop h3 .pil { margin-left: 4px; }
+.reken-neutraal, .reken-punt-uitleg { color: var(--grijs); font-size: 13px; }
+.reken-paneel p.reken-neutraal { margin: 7px 0 0; }
+
+.reken-invoerpunten {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.reken-invoerpunten > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+  border-bottom: 1px solid var(--lijn-zacht);
+  padding: 7px 0;
+}
+
+.reken-invoerpunten > li:last-child { border-bottom: 0; }
+.reken-punt-uitleg { display: block; }
+
+.reken-jaarlabel {
+  color: var(--grijs);
+  background: var(--achtergrond);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+  white-space: normal;
+}
+
+.rekenwerkruimte .reken-uitklap {
+  margin: 8px 0 0;
+  padding: 0;
+  border: 1px solid var(--lijn);
+  border-radius: 8px;
+  background: var(--vlak);
+}
+
+.reken-uitklap > summary {
+  padding: 9px 12px;
+  color: var(--accenttekst);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.reken-uitklap > summary:hover { background: var(--mint-zacht); }
+.reken-uitklap > summary span { margin-left: 4px; color: var(--grijs); font-weight: 500; font-size: 12px; }
+.reken-uitklap > .reken-invoerpunten, .reken-uitklap-inhoud { padding: 3px 11px 9px; }
+.reken-uitklap-inhoud { min-width: 0; }
+.reken-uitklap-inhoud > .reken-link { margin-top: 4px; }
+.reken-tabel { width: 100%; min-width: 430px; }
+.reken-tabel.reken-analysetabel { min-width: 740px; }
+.reken-tabel th[scope="row"] { text-align: left; background: transparent; color: var(--inkt); }
+.reken-tabel td, .reken-tabel th { vertical-align: top; }
+.reken-tabel td.num { font-variant-numeric: tabular-nums; }
+.reken-tabel small { display: block; margin-top: 3px; color: var(--grijs); font-weight: 450; }
+.reken-kernreden { color: var(--grijs); font-size: 13px; margin: 0 0 4px; }
+.reken-analyse-uitleg.stappen { margin: 0; min-width: 118px; border: 0; background: transparent; }
+.reken-analyse-uitleg.stappen > summary { display: inline-flex; gap: 6px; padding: 4px 0; color: var(--accenttekst); cursor: pointer; }
+.reken-analyse-uitleg ul { margin: 3px 0 4px; padding-left: 18px; }
+.reken-analyse-uitleg li + li { margin-top: 4px; }
+
+@media (max-width: 560px) {
+  .reken-paneel { scroll-margin-top: 85px; }
+  .reken-paneel-kop { row-gap: 4px; }
+  .reken-invoerpunten > li { display: block; }
+  .reken-invoerpunten .reken-link { min-height: 34px; }
+}
+
+@media print {
+  .reken-paneel { background: none; border-color: #ccc; box-shadow: none; }
+  .reken-tabel, .reken-tabel.reken-analysetabel { min-width: 0; }
+  .reken-tabel small { white-space: normal; }
+}
+.uitkomsten-tabel th:first-child { min-width: 160px; }
+.uitkomsten-tabel th a { display: inline-flex; align-items: center; gap: 4px; color: var(--accenttekst); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.uitkomsten .reken-paneel-kop p { margin: 3px 0 0; }
+.uitkomsten-tabel .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+#fiat-controles > .paginakop, #fiat-inkomenswijziging > h2 { margin-bottom: 12px; }
+#tabinhoud > .reken-paneel, #tabinhoud > .uitkomsten, .bzi-inhoud > .reken-paneel, .bzi-inhoud > .uitkomsten { margin-bottom: 14px; }
+.fiat-controles + .fiat-controles, .fiat-inkomensgroep + .fiat-inkomensgroep { margin-top: 8px; }
+.fiat-controlelijst { padding: 0; margin: 0; list-style: none; }
+.fiat-controle { padding: 8px 0; border-bottom: 1px solid var(--lijn-zacht); overflow-wrap: anywhere; }
+.fiat-inkomenswijziging + .fiat-inkomenswijziging { margin-top: 8px; }
+
+.reken-algemeen { border-top: 3px solid var(--teal); }
+.reken-algemeen h2, #rekenresultaten h2, .reken-bedrijfblok h2 { margin: 0; }
+.reken-keuzetabel { width: 100%; }
+.reken-keuzetabel th[scope="row"] { width: 43%; font-weight: 620; }
+.reken-keuzetabel select { min-width: min(200px, 100%); max-width: 100%; }
+.reken-keuzetabel small { display: block; margin-top: 4px; color: var(--grijs); }
+.reken-keuze-acties { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 14px; }
+#rekenresultaten-titel { scroll-margin-top: 106px; }
+#rekenresultaten-titel:focus-visible { outline: 2px solid var(--teal); outline-offset: 5px; }
+.reken-inkomenstabel { min-width: 720px; }
+.reken-inkomenstabel thead th, .reken-toetsingstabel thead th { white-space: normal; }
+.reken-inkomenstabel thead tr:first-child th, .reken-toetsingstabel thead th {
+  background: var(--groen-donker);
+  color: #fff;
+}
+.reken-inkomenstabel thead tr:first-child th small, .reken-toetsingstabel thead th small { color: #e2f0ee; }
+.reken-inkomenstabel th.reken-tabelkop { text-align: left; }
+.reken-inkomenstabel tbody th, .reken-inkomenstabel tbody td { background: var(--info-bg); }
+.reken-inkomenstabel tfoot th, .reken-inkomenstabel tfoot td { border-top: 2px solid var(--accenttekst); }
+.reken-inkomenstabel tfoot tr.totaal td.reken-uitkomstbedrag { background: var(--att-bg); color: var(--att); }
+.reken-toetsingstabel { min-width: 540px; }
+.reken-toetsingstabel tbody th[scope="row"] { background: var(--mint); }
+.reken-toetsingstabel tbody td { background: var(--achtergrond); }
+.reken-toetsingstabel .reken-toetsing-totaal > * { border-top: 2px solid var(--accenttekst); font-weight: 700; }
+.reken-toetsing-status { text-align: center; }
+.reken-bedrijfblok .scroll + .scroll { margin-top: 13px; }
+.reken-bedrijfblok summary { color: var(--accenttekst); }
+.reken-bedrijfblok > .reken-paneel-kop + .scroll { margin-top: 8px; }
+.reken-bronnentabel { margin-top: 8px; }
+
+.reken-analysetabel:has([data-analyse-open]) { min-width: 570px; }
+.reken-analyse-open.knop { margin-top: 5px; margin-left: -6px; }
+.reken-analyse-open .ico { width: 13px; height: 13px; }
+.reken-analyse-open[aria-expanded="true"] .ico { transform: rotate(180deg); }
+.reken-analysetabel .reken-analyse-uitklaprij > td {
+  padding: 10px;
+  background: var(--mint-zacht);
+}
+.reken-analyse-detail { border: 1px solid var(--lijn); border-radius: var(--radius); padding: 14px; background: var(--vlak); }
+.reken-analyse-detailkop { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin-bottom: 9px; }
+.reken-analyse-detailkop h4 { margin: 0; font-size: 16px; }
+.reken-analyse-detailkop p { margin-top: 3px; }
+.reken-analyse-detailtabel { min-width: 0; }
+.reken-analyse-detailtabel thead th { white-space: normal; }
+.reken-analyse-detailtabel td { overflow-wrap: anywhere; }
+.reken-analyse-detailtabel td.num { white-space: nowrap; }
+.reken-analyse-bron { margin: 8px 0; color: var(--grijs); font-size: 13px; }
+.reken-analyse-bron a { margin-left: 4px; }
+.reken-analyse-regels { margin: 7px 0 0; padding-left: 18px; }
+[data-verouderd] [data-analyse-status] { color: var(--att); }
+
+@media print {
+  .reken-analyse-open, .reken-analyse-herbereken { display: none; }
+}

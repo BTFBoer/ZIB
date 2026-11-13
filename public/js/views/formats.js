@@ -123,22 +123,4 @@ export const CONTROLES = [
   ['sfh', 'Fraudetoets (SFH) uitgevoerd?'],
 ];
 
-export const FIAT_VRAGEN = [
-  ['structuur', 'Zijn alle ondernemingen (organogram, KvK, deelnemingen) in beeld en vastgelegd?'],
-  ['invoer', 'Zijn de jaarcijfers en IB-aangiften juist en volledig ingevoerd?'],
-  ['correcties', 'Zijn de correcties op resultaat en balans juist toegepast en gemotiveerd?'],
-  ['kader', 'Is het inkomen conform het beleidskader bepaald, of is de afwijking gemotiveerd?'],
-  ['bestendig', 'Zijn bestendigheid en onttrekbaarheid van het inkomen voldoende onderbouwd?'],
-  ['prive', 'Zijn privéverplichtingen (BKR, zakelijk krediet, R/C directie) beoordeeld?'],
-  ['herleidbaar', 'Zijn aantekeningen en conclusie volledig en herleidbaar?'],
-];
-
-export const ACCREDITATIES = ['Basis', 'Basis+', 'Medium', 'Medium+', 'Top', 'Top+'];
-
-const EERSTE = { Basis: ['Basis'], 'Basis+': ['Basis'], Medium: ['Basis', 'Medium'], 'Medium+': ['Basis', 'Medium'], Top: ['Basis', 'Medium', 'Top'], 'Top+': ['Basis', 'Medium', 'Top'] };
-const TWEEDE = { Basis: [], 'Basis+': ['Basis'], Medium: ['Basis'], 'Medium+': ['Basis', 'Medium'], Top: ['Basis', 'Medium'], 'Top+': ['Basis', 'Medium', 'Top'] };
-
-export function magFiatteren(accreditatie, niveau, welke) {
-  const tabel = welke === 2 ? TWEEDE : EERSTE;
-  return (tabel[accreditatie] || []).includes(niveau || 'Basis');
-}
+export { ACCREDITATIES, FIAT_VRAGEN, magFiatteren } from '../engine/beoordelingsrechten.js';

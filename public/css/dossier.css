@@ -1,0 +1,140 @@
+.dossier-tabs {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  margin: 0;
+  padding: 9px;
+  background: var(--vlak);
+  border: 1px solid var(--lijn);
+  border-radius: 12px;
+}
+
+.dossier-schil { display: grid; grid-template-columns: 10.5rem minmax(0, 1fr); gap: clamp(14px, 2vw, 22px); align-items: start; margin-top: 16px; }
+.dossier-werkblad { min-width: 0; }
+
+.dossier-tabgroep {
+  min-width: 0;
+}
+
+.dossier-tabgroep + .dossier-tabgroep { border-block-start: 1px solid var(--lijn); padding-block-start: 8px; }
+.dossier-tabgroep > span { color: var(--grijs); font-size: 12px; font-weight: 650; display: block; padding-inline: 8px; }
+.dossier-tabgroep > div { display: grid; gap: 2px; }
+.dossier-tabgroep a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  color: var(--inkt);
+  text-decoration: none;
+  white-space: normal;
+  border-radius: 6px;
+  font-weight: 650;
+  font-size: 14px;
+}
+.dossier-tabgroep a:hover { background: var(--achtergrond); }
+.dossier-tabgroep a.actief { color: var(--accenttekst); background: var(--mint); }
+.dossier-tabgroep .teller { color: var(--att); font-size: 12px; }
+.dossier-titel { font-size: clamp(24px, 3vw, 35px); margin: 0 0 16px; }
+.dossier-overzicht { display: grid; gap: 16px; margin-top: 16px; }
+.dossier-overzicht .paneel { min-width: 0; margin: 0; }
+.overzicht-start {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: center;
+  background: var(--mint-zacht);
+  border: 1px solid var(--lijn);
+  border-radius: 14px;
+  padding: clamp(16px, 3vw, 30px);
+}
+.overzicht-intro h1 { font-size: clamp(28px, 4vw, 44px); line-height: 1.07; margin: 9px 0; }
+.overzicht-intro p { margin: 0 0 16px; color: var(--grijs); overflow-wrap: anywhere; }
+.overzicht-terug { display: inline-flex; align-items: center; gap: 3px; text-decoration: none; color: var(--accenttekst); font-weight: 650; }
+.overzicht-meters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.overzicht-meters > div {
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  align-content: start;
+  gap: 5px;
+  min-width: 0;
+  background: var(--vlak);
+  border: 1px solid var(--lijn);
+  border-radius: 10px;
+  padding: clamp(9px, 1.3vw, 16px);
+}
+.overzicht-meters > div > span { font-size: 13px; color: var(--grijs); overflow-wrap: anywhere; }
+.overzicht-meters strong { color: var(--inkt); font-size: clamp(23px, 3vw, 34px); line-height: 1.15; font-variant-numeric: tabular-nums; }
+.overzicht-meters strong small { color: var(--grijs); font-size: 0.58em; font-weight: 500; }
+.overzicht-meters progress { width: 100%; height: 8px; accent-color: var(--teal); align-self: center; }
+.overzicht-meters a { color: var(--accenttekst); font-size: 12px; display: flex; align-items: center; gap: 2px; text-decoration: none; }
+.overzicht-meters .ico { flex: none; width: 13px; }
+.overzicht-kolommen { display: grid; grid-template-columns: 1.15fr 1fr; gap: 16px; align-items: start; }
+.overzicht-stapel { display: grid; gap: 16px; min-width: 0; }
+.overzicht-lijst ul, .overzicht-ondernemingen ul, .overzicht-bevindingen ul { list-style: none; padding: 0; margin: 0; }
+.overzicht-lijst li, .overzicht-ondernemingen li, .overzicht-bevindingen li { border-top: 1px solid var(--lijn-zacht); }
+.overzicht-lijst li a, .overzicht-ondernemingen li a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 11px 4px;
+  color: var(--inkt);
+  text-decoration: none;
+}
+.overzicht-lijst li a:hover, .overzicht-ondernemingen li a:hover { background: var(--mint-zacht); }
+.overzicht-lijst li a > span:first-child, .overzicht-ondernemingen li a > span:nth-child(2) { flex: 1; overflow-wrap: anywhere; }
+.overzicht-lijst li small, .overzicht-ondernemingen li small { display: block; color: var(--grijs); margin-top: 2px; font-size: 13px; }
+.overzicht-lijst li .ico, .overzicht-ondernemingen li .ico { flex: none; color: var(--accenttekst); }
+.overzicht-bevindingen li { display: flex; align-items: baseline; gap: 10px; padding: 10px 0; overflow-wrap: anywhere; }
+.overzicht-bevindingen a { color: var(--accenttekst); display: inline-flex; gap: 3px; align-items: center; }
+.overzicht-snel { margin-top: 12px; }
+.dossier-tabgroep a:focus-visible, .dossier-overzicht a:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+.intake-basis { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.intake-basis .paneel { margin: 0; }
+.intake-aanvullend { display: grid; gap: 10px; margin-top: 16px; }
+.intake-aanvullend > .paneel { margin: 0; }
+.documenten-checklist h3 { margin: 14px 0 8px; }
+.documenten-checklist details { margin-top: 12px; }
+.documenten-checklist summary { padding: 8px 0; font-weight: 650; cursor: pointer; }
+
+@media (max-width: 920px) {
+  .overzicht-start, .intake-basis { grid-template-columns: 1fr; }
+}
+@media (min-width: 1001px) {
+  .dossier-tabs { position: sticky; top: 70px; }
+}
+@media (max-width: 1000px) {
+  .dossier-schil { grid-template-columns: minmax(0, 1fr); }
+  .dossier-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dossier-tabgroep + .dossier-tabgroep { border-block-start: 0; padding-block-start: 0; }
+  .dossier-tabgroep > div { display: flex; flex-wrap: wrap; }
+}
+@media (max-width: 700px) {
+  .overzicht-kolommen { grid-template-columns: 1fr; }
+  .dossier-tabgroep { padding-inline: 0; }
+  .dossier-tabs { gap: 6px; }
+  .dossier-tabgroep a { font-size: .8rem; padding: 5px 6px; }
+}
+@media (max-width: 400px) {
+  .overzicht-meters { grid-template-columns: 1fr 1fr; }
+  .overzicht-meters > div:first-child { grid-column: 1 / -1; }
+}
+@media print {
+  .dossier-schil { display: block; margin-top: 0; }
+  .dossier-titel { display: none; }
+  .documenten-checklist details:not([open]) > .scroll { display: block; }
+}
+.dossier-werkbalk { display: flex; justify-content: space-between; align-items: center; gap: 8px 16px; flex-wrap: wrap; margin: 12px 0; min-width: 0; }
+.dossier-werkbalk > .dossier-titel { margin: 0; }
+.dossier-bewaren { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: auto; }
+.dossier-bewaren [data-dossier-bewaarstatus]:not(:empty) { border-radius: 5px; }
+.dossier-bewaarstatus-open { color: var(--att); }
+.bzi .dossier-werkbalk { margin-top: 0; }
+@media (max-width: 520px) {
+  .dossier-werkbalk { gap: 8px; }
+  .dossier-bewaren { margin-left: auto; }
+}
+.bron-import-tabel { max-height: min(42vh, 24rem); overflow: auto; }
+.bron-import-tabel thead { position: sticky; top: 0; z-index: 1; }
+#fiat-bronvergelijking > p { margin: 6px 0 12px; }
+#fiat-bronvergelijking details + details { margin-top: 8px; }

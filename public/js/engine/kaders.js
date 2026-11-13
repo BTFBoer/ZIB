@@ -1,3 +1,5 @@
+import { BELEIDSPROFIELEN } from './beleid.js';
+
 // Beleidskaders als configuratie. De rekenkern leest uitsluitend deze parameters (geen vergelijkingen
 // op de naam van een kader), zodat een kader een extra object is. Teksten zijn samenvattingen in eigen
 // woorden met een verwijzing naar het onderdeel van de bron; bronteksten worden niet overgenomen.
@@ -71,12 +73,13 @@ export const KADERS = {
     minMaandenKvK: 12,
     definitiefVerplichtVanaf: { m: 5, d: 1 },
     tussentijdsVerplichtVanaf: { m: 8, d: 1 },
+    tussentijdsPerKwartaal: true,
     vervangenVanaf: { m: 4, d: 1 },
     tussentijdsHeleMaanden: true,
     liquiditeitMin: 1.0,
     solvabiliteitMin: 0.25,
     bandbreedte: NHG_BANDBREEDTE,
-    toetsen: { winst: 'NHG', liquiditeit: 'NHG', werkkapitaal: 'info', solvabiliteit: 'bandbreedte', herstel: 'akkoord' },
+    toetsen: { winst: 'POSITIEF', liquiditeit: 'NHG', werkkapitaal: 'info', solvabiliteit: 'bandbreedte', herstel: 'akkoord' },
     rcDrempel: 17500,
     box3ZonderBewijs: 1000,
     positieveCorrecties: true,
@@ -106,7 +109,8 @@ export const KADERS = {
     regels: [
       'Inkomen: gemiddelde van 3 jaar, maximaal het laatste jaar; het lopende jaar kan alleen verlagen (extrapolatie 30/360).',
       'Vanaf 1 april kan het oudste jaar worden vervangen door het gerealiseerde resultaat van het lopende jaar (stappen a, b en d).',
-      'Winst ≥ 0 in het laatste toetsjaar en het controlejaar; current ratio ≥ 1; solvabiliteit volgens het bandbreedtemodel 20/25/30%.',
+      'Positief resultaat in het laatste boekjaar en bij de verplichte tussentijdse toets; current ratio ≥ 1; solvabiliteit volgens het bandbreedtemodel 20/25/30%.',
+      'Tussentijdse cijfers en OB-aangiften bij kalenderboekjaren: vanaf 1 februari t/m Q4 vorig jaar, vanaf 1 augustus t/m Q2 en vanaf 1 november t/m Q3 van het lopende jaar.',
       'Box 2: route 1 uitgekeerd dividend of route 2 overwinst na dubbele balanstoets (solvabiliteit 25%, werkkapitaal) met 25% afslag.',
       'Loondienst ≥ 80%: ondernemersinkomen maximaal 30% van het fulltime loon (formule A + B).',
     ],
@@ -409,7 +413,22 @@ export const KADERS = {
   },
 };
 
-export const KADER_VOLGORDE = ['NHG', 'ABN', 'ASN', 'KNAB', 'OPT'];
+export const BASIS_KADERS = ['NHG', 'ABN', 'ASN', 'KNAB', 'OPT'];
+for (const profiel of BELEIDSPROFIELEN) {
+  KADERS[profiel.id] = {
+    id: profiel.id, naam: profiel.kort, kort: profiel.kort, versie: profiel.versie,
+    bron: profiel.bron, bronStatus: profiel.bronStatus, regels: profiel.regels,
+    bestemdVoor: profiel.kort, beleid: profiel,
+    familie: 'BELEID', totaal: 'BELEID', nhg: false,
+    // Rekengegevens en ratio's zijn beschikbaar voor de profielberekening; NHG-normen worden niet overgenomen.
+    correctieModel: 'NEUTRAAL', minMaandenKvK: 0, liquiditeitMin: 1, solvabiliteitMin: 0.25,
+    definitiefVerplichtVanaf: profiel.definitiefVanaf || { m: 1, d: 1 },
+    geldigheidMaanden: profiel.ikvGeldigheid ?? 6,
+    box3ZonderBewijs: 0, toetsen: {}, positieveCorrecties: true,
+    inkomensberekening: profiel.regels,
+  };
+}
+export const KADER_VOLGORDE = [...BASIS_KADERS, ...BELEIDSPROFIELEN.map((p) => p.id)];
 
 /** Labels van de instelbare parameters (pad → [label, eenheid]). */
 export const PARAM_LABELS = {
@@ -432,7 +451,13 @@ export const PARAM_LABELS = {
 export const SOORTEN = {
   IKV: 'Inkomensverklaring',
   NUL: '0-verklaring',
+  ANALYSE: 'Inkomensanalyse',
 };
+
+/** Het NHG-vinkje is dossierbreed. Oudere dossiers bewaarden het bij het bankprofiel. */
+export function dossierMetNhg(dossier) {
+  return dossier?.kader === 'NHG' || (typeof dossier?.metNhg === 'boolean' ? dossier.metNhg : dossier?.beleidsinvoer?.[dossier.kader]?.nhg === true);
+}
 
 export function soortOndernemer(rechtsvorm) {
   return RECHTSVORMEN[rechtsvorm]?.soort || 'IB';
@@ -444,7 +469,7 @@ export function kaderLabel(id) {
 
 /** Keuzelijst voor een kader: { id: naam }. */
 export function kaderOpties() {
-  return Object.fromEntries(KADER_VOLGORDE.map((id) => [id, `${KADERS[id].kort}: ${KADERS[id].naam.replace(/^.*?: /, '')}`]));
+  return Object.fromEntries(KADER_VOLGORDE.map((id) => [id, KADERS[id].beleid ? KADERS[id].kort : `${KADERS[id].kort}: ${KADERS[id].naam.replace(/^.*?: /, '')}`]));
 }
 
 function zetPad(obj, pad, waarde) {
@@ -467,10 +492,12 @@ export function leesPad(obj, pad) {
  * kader als instelbaar aanmerkt, binnen redelijke grenzen).
  */
 export function kaderVoor(idOfDossier, instellingen) {
-  const id = typeof idOfDossier === 'string' ? idOfDossier : idOfDossier?.kader;
+  const id = typeof idOfDossier === 'string' ? idOfDossier
+    : idOfDossier?.soort === 'ANALYSE' || dossierMetNhg(idOfDossier) ? 'NHG' : idOfDossier?.kader;
   const basis = KADERS[id] || KADERS.NHG;
   const inst = instellingen ?? (typeof idOfDossier === 'object' ? idOfDossier?.instellingen : null) ?? {};
   const over = inst.kaderParams?.[basis.id];
+  if (basis.beleid) return basis;
   if (!over || !basis.instelbaar?.length) return basis;
   const k = { ...basis };
   let gewijzigd = false;

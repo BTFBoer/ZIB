@@ -2,11 +2,14 @@
 // aan een regel van de lijst, zodat het tabblad Documenten kan tonen wat nog ontbreekt.
 
 export const CATEGORIEEN = {
+  ikv: 'Inkomensverklaring ondernemer / beoordeling geldverstrekker',
+  beoordelingsverklaring: 'Beoordelingsverklaring onderneming',
   kvk: 'Uittreksel KvK',
   ib_aangifte: 'IB-aangifte',
   ib_aanslag: 'IB-aanslag',
   vgi: 'Verklaring geregistreerd inkomen (Belastingdienst)',
   jaarrekening: 'Jaarrekening',
+  geconsolideerde_jaarrekening: 'Geconsolideerde jaarrekening',
   tussentijds: 'Tussentijdse cijfers (balans en W&V)',
   ob_aangifte: 'Aangifte omzetbelasting',
   prognose: 'Prognose (RA/AA)',
@@ -24,6 +27,9 @@ export const CATEGORIEEN = {
   verklaring_boekhouder: 'Verklaring vaste boekhouder/accountant',
   samenwerking: 'VOF-/maatschapsovereenkomst',
   dividendbeleid: 'Dividendbeleid / aandeelhoudersbesluit',
+  aandeelhouderschap: 'Bewijs van aandeelhouderschap',
+  dividendbewijs: 'Bewijs van ontvangen bruto dividend',
+  bankafschrift: 'Bankafschrift met bijschrijvingen',
   leningovereenkomst: 'Overeenkomst lening directie',
   grootboek: 'Grootboek- of saldibalans',
   overig: 'Overig',
@@ -42,6 +48,17 @@ export function documentenlijst(d, ctx) {
   const lijst = [];
   const { T = [], C, heeftVPB, heeftSamenwerking, sbi45 } = ctx;
   const jaren3 = T.join(', ');
+  const profiel = ctx.kaderCfg?.beleid;
+  if (profiel) {
+    const invoer = d.beleidsinvoer?.[profiel.id] || {};
+    const items = ctx.beleid?.documenten ?? (typeof profiel.documenten === 'function' ? profiel.documenten({ ctx, dossier: d, invoer }) : profiel.documenten) ?? [];
+    const regels = items.map((x) => item(x.categorie, x.naam, x.wanneer, x));
+    if (d.soort === 'NUL' && typeof profiel.documenten !== 'function') return [item('ikv', 'Beoordelingsverklaring geldverstrekker', 'Controleer of voor dit product een 0-verklaring wordt geaccepteerd')];
+    if ((ctx.beleid?.methode ?? profiel.methode) === 'extern' && !regels.some((x) => x.categorie === 'ikv')) {
+      regels.unshift(item('ikv', 'Inkomensverklaring ondernemer of bankbeoordeling', 'Voor deze route; controleer de erkende opsteller en geldigheid'));
+    }
+    return regels;
+  }
 
   if (d.soort === 'NUL') {
     const actief = (d.ondernemingen || []).some((o) => o.actief !== false);
@@ -70,7 +87,13 @@ export function documentenlijst(d, ctx) {
     lijst.push(item('ib_aanslag', 'IB-aanslagen: de laatste twee definitieve', 'Altijd', { aantal: 2 }));
     lijst.push(item('vgi', 'Verklaring geregistreerd inkomen (oudste twee jaren)', 'Digitaal, onder de oorspronkelijke bestandsnaam', { aantal: 2 }));
     lijst.push(item('uwv', 'UWV verzekeringsbericht', 'In alle situaties'));
-    if (C || ctx.tussentijdsVerplicht) {
+    if (ctx.kwartaaltermijn) {
+      const { jaar, kwartaal, vanaf } = ctx.kwartaaltermijn;
+      lijst.push(item('tussentijds', `Winst- en verliesrekening ${jaar} t/m Q${kwartaal}`,
+        `Vanaf ${vanaf}${kwartaal === 4 ? ', of de definitieve jaarrekening als die al beschikbaar is' : ', met positief resultaat'}`, { jaren: [jaar] }));
+      lijst.push(item('ob_aangifte', `Aangiften omzetbelasting ${jaar} t/m Q${kwartaal}`,
+        `Vanaf ${vanaf}; controleer of alle verstreken aangiftetijdvakken zijn aangeleverd`, { jaren: [jaar] }));
+    } else if (C || ctx.tussentijdsVerplicht) {
       lijst.push(item('tussentijds', 'Winst- en verliesrekening lopend jaar', 'Vanaf 01-08 verplicht (positief resultaat)'));
       lijst.push(item('ob_aangifte', 'Aangiften omzetbelasting lopend jaar', 'Q1-Q2 vanaf 01-08, Q3 vanaf 01-11, alle kwartalen vanaf 01-02'));
     }

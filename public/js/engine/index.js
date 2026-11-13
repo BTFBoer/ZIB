@@ -5,8 +5,12 @@ import { dertigProcentToets, totaalASN, totaalKNAB, totaalOPT } from './totaal.j
 import { beoordeelNul, zkLijst } from './nulverklaring.js';
 import { Trace, cel, g, p, lijstF, laagsteF } from './trace.js';
 import { documentenlijst } from '../schema/documenten.js';
-import { totalenJaar } from './financieel.js';
+import { balansOntbreekt, heeftBedrag, heeftResultaatinvoer, totalenJaar } from './financieel.js';
 import { num, rond, rond2, gemiddelde, isIngevuld, todayISO, naamAanvrager } from '../util.js';
+import { toetsBeleidsprofiel } from './beleid.js';
+import { rekenInvoerStatus } from './reken-invoer.js';
+import { berekenDgaGezamenlijk, bronDgaGezamenlijk } from './abn-aanvrager.js';
+import { kiesAbnVaststelling, vergelijkAbnBronmodel } from './abn-bronvergelijking.js';
 
 export { KADERS, KADER_VOLGORDE, kaderVoor } from './kaders.js';
 export { dertigProcentToets } from './totaal.js';
@@ -23,7 +27,8 @@ export function bepaalJaren(dossier) {
   const kader = kaderVoor(dossier);
   const datum = dossier.berekeningsdatum || todayISO();
   const inst = dossier.instellingen || {};
-  const T3 = num(inst.laatsteToetsjaar) || standaardLaatsteToetsjaar(kader, datum);
+  const jaarkader = kader.beleid && kader.nhg ? KADERS.NHG : kader;
+  const T3 = num(inst.laatsteToetsjaar) || standaardLaatsteToetsjaar(jaarkader, datum);
   const T = [T3 - 2, T3 - 1, T3];
   const kandidaat = T3 + 1;
   const ib = dossier.ib?.[kandidaat] || dossier.ib?.[String(kandidaat)];
@@ -31,8 +36,9 @@ export function bepaalJaren(dossier) {
     const j = o.jaren?.[kandidaat] || o.jaren?.[String(kandidaat)];
     if (!j) return false;
     const t = totalenJaar(j);
-    return t.heeftVW || t.heeftBalans;
-  }) || (ib && Object.values(ib.perOnd || {}).some((x) => isIngevuld(x?.loon)));
+    return t.heeftVW || t.heeftBalans || ((kader.beleid || kader.tussentijdsPerKwartaal) && heeftResultaatinvoer(j));
+  }) || (ib && Object.values(ib.perOnd || {}).some((x) => isIngevuld(x?.loon)))
+    || (kader.id === 'ABN' && isIngevuld(bronDgaGezamenlijk(dossier, kandidaat)?.loon));
   const C = inst.controlejaar === false || !heeftData ? null : kandidaat;
   return { kader, datum, jaarNu: P.jaarVan(datum), T, T3, C, kandidaatC: kandidaat };
 }
@@ -64,15 +70,19 @@ export function annuiteit(hoofdsom, rentePct, maanden) {
 /** Lening van de BV aan de DGA (lening directie): maandlast in privé. */
 export function berekenLeningDirectie(ld = {}) {
   const hoofdsom = num(ld.hoofdsom);
-  if (!hoofdsom) return { maandlast: 0, tekst: '' };
-  const vast = isIngevuld(ld.termijn) ? num(ld.termijn) : null;
+  const vast = heeftBedrag(ld.termijn) && num(ld.termijn) >= 0 ? num(ld.termijn) : null;
+  if (!hoofdsom) {
+    if (!(vast > 0)) return { maandlast: 0, tekst: '' };
+    return { maandlast: vast, berekend: null, hoofdsom: null,
+      tekst: `Contractuele termijn ${fmtCent(vast)} per maand. Hoofdsom nog te verifiëren.` };
+  }
   const berekend = rond2(annuiteit(hoofdsom, ld.rente, ld.looptijdMnd));
   const maandlast = vast ?? berekend;
   const rente = String(num(ld.rente)).replace('.', ',');
   return {
     maandlast, berekend, hoofdsom,
     tekst: vast !== null
-      ? `Contractuele termijn ${g(vast)} per maand (berekende annuïteit ${fmtCent(berekend)}).`
+      ? `Contractuele termijn ${fmtCent(vast)} per maand${num(ld.looptijdMnd) > 0 ? ` (berekende annuïteit ${fmtCent(berekend)})` : ''}.`
       : `Annuïteit ${g(hoofdsom)} tegen ${rente}% over ${num(ld.looptijdMnd)} maanden = ${fmtCent(berekend)} per maand.`,
   };
 }
@@ -356,7 +366,8 @@ export function vergelijkMethoden(perJaar, T) {
 // NHG: inkomen op totaalniveau (alle meegenomen ondernemingen + meegenomen loon/uitkeringen)
 // ---------------------------------------------------------------------------
 function totaalNHG(dossier, analyses, ctx, trace) {
-  const { T, C, vervanging, kader } = ctx;
+  const { T, vervanging, kader } = ctx;
+  const C = ctx.controleInkomenOntbreekt?.length ? null : ctx.C;
   const T3 = T[2];
   const ld = dossier.loondienst || {};
   const mee = analyses.filter((a) => a.meenemen);
@@ -379,7 +390,7 @@ function totaalNHG(dossier, analyses, ctx, trace) {
   let cReal = null;
   let cExtr = null;
   if (C) {
-    const met = mee.find((a) => a.jaren[C]?.heeftVW || isIngevuld(a.jaren[C]?.ibOnd?.loon));
+    const met = mee.find((a) => a.jaren[C]?.heeftResultaatinvoer || isIngevuld(a.jaren[C]?.ibOnd?.loon));
     factor = met ? met.jaren[C].factor : 1;
     const persReal = pers[C].ingevuld ? pers[C].totaal : pers[T3].totaal / factor;
     const persExtr = pers[C].ingevuld ? pers[C].totaal * factor : pers[T3].totaal;
@@ -524,13 +535,13 @@ function geldstromenVoor(groepIds, hoofdId, analyses, ctx, st) {
       const perJaar = {};
       let iets = false;
       jaren.forEach((y) => {
-        const totaal = soort === 'fee' ? kind.jaren[y]?.geldstroom.managementFee : kind.jaren[y]?.geldstroom.internDividend;
+        const totaal = soort === 'fee' ? kind.jaren[y]?.geldstroom.managementFeeBron : kind.jaren[y]?.geldstroom.internDividendBron;
         const pctY = l.pctJaar ? l.pctJaar(y) : l.pct;
-        const betaald = soort === 'dividend' && pctY < 1 ? rond(num(totaal) * pctY) : num(totaal);
+        const betaald = !isIngevuld(totaal) ? null : soort === 'dividend' && pctY < 1 ? rond(num(totaal) * pctY) : num(totaal);
         const ontvRaw = soort === 'fee' ? ouder.jaren[y]?.geldstroom.ontvangenFee?.[kind.id] : ouder.jaren[y]?.geldstroom.ontvangenDividend?.[kind.id];
         const ontvangen = isIngevuld(ontvRaw) ? num(ontvRaw) : null;
         if (betaald || ontvangen) iets = true;
-        perJaar[y] = { betaald, ontvangen, verschil: ontvangen === null ? null : rond(betaald - ontvangen), totaal: num(totaal) };
+        perJaar[y] = { betaald, ontvangen, verschil: betaald === null || ontvangen === null ? null : rond(betaald - ontvangen), totaal: isIngevuld(totaal) ? num(totaal) : null };
       });
       if (iets) uit.push({ van: kind.id, vanNaam: kind.naam, naar: ouder.id, naarNaam: ouder.naam, soort, perJaar, pct: l.pct,
         ...(l.vanaf || l.tot ? { periode: `${l.vanaf ? `vanaf ${l.vanaf}` : ''}${l.vanaf && l.tot ? ' ' : ''}${l.tot ? `t/m ${l.tot}` : ''}` } : {}) });
@@ -804,17 +815,37 @@ function totaalABN(dossier, analyses, ctx, trace, st) {
     s.rij('Resultaat uit overige werkzaamheden (3.69)', { berekend: cel(row, `${lijstF(rows, 3)} ${g(gem)}; ${laagsteF([gem, rows[2]])}`), woonbeleid: cel(row), afgegeven: cel(row) });
   }
   const actief = perHoofd.filter((x) => !x.nul);
-  const berekend = actief.reduce((x, o) => x + o.berekend, 0) + row;
-  const toetsinkomen = actief.reduce((x, o) => x + o.woonbeleid, 0) + row;
-  const woonbeleidVoorAfslag = actief.reduce((x, o) => x + o.woonbeleidVoorAfslag, 0) + row;
-  const vastgesteld = perHoofd.reduce((x, o) => x + o.bijdrage, 0) + row;
+  const dgaGezamenlijk = berekenDgaGezamenlijk(dossier, ctx, analyses, perHoofd);
+  const belangenPerJaar = new Map(dossier.abnGroep ? T.map((y) => [y, belangen(dossier, st, { jaar: y })]) : []);
+  const abnBronVergelijking = vergelijkAbnBronmodel(dossier, ctx, analyses, st, dgaGezamenlijk,
+    (id, y) => belangenPerJaar.get(y)?.get(id), row);
+  const abnVaststelling = kiesAbnVaststelling(dossier, abnBronVergelijking);
+  if (dgaGezamenlijk) {
+    for (const tekst of dgaGezamenlijk.blokkades) meldingen.push({ niveau: 'attentie', tekst });
+    s.rij('DGA-loon na bijtelling op aanvragerniveau', {
+      berekend: cel(dgaGezamenlijk.berekend), woonbeleid: cel(dgaGezamenlijk.toetsinkomen),
+      afgegeven: cel(dgaGezamenlijk.inUitkomst ? rond(dgaGezamenlijk.berekend) : null),
+    });
+    if (dgaGezamenlijk.inUitkomst) s.tekst('Gecombineerd DGA-loon', 'Deze loonpost telt één keer mee. Box 1-bedragen per BV zijn alleen zichtbaar ter controle.');
+  }
+  const dga = dgaGezamenlijk?.inUitkomst ? dgaGezamenlijk : null;
+  const dgaBerekening = dga ? rond(dga.berekend) : 0;
+  const dgaToets = dga ? rond(dga.toetsinkomen) : 0;
+  const dgaToetsVoorAfslag = dga ? rond(dga.factor === 1 ? dga.toetsinkomen : Math.min(dga.berekend, dga.prognose ?? dga.berekend)) : 0;
+  const inkomenPerBV = (o) => !!dga && o.soort === 'VPB';
+  const berekend = actief.reduce((x, o) => x + (inkomenPerBV(o) ? o.bziDividend : o.berekend), dgaBerekening + row);
+  const toetsinkomen = actief.reduce((x, o) => x + (inkomenPerBV(o) ? o.box2 : o.woonbeleid), dgaToets + row);
+  const woonbeleidVoorAfslag = actief.reduce((x, o) => x + (inkomenPerBV(o) ? o.box2 : o.woonbeleidVoorAfslag), dgaToetsVoorAfslag + row);
+  const vastgesteld = perHoofd.reduce((x, o) => x + (inkomenPerBV(o) ? o.bziDividend : o.bijdrage), dgaBerekening + row);
   s.rij('Totaal', { berekend: cel(berekend), woonbeleid: cel(toetsinkomen), afgegeven: cel(vastgesteld) }, { stijl: 'totaal' });
 
-  const perJaarTotaal = Object.fromEntries(T.map((y) => [y, actief.reduce((x, o) => x + o.perJaar[y].inkomen + o.perJaar[y].dividend, 0)]));
+  const perJaarTotaal = Object.fromEntries(T.map((y) => [y, actief.reduce((x, o) => x + (inkomenPerBV(o) ? 0 : o.perJaar[y].inkomen) + o.perJaar[y].dividend, dga?.perJaar[y]?.inkomen ?? 0)]));
   return {
     berekend, toetsinkomen, woonbeleidVoorAfslag, vastgesteld, row,
     box2: actief.reduce((x, o) => x + o.bziDividend, 0),
-    box1: actief.reduce((x, o) => x + o.bziInkomen, 0) + row,
+    box1: actief.reduce((x, o) => x + (inkomenPerBV(o) ? 0 : o.bziInkomen), dgaBerekening + row),
+    dgaGezamenlijk, gecombineerdDgaOpen: !!dgaGezamenlijk && !dgaGezamenlijk.inUitkomst,
+    abnBronVergelijking, abnVaststelling,
     perHoofdbedrijf: perHoofd, perOnderneming: perHoofd, perJaar: perJaarTotaal,
     meldingen, stappen: [],
   };
@@ -824,12 +855,17 @@ function totaalABN(dossier, analyses, ctx, trace, st) {
 // Hoofdfunctie
 // ---------------------------------------------------------------------------
 export function bereken(dossier, opties = {}) {
-  const { kader, datum, jaarNu, T, T3, C } = bepaalJaren(dossier);
+  const { kader, datum, jaarNu, T, T3, C, kandidaatC } = bepaalJaren(dossier);
   const inst = dossier.instellingen || {};
+  const inkomensanalyse = dossier.soort === 'ANALYSE';
   const soort = dossier.soort === 'NUL' ? 'NUL' : 'IKV';
-  const vervanging = !!kader.vervangenVanaf && kader.familie === 'NHG' && soort === 'IKV' && !!inst.vervangOudsteJaar && !!C;
-  const rc = berekenRC(dossier.rc);
-  const leningDirectie = berekenLeningDirectie(dossier.leningDirectie);
+  const nhgVervanging = !!kader.vervangenVanaf && kader.familie === 'NHG' && soort === 'IKV';
+  const vennVervanging = kader.id === 'VENN' && soort === 'IKV';
+  const vervangingGevraagd = nhgVervanging ? !!inst.vervangOudsteJaar
+    : vennVervanging && dossier.beleidsinvoer?.VENN?.tussentijdsVervangen === true;
+  const profielIKV = kader.beleid && soort === 'IKV';
+  const rc = profielIKV ? { maandlast: 0, tekst: '' } : berekenRC(dossier.rc);
+  const leningDirectie = profielIKV ? { maandlast: 0, tekst: '' } : berekenLeningDirectie(dossier.leningDirectie);
   const onds = dossier.ondernemingen || [];
   const st = structuur(dossier);
   // Welke ondernemingen tellen voor het inkomen mee? Een hoofdbedrijf met 0-inkomen (beoordelingsverklaring)
@@ -846,7 +882,7 @@ export function bereken(dossier, opties = {}) {
   meeIds.forEach((id) => nietMeeIds.delete(id));
   if (kader.familie !== 'ABN') onds.forEach((o) => { if (o.nulInkomen || o.meenemen === false) nietMeeIds.add(o.id); });
   const bel = belangen(dossier, st, { telt: (id) => !nietMeeIds.has(id), jaar: T3 });
-  const ctx = { kader, kaderId: kader.id, familie: kader.familie, soort, datum, jaarNu, T, C, vervanging,
+  const ctx = { kader, kaderId: kader.id, familie: kader.familie, soort, datum, jaarNu, T, C, vervanging: false,
     ib: dossier.ib || {}, instellingen: inst, rc, dossier, belangVan: (id, y) => bel.get(id)?.belangJaar(y) ?? null };
   const meldingen = [];
   const trace = new Trace();
@@ -869,7 +905,7 @@ export function bereken(dossier, opties = {}) {
   st.hoofden.forEach((h) => {
     h.afstammelingen.forEach((x) => {
       const a = byA.get(x.id);
-      if (!a || a.checks.some((c) => c.key === 'belang')) return;
+      if (kader.beleid || !a || a.checks.some((c) => c.key === 'belang')) return;
       const ind = x.indirectJaar ? x.indirectJaar(T3) : x.indirect;
       const minB = kader.familie === 'ABN' ? kader.dgaMinBelang : (kader.minBelang ?? 0.05);
       const ok = ind >= minB;
@@ -880,6 +916,37 @@ export function bereken(dossier, opties = {}) {
   });
 
   if (kader.familie !== 'ABN') analyses.forEach((a) => { if (nietMeeIds.has(a.id)) a.meenemen = false; });
+
+  if (kader.tussentijdsPerKwartaal && soort === 'IKV' && C) {
+    ctx.controleInkomenOntbreekt = analyses.filter((a, i) => a.meenemen && !a.geconsolideerd && onds[i].actief !== false
+      && a.jaren[C]?.actief && !a.jaren[C].heeftResultaatinvoer && !isIngevuld(a.jaren[C].ibOnd?.loon));
+    if (ctx.controleInkomenOntbreekt.length) {
+      const namen = ctx.controleInkomenOntbreekt.map((a) => a.naam).join(', ');
+      meldingen.push({ niveau: 'attentie', tekst: `Inkomenstoets ${C} open voor ${namen}. Vul het resultaat of het DGA-loon over de periode in. Tot die tijd toont ZIB de berekening op basis van de afgesloten toetsjaren.` });
+    }
+  }
+
+  let vervangingReden = '';
+  if (vervangingGevraagd) {
+    if (inst.controlejaar === false) vervangingReden = 'Zet het controlejaar aan om de vervanging toe te passen.';
+    else if (nhgVervanging && !P.opOfNa(datum, kader.vervangenVanaf.m, kader.vervangenVanaf.d)) {
+      vervangingReden = `Vervanging van het oudste jaar is pas mogelijk vanaf ${kader.vervangenVanaf.d}-${kader.vervangenVanaf.m}.`;
+    } else if (vennVervanging && !P.opOfNa(datum, 8, 1)) vervangingReden = 'Vervanging op verzoek is bij Venn mogelijk vanaf 1 augustus.';
+    else if (C !== jaarNu) vervangingReden = 'Voer cijfers van het lopende boekjaar in voor vervanging.';
+    else if (ctx.controleInkomenOntbreekt?.length) vervangingReden = 'Vul het inkomen over de controleperiode in voor vervanging.';
+    else if (nhgVervanging) {
+      const mee = analyses.map((a, i) => [a, onds[i]]).filter(([a, o]) =>
+        a.meenemen && !a.geconsolideerd && o.actief !== false && a.jaren[C]?.actief);
+      const volledig = mee.length && mee.every(([a, o]) => {
+        const j = a.jaren[C];
+        return j.heeftBalans && balansOntbreekt(o.jaren?.[C]).length === 0 && j.heeftResultaatinvoer
+          && j.van <= j.tot && j.tot <= datum && P.volledigeMaanden(j.van, j.tot);
+      });
+      if (!volledig) vervangingReden = 'Vervanging vereist een tussentijdse balans en winst- en verliesrekening over hele maanden.';
+    }
+  }
+  const vervanging = nhgVervanging && vervangingGevraagd && !vervangingReden;
+  ctx.vervanging = vervanging;
 
   // Ontvangen dividend uit minderheidsdeelnemingen (holdingroute ABN 3.63)
   const ontvangenMinderheid = (hoofdId) => {
@@ -969,29 +1036,25 @@ export function bereken(dossier, opties = {}) {
   // Toetsjaren (algemeen)
   const tj = trace.sectie('Toetsjaren en controlejaar', { groep: 'algemeen', kolommen: ['waarde'] });
   tj.rij('Berekeningsdatum', { waarde: cel(P.toISO(P.parseISO(datum)).split('-').reverse().join('-'), '', 'tekst') });
-  tj.rij('Definitieve cijfers vorig boekjaar verplicht vanaf', { waarde: cel(`${String(kader.definitiefVerplichtVanaf.d).padStart(2, '0')}-${String(kader.definitiefVerplichtVanaf.m).padStart(2, '0')}-${jaarNu}`, '', 'tekst') });
+  const jaargrens = kader.beleid ? kader.nhg ? KADERS.NHG.definitiefVerplichtVanaf : kader.beleid.definitiefVanaf : kader.definitiefVerplichtVanaf;
+  if (jaargrens) tj.rij('Definitieve cijfers vorig boekjaar verplicht vanaf', { waarde: cel(`${String(jaargrens.d).padStart(2, '0')}-${String(jaargrens.m).padStart(2, '0')}-${jaarNu}`, '', 'tekst') });
   tj.rij('Toetsjaren (TJr-3, TJr-2, TJr-1)', { waarde: cel(T.join(', '), '', 'tekst') });
   tj.rij('Controlejaar', { waarde: cel(C ? String(C) : 'Geen controlejaar', '', 'tekst') });
-  const cAn = C ? analyses.find((a) => a.jaren[C]?.heeftVW) : null;
+  const cAn = C ? analyses.find((a) => a.jaren[C]?.heeftVW || (kader.tussentijdsPerKwartaal && a.jaren[C]?.heeftResultaatinvoer)) : null;
   if (cAn) {
     const j = cAn.jaren[C];
     tj.rij('Cijfers controlejaar over periode', { waarde: cel(`${j.van.split('-').reverse().join('-')} t/m ${j.tot.split('-').reverse().join('-')}`, '', 'tekst') });
     tj.rij('Extrapolatiefactor', { waarde: cel(`360 / ${P.days360(j.van, j.tot)} = ${String(j.factor).replace('.', ',')}`, '', 'tekst') });
   }
   if (kader.vervangenVanaf && kader.familie === 'NHG') tj.rij(`Vervangen resultaat oudste jaar (${T[0]}) door gerealiseerd resultaat controlejaar`, { waarde: cel(vervanging ? 'Ja' : 'Nee', '', 'tekst') });
-  tj.rij('Toetskader', { waarde: cel(`${kader.naam}, ${kader.versie}`, '', 'tekst') });
+  if (!kader.beleid) tj.rij('Toetskader', { waarde: cel(`${kader.naam}, ${kader.versie}`, '', 'tekst') });
   if (kader.aangepast) tj.rij('Aangepaste parameters', { waarde: cel(Object.entries(kader.aangepast).map(([k, v]) => `${k} = ${String(v).replace('.', ',')}`).join('; '), '', 'tekst') });
 
   // Meldingen op dossierniveau
-  if (!onds.length) meldingen.push({ niveau: 'niet_akkoord', tekst: 'Voeg minimaal één onderneming toe.' });
-  if (vervanging && !P.opOfNa(datum, kader.vervangenVanaf.m, kader.vervangenVanaf.d)) {
-    meldingen.push({ niveau: 'niet_akkoord', tekst: `Vervanging van het oudste jaar is pas mogelijk vanaf ${kader.vervangenVanaf.d}-${kader.vervangenVanaf.m}.` });
-  }
+  if (!onds.length && !kader.beleid) meldingen.push({ niveau: 'niet_akkoord', tekst: 'Voeg minimaal één onderneming toe.' });
+  if (nhgVervanging && vervangingReden) meldingen.push({ niveau: 'attentie', tekst: vervangingReden });
   if (inst.vervangOudsteJaar && soort === 'IKV' && !kader.vervangenVanaf) {
     meldingen.push({ niveau: 'info', tekst: `${kader.kort} kent geen vervanging van het oudste jaar; het lopende jaar telt volgens de regels van het kader.` });
-  }
-  if (vervanging && analyses.some((a) => a.meenemen && a.jaren[C] && !a.jaren[C].heeftBalans)) {
-    meldingen.push({ niveau: 'attentie', tekst: 'Vervanging vereist een tussentijdse balans (geen kolommenbalans) naast de winst- en verliesrekening.' });
   }
   // ASN §3.3: maximaal drie entiteiten (geconsolideerd telt als één) en maximaal twee minderheidsdeelnemingen.
   if (soort === 'IKV' && kader.maxEntiteiten) {
@@ -1011,7 +1074,7 @@ export function bereken(dossier, opties = {}) {
     analyses.filter((a) => a.meenemen && a.checks.some((c) => c.key === 'duur' && c.status === 'niet_akkoord')).forEach((a) => {
       const zonderInkomen = T.every((y) => !rond(a.jaren[y]?.inkomen.totaal ?? 0) && !num(a.jaren[y]?.ibOnd?.dividend));
       if (zonderInkomen && analyses.length > 1) {
-        meldingen.push({ niveau: 'attentie', tekst: `${a.naam} bestaat korter dan ${kader.minMaandenKvK} maanden en levert geen eigen inkomen. Zonder 0-inkomen (beoordelingsverklaring) voldoet het dossier niet aan het toetskader; zet bij de onderneming "0-inkomen / beoordelingsverklaring" aan als het inkomen niet uit deze onderneming komt.` });
+        meldingen.push({ niveau: 'attentie', tekst: `${a.naam} bestaat korter dan ${kader.minMaandenKvK} maanden en levert geen eigen inkomen. Leg het nulbesluit bij Fiattering vast als het inkomen niet uit deze onderneming komt.` });
       }
     });
   }
@@ -1031,7 +1094,8 @@ export function bereken(dossier, opties = {}) {
   }
   analyses.forEach((a) => {
     const j = a.jaren[T3];
-    if (!nietMeeIds.has(a.id) && soort === 'IKV' && j && !j.heeftVW && !isIngevuld(j.ibOnd?.sfw) && !isIngevuld(j.ibOnd?.loon)) {
+    const dgaGezamenlijk = kader.id === 'ABN' && a.soort === 'VPB' && isIngevuld(bronDgaGezamenlijk(dossier, T3)?.loon);
+    if (!kader.beleid && !nietMeeIds.has(a.id) && soort === 'IKV' && j && !j.heeftVW && !isIngevuld(j.ibOnd?.sfw) && !isIngevuld(j.ibOnd?.loon) && !dgaGezamenlijk) {
       meldingen.push({ niveau: 'attentie', tekst: `${a.naam}: er zijn nog geen cijfers over ${T3} ingevoerd.` });
     }
   });
@@ -1039,13 +1103,32 @@ export function bereken(dossier, opties = {}) {
   // Inkomen
   let inkomen = null;
   let nul = null;
+  let beleid = null;
   if (soort === 'IKV') {
-    const totaalFn = { NHG: totaalNHG, ABN: totaalABN, ASN: totaalASN, KNAB: totaalKNAB, OPT: totaalOPT }[kader.totaal] || totaalNHG;
-    inkomen = totaalFn(dossier, analyses, ctx, trace, st);
+    if (kader.beleid) {
+      const profiel = kader.beleid;
+      const nhg = profiel.basis === 'NHG' ? bereken({ ...dossier, kader: 'NHG', afwijkend: undefined }, { zonderReferentie: true }) : null;
+      beleid = toetsBeleidsprofiel(profiel, dossier, analyses, ctx, nhg);
+      tj.rij('Toetskader', { waarde: cel(`${kader.naam}, ${beleid.versie}`, '', 'tekst') });
+      const s = trace.sectie(`${profiel.kort} · ${beleid.versie}`, { groep: 'inkomen', kolommen: ['uitkomst'], richtlijn: profiel.bron });
+      for (const stap of beleid.stappen) {
+        if (Number.isFinite(stap.waarde)) s.rij(stap.label, { uitkomst: cel(stap.waarde, stap.formule, 'eur') });
+        else s.tekst(stap.label, stap.formule || String(stap.waarde ?? ''));
+      }
+      if (nhg && beleid.methode === 'nhg') {
+        for (const sectie of nhg.trace.secties.filter((x) => x.groep === 'inkomen')) trace.secties.push(sectie);
+      }
+      inkomen = { berekend: beleid.indicatie ?? beleid.bedrag ?? 0, toetsinkomen: beleid.bedrag ?? 0, perJaar: beleid.perJaar,
+        box1: beleid.box1, box2: beleid.box2,
+        perOnderneming: [], stappen: [], meldingen: beleid.checks.map(({ status, tekst }) => ({ niveau: status, tekst })) };
+    } else {
+      const totaalFn = { NHG: totaalNHG, ABN: totaalABN, ASN: totaalASN, KNAB: totaalKNAB, OPT: totaalOPT }[kader.totaal];
+      inkomen = totaalFn(dossier, analyses, ctx, trace, st);
+    }
     meldingen.push(...inkomen.meldingen);
     // Niet-meegenomen ondernemingen (0-inkomen): risicobeoordeling en verrekening van een ongedekt verlies
     const nietMee = analyses.filter((a) => nietMeeIds.has(a.id));
-    if (nietMee.length) {
+    if (nietMee.length && !kader.beleid) {
       const deel = beoordeelNul({ ...dossier, ondernemingen: onds.filter((o) => nietMeeIds.has(o.id)) }, nietMee, ctx);
       inkomen.nietMeegenomen = deel;
       const verrekening = deel.maandlastCorrectie * 12;
@@ -1057,7 +1140,7 @@ export function bereken(dossier, opties = {}) {
       }
       if (deel.status === 'niet_akkoord') meldingen.push({ niveau: 'niet_akkoord', tekst: 'Een onderneming met 0-inkomen vormt een risico (zie beoordeling).' });
     }
-    inkomen.methoden = vergelijkMethoden(inkomen.perJaar || {}, T);
+    inkomen.methoden = !kader.beleid || T.every((y) => Number.isFinite(inkomen.perJaar[y])) ? vergelijkMethoden(inkomen.perJaar || {}, T) : null;
     // Geldstromen binnen de structuur (en met partijen daarbuiten), één keer per stroom
     inkomen.geldstromen = alleGeldstromen(analyses, ctx, st);
     inkomen.geldstromen.forEach((gs) => {
@@ -1068,6 +1151,13 @@ export function bereken(dossier, opties = {}) {
     });
   } else {
     nul = beoordeelNul(dossier, analyses, ctx);
+    if (kader.beleid) {
+      beleid = toetsBeleidsprofiel(kader.beleid, dossier, analyses, ctx, null);
+      // Het generieke nulonderzoek beschrijft de risico's; de lenderroute bepaalt het vereiste bewijs.
+      const s = trace.sectie(`${kader.kort} · beoordeling zonder zakelijk inkomen`, { groep: 'inkomen', kolommen: ['uitkomst'], richtlijn: kader.bron });
+      beleid.stappen.forEach((stap) => s.tekst(stap.label, stap.formule || ''));
+      meldingen.push(...beleid.checks.map(({ status, tekst }) => ({ niveau: status, tekst })));
+    }
   }
 
   // Status
@@ -1087,9 +1177,16 @@ export function bereken(dossier, opties = {}) {
   let bron = 'berekend';
   if (soort === 'NUL') {
     bron = 'nul';
+  } else if (beleid) {
+    // Voor deze profielen blijven uitkomsten voorlopig of afkomstig van een bronstuk.
+    bron = status === 'niet_akkoord' ? 'geen' : beleid.bedrag === null ? 'open' : beleid.bewijs ? 'verklaring' : 'indicatie';
+    if (bron === 'verklaring' || bron === 'indicatie') vastgesteld = beleid.bedrag;
   } else if (afw.actief && isIngevuld(afw.bedrag)) {
     vastgesteld = Math.max(0, rond(num(afw.bedrag)));
     bron = 'afwijkend';
+  } else if (kader.familie === 'ABN' && inkomen.gecombineerdDgaOpen) {
+    vastgesteld = null;
+    bron = 'open';
   } else if (kader.familie === 'ABN') {
     // De rekentool van de bank toont het berekend inkomen ook als het toetskader niet wordt gehaald;
     // de acceptant beslist (afwijkend inkomen, geen inkomen of 0-inkomen).
@@ -1107,19 +1204,21 @@ export function bereken(dossier, opties = {}) {
 
   const heeftVPB = analyses.some((a) => a.soort === 'VPB');
   const docs = documentenlijst(dossier, {
-    kader: kader.id, familie: kader.familie, kaderCfg: kader, T, C, heeftVPB,
+    kader: kader.id, familie: kader.familie, kaderCfg: kader, T, C, heeftVPB, beleid,
     heeftSamenwerking: onds.some((o) => ['VOF', 'MTS', 'CV'].includes(o.rechtsvorm)),
     sbi45: analyses.some((a) => a.sbi45),
     meerdereBV: analyses.filter((a) => a.soort === 'VPB').length > 1,
     stilleReserves: onds.some((o) => Object.values(o.jaren || {}).some((j) => num(j?.div?.stilleReserves) > 0)),
     box3: onds.some((o) => Object.values(o.jaren || {}).some((j) => num(j?.div?.box3Ingezet) > kader.box3ZonderBewijs)),
-    vervanging,
+    vervanging: vervanging || (kader.tussentijdsPerKwartaal && !!kader.vervangenVanaf && !!inst.vervangOudsteJaar && soort === 'IKV'),
     belet: !!inst.belet?.actief,
+    kwartaaltermijn: kader.tussentijdsPerKwartaal && onds.some((o) => o.actief !== false) ? P.nhgKwartaaltermijn(datum) : null,
     tussentijdsVerplicht: !!kader.tussentijdsVerplichtVanaf && P.opOfNa(datum, kader.tussentijdsVerplichtVanaf.m, kader.tussentijdsVerplichtVanaf.d) && T3 === jaarNu - 1,
     starter: inkomen?.perOnderneming?.some((o) => o.factor && o.factor < 1) || !!inkomen?.starter,
     beroepsregister: onds.some((o) => ['medisch_juridisch', 'fysiotherapeut'].includes(o.beroepsgroep)),
     rc: num(dossier.rc?.saldo) > 0 || analyses.some((a) => num(a.jaren[T3]?.balans?.vordDGAKort) > 0),
-    leningDirectie: num(dossier.leningDirectie?.hoofdsom) > 0 || analyses.some((a) => num(a.jaren[T3]?.balans?.fvaDGA) > 0),
+    leningDirectie: num(dossier.leningDirectie?.hoofdsom) > 0 || num(dossier.leningDirectie?.termijn) > 0
+      || analyses.some((a) => num(a.jaren[T3]?.balans?.fvaDGA) > 0),
     zk: zk.length > 0,
     dividend: heeftVPB && T.some((y) => onds.some((o) => num(dossier.ib?.[y]?.perOnd?.[o.id]?.dividend) > 0)),
     deelnemingen: st.links.length > 0,
@@ -1133,27 +1232,36 @@ export function bereken(dossier, opties = {}) {
     kader: kader.id,
     familie: kader.familie,
     kaderNaam: kader.naam,
-    kaderVersie: kader.versie,
+    kaderVersie: beleid?.versie || kader.versie,
     kaderCfg: kader,
-    soort,
+    soort: inkomensanalyse ? 'ANALYSE' : soort,
+    inkomensanalyse,
     datum,
     jaarNu,
     geldigTot: P.geldigTot(datum, kader.geldigheidMaanden),
     T, T3, C, vervanging,
+    rekenkeuzes: {
+      controlejaar: { gevraagd: inst.controlejaar !== false, actief: C !== null, jaar: C, kandidaat: kandidaatC },
+      vervanging: { beschikbaar: nhgVervanging || vennVervanging, gevraagd: vervangingGevraagd,
+        toegepast: vervanging || beleid?.vervanging?.toegepast === true,
+        reden: vervangingReden || (vennVervanging && vervangingGevraagd ? beleid?.vervanging?.reden ?? 'Vul eerst de benodigde toetsjaren en gegevens voor de Venn-berekening in.' : '') },
+      abnVaststelling: inkomen?.abnVaststelling ?? null,
+    },
     ondernemingen: analyses,
     structuur: st,
     inkomen,
+    beleid,
     nul,
-    rc,
+    rc: beleid?.rc || rc,
     leningDirectie,
     zk,
     toets30: kader.dertigProcentRegel ? dertigProcentToets(dossier.loondienst, kader) : null,
     status,
     meldingen,
-    vastgesteld,
-    bron,
-    berekend: inkomen ? inkomen.berekend : 0,
-    toetsinkomen: inkomen ? inkomen.toetsinkomen : 0,
+    vastgesteld: inkomensanalyse ? null : vastgesteld,
+    bron: inkomensanalyse ? 'analyse' : bron,
+    berekend: inkomen?.gecombineerdDgaOpen ? null : inkomen ? inkomen.berekend : 0,
+    toetsinkomen: inkomen?.gecombineerdDgaOpen ? null : inkomen ? inkomen.toetsinkomen : 0,
     documenten: docs,
     trace,
   };
@@ -1163,25 +1271,48 @@ export function bereken(dossier, opties = {}) {
  * Hetzelfde dossier volgens alle kaders naast elkaar (zonder handmatig afwijkend inkomen), met per kader de
  * uitkomst, het oordeel en de belangrijkste redenen.
  */
-export function vergelijkKaders(dossier, ids = KADER_VOLGORDE) {
-  const basis = {
+export function vergelijkDossierVoorKader(dossier, id) {
+  const instellingen = dossier.instellingen || {};
+  const analyse = dossier.soort === 'ANALYSE' ? instellingen.analyseKaders?.[id] : null;
+  return {
     ...dossier,
+    kader: id,
+    metNhg: false,
+    soort: dossier.soort === 'ANALYSE' ? 'IKV' : dossier.soort,
+    ...(analyse ? { instellingen: { ...instellingen, ...analyse,
+      abnDividend: { ...instellingen.abnDividend, ...analyse.abnDividend }, belet: { ...instellingen.belet, ...analyse.belet } } } : {}),
     afwijkend: undefined,
     ondernemingen: (dossier.ondernemingen || []).map((o) => ({ ...o, afwijkend: undefined })),
   };
+}
+
+export function vergelijkKaders(dossier, ids = KADER_VOLGORDE) {
   return ids.map((id) => {
     try {
-      const r = bereken({ ...basis, kader: id });
+      const invoerDossier = vergelijkDossierVoorKader(dossier, id);
+      const r = bereken(invoerDossier);
       // Eerst de concrete voorwaarden per onderneming, daarna de meldingen op dossierniveau.
       const nok = [
         ...r.ondernemingen.filter((a) => a.meenemen !== false || r.familie === 'ABN')
           .flatMap((a) => a.checks.filter((c) => c.status === 'niet_akkoord').map((c) => `${a.naam}: ${c.label}`)),
         ...r.meldingen.filter((m) => m.niveau === 'niet_akkoord').map((m) => m.tekst),
       ];
+      const invoer = rekenInvoerStatus(invoerDossier, r);
+      const invoerBlokkeert = invoer.dossier.some((punt) => punt.blokkeert)
+        || invoer.ondernemingen.some((o) => o.punten.some((punt) => punt.blokkeert));
+      const abn = r.inkomen?.abnBronVergelijking;
       return {
         id, kort: r.kaderCfg.kort, naam: r.kaderNaam, versie: r.kaderVersie, nhg: r.kaderCfg.nhg,
         status: r.status, bron: r.bron, berekend: r.berekend, toetsinkomen: r.toetsinkomen, vastgesteld: r.vastgesteld,
+        beleid: r.beleid ? {
+          bedrag: r.beleid.bedrag, indicatie: r.beleid.indicatie, methode: r.beleid.methode, bewijs: !!r.beleid.bewijs,
+        } : null,
         box1: r.inkomen?.box1 ?? null, box2: r.inkomen?.box2 ?? null, stappen: r.inkomen?.stappen || [], nok: [...new Set(nok)].slice(0, 6),
+        ...(r.inkomen?.abnVaststelling ? { abnVaststelling: r.inkomen.abnVaststelling } : {}),
+        ...(abn ? { abnBronVergelijking: { dga: abn.dga, uitgekeerd: abn.uitgekeerd, nietUitgekeerd: abn.nietUitgekeerd,
+          horizontaal: abn.horizontaal, verticaal: abn.verticaal } } : {}),
+        invoerBlokkeert,
+        toelichtingen: [...new Set(r.meldingen.filter((m) => ['attentie', 'niet_akkoord'].includes(m.niveau)).map((m) => m.tekst))],
         attenties: r.meldingen.filter((m) => m.niveau === 'attentie').length, T: r.T, C: r.C, starter: r.inkomen?.starter || null,
       };
     } catch (e) {

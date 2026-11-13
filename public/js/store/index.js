@@ -6,8 +6,13 @@ import { ApiAdapter } from './api.js';
  * Anders (GitHub Pages, lokaal bestand, demo) valt de app terug op opslag in de browser.
  */
 export async function kiesAdapter(voorkeur = 'auto') {
+  if (globalThis.ZIB_HOSTED === true) {
+    const adapter = new ApiAdapter('/api');
+    const me = await adapter.init();
+    return { adapter, me };
+  }
   let waarschuwing = '';
-  const statischeHost = /\.github\.io$/i.test(location.hostname) || globalThis.ZIB_DEMO === true;
+  const statischeHost = /\.github\.io$/i.test(location.hostname) || globalThis.ZIB_DEMO === true || globalThis.ZIB_LOCAL_PRIVATE === true;
   if (voorkeur !== 'lokaal' && !statischeHost && typeof fetch === 'function' && location.protocol.startsWith('http')) {
     try {
       const ctrl = new AbortController();

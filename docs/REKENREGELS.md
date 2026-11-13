@@ -134,12 +134,14 @@ Met de instelling cumulatief en alle toetsjaren wordt het maximum liquiditeit 50
 |---|---|
 | Duur | ≥ 12 maanden na KvK-inschrijving (of aantoonbaar eerder actief) |
 | Definitieve cijfers | Vanaf 1/5 over het vorige jaar |
-| Lopend jaar | Vanaf 1/8 tussentijdse W&V verplicht, met positief resultaat |
-| Winstgevendheid | Laatste boekjaar ≥ 0 (en lopend jaar geëxtrapoleerd ≥ 0) |
+| Tussentijdse cijfers en OB-aangiften | Bij kalenderboekjaren vanaf 1 februari t/m Q4 van het vorige boekjaar, vanaf 1 augustus t/m Q2 van het lopende jaar en vanaf 1 november t/m Q3 van het lopende jaar |
+| Winstgevendheid | Positief resultaat in het laatste boekjaar en in het lopende boekjaar wanneer de tussentijdse winsttoets verplicht is |
 | Liquiditeit | Current ratio ≥ 1,00 na correcties (laatste jaar en lopend jaar met balans) |
 | Solvabiliteit | ≥ 25% volgens het bandbreedtemodel (hieronder) |
 | Buitenland | Gevestigd en belastingplichtig in Nederland, Nederlandse rechtsvorm |
 | DGA | Belang ≥ 5% (anders geen niet-IB ondernemer) |
+
+Bron voor winstgevendheid en de kwartaaltermijnen: [NHG Toetskaders IKV 01.2026, p. 2–3 en p. 10](https://www.nhg.nl/media/3xolrfrr/toetskaders-inkomensverklaring-ondernemer-plus-toelichting-plus-documentenlijst-2026-1-samenvoeging-geen-wijziging.pdf). ZIB markeert ontbrekende cijfers en een te korte periode als aandachtspunt. De rekenexpert controleert de onderliggende OB-aangiften en bepaalt welke periode vereist is bij een gebroken boekjaar. Als resultaatcijfers voor een meegenomen onderneming ontbreken in een geselecteerd controlejaar, blijft het basisinkomen zichtbaar en wacht de inkomenstoets van het controlejaar op aanvulling.
 
 ### Bandbreedtemodel
 

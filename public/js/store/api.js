@@ -33,6 +33,11 @@ export class ApiAdapter {
     }
     if (!res.ok) {
       const tekst = await res.text().catch(() => '');
+      if ([403, 422].includes(res.status) && res.headers.get('content-type')?.includes('application/json')) {
+        let fout;
+        try { fout = JSON.parse(tekst).fout; } catch { /* HTTP-fout hieronder */ }
+        if (typeof fout === 'string' && fout) throw new Error(fout);
+      }
       throw new Error(`Serverfout ${res.status}: ${tekst.slice(0, 200)}`);
     }
     if (opties.blob) return res.blob();
@@ -54,7 +59,13 @@ export class ApiAdapter {
     const j = await this.req('PUT', `/records/${encodeURIComponent(rec.id)}`, {
       type: rec.type, data: rec, if_version: rec.version || 0,
     });
-    return { ...rec, version: j.version, updated_at: j.updated_at, updated_by: j.updated_by };
+    const opgeslagen = { ...rec, version: j.version, updated_at: j.updated_at, updated_by: j.updated_by };
+    for (const key of ['fiat', 'fiatteur']) {
+      if (!Object.hasOwn(j, key)) continue;
+      if (j[key] === null) delete opgeslagen[key];
+      else opgeslagen[key] = j[key];
+    }
+    return opgeslagen;
   }
 
   async remove(id, version) {
@@ -76,8 +87,7 @@ export class ApiAdapter {
   }
 
   async importAll(json) {
-    const j = await this.req('POST', '/import', json);
-    return j.aantal || 0;
+    return this.req('POST', '/import', json);
   }
 
   async putFile(id, file) {
