@@ -8,7 +8,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { gzipSync } from 'node:zlib';
 import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -67,8 +66,7 @@ writeFileSync(uit, html);
 writeFileSync(path.join(root, 'dist/zib-artifact.html'), artifact);
 writeFileSync(path.join(root, 'dist/zib-lokaal.html'), lokaal);
 if (process.argv.includes('--sites')) {
-  const htmlIngepakt = gzipSync(sites, { level: 9 }).toString('base64');
-  const entry = `import { maakSitesWorker } from './functions/sites-worker.js';\nconst htmlIngepakt = ${JSON.stringify(htmlIngepakt)};\nfunction html() {\n  const bytes = Uint8Array.from(atob(htmlIngepakt), (c) => c.charCodeAt(0));\n  return new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));\n}\nexport default maakSitesWorker({ html });\n`;
+  const entry = `import { maakSitesWorker } from './functions/sites-worker.js';\nexport default maakSitesWorker({ html: ${JSON.stringify(sites)} });\n`;
   const out = path.join(root, 'dist/sites-worker.mjs');
   execFileSync(npxCli ? process.execPath : 'npx', [...(npxCli ? [npxCli] : []), '--yes', 'esbuild',
     '--bundle', '--format=esm', '--platform=browser', '--target=es2022', '--legal-comments=none',
