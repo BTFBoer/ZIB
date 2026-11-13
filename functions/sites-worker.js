@@ -57,7 +57,8 @@ export function maakSitesWorker({ html }) {
       }
       if (url.pathname !== '/' && url.pathname !== '/index.html') return fout('Pagina niet gevonden.', 404);
       if (!leesmethode.has(request.method)) return fout('Methode niet toegestaan.', 405);
-      return new Response(request.method === 'HEAD' ? null : html, {
+      const body = request.method === 'HEAD' ? null : typeof html === 'function' ? html() : html;
+      return new Response(body, {
         headers: { ...headers, 'content-type': 'text/html; charset=utf-8' },
       });
     },
