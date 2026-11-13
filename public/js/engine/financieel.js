@@ -43,6 +43,13 @@ export function heeftVW(w = {}) {
   return Object.entries(w).some(([k, x]) => k !== 'prognose' && k !== 'fte' && num(x) !== 0);
 }
 
+/** Een expliciet nulresultaat is invoer. Bij totaalposten volstaat alleen omzet niet. */
+export function heeftResultaatinvoer(jd = {}) {
+  return heeftVW(jd.vw) || isIngevuld(jd.bzi?.nettowinst)
+    || (!heeftAggVW(jd.bzi) && Object.entries(jd.vw || {}).some(([k, x]) =>
+      k !== 'prognose' && k !== 'fte' && isIngevuld(x)));
+}
+
 /** Diversen-post met terugval op een V&W-post wanneer de post leeg is gelaten. */
 export function metTerugval(div = {}, key, terugval) {
   return isIngevuld(div[key]) ? num(div[key]) : num(terugval);

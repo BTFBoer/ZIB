@@ -70,7 +70,13 @@ export function documentenlijst(d, ctx) {
     lijst.push(item('ib_aanslag', 'IB-aanslagen: de laatste twee definitieve', 'Altijd', { aantal: 2 }));
     lijst.push(item('vgi', 'Verklaring geregistreerd inkomen (oudste twee jaren)', 'Digitaal, onder de oorspronkelijke bestandsnaam', { aantal: 2 }));
     lijst.push(item('uwv', 'UWV verzekeringsbericht', 'In alle situaties'));
-    if (C || ctx.tussentijdsVerplicht) {
+    if (ctx.kwartaaltermijn) {
+      const { jaar, kwartaal, vanaf } = ctx.kwartaaltermijn;
+      lijst.push(item('tussentijds', `Winst- en verliesrekening ${jaar} t/m Q${kwartaal}`,
+        `Vanaf ${vanaf}${kwartaal === 4 ? ', of de definitieve jaarrekening als die al beschikbaar is' : ', met positief resultaat'}`, { jaren: [jaar] }));
+      lijst.push(item('ob_aangifte', `Aangiften omzetbelasting ${jaar} t/m Q${kwartaal}`,
+        `Vanaf ${vanaf}; controleer of alle verstreken aangiftetijdvakken zijn aangeleverd`, { jaren: [jaar] }));
+    } else if (C || ctx.tussentijdsVerplicht) {
       lijst.push(item('tussentijds', 'Winst- en verliesrekening lopend jaar', 'Vanaf 01-08 verplicht (positief resultaat)'));
       lijst.push(item('ob_aangifte', 'Aangiften omzetbelasting lopend jaar', 'Q1-Q2 vanaf 01-08, Q3 vanaf 01-11, alle kwartalen vanaf 01-02'));
     }

@@ -30,23 +30,31 @@ import { overwinstBlok } from './overwinst.js';
 import { renderBziInvoer } from './bziinvoer.js';
 
 export const TABS = [
+  ['overzicht', 'Dossieroverzicht'],
   ['klant', 'Klantgegevens'],
+  ['documenten', 'Documenten'],
   ['balans', 'Balans'],
   ['vw', 'V&W'],
   ['diversen', 'Diversen'],
   ['ib', 'IB-aangifte'],
-  ['berekening', 'Berekening'],
   ['bziinvoer', 'BZI-invoer'],
-  ['rapport', 'Rapport'],
-  ['documenten', 'Documenten'],
+  ['berekening', 'Berekening'],
   ['notities', 'Notities'],
+  ['rapport', 'Rapport'],
   ['fiat', 'Fiattering'],
 ];
 
 const PER_ONDERNEMING = ['balans', 'vw', 'diversen'];
+const TAB_LABEL = Object.fromEntries(TABS);
+const TAB_GROEPEN = [
+  ['Start', ['overzicht', 'klant', 'documenten']],
+  ['Cijfers', ['balans', 'vw', 'diversen', 'ib', 'bziinvoer']],
+  ['Beoordeling', ['berekening', 'notities', 'rapport', 'fiat']],
+];
+const dossierPad = (d, tab, ondId = '') => `#/dossier/${encodeURIComponent(d.id)}/${tab}${ondId ? `/${encodeURIComponent(ondId)}` : ''}`;
 
 // Overgang tussen de weergaven: welk tabblad hoort bij welke stap.
-export const NAAR_BZI = { klant: 'algemeen', balans: 'bedrijf', vw: 'bedrijf', diversen: 'bedrijf', ib: 'bedrijf', notities: 'algemeen', bziinvoer: 'bziinvoer' };
+export const NAAR_BZI = { klant: 'algemeen', balans: 'bedrijf', vw: 'bedrijf', diversen: 'bedrijf', ib: 'bedrijf', bziinvoer: 'bziinvoer' };
 export const NAAR_VIIZ = { algemeen: 'klant', bedrijven: 'klant', bedrijf: 'balans', boekhouders: 'notities', verplichtingen: 'klant', samenvatting: 'berekening', bziinvoer: 'bziinvoer' };
 
 // ---------------------------------------------------------------------------
@@ -116,16 +124,19 @@ function voortgangKop(d, r) {
     <span>Invoer ${klaar} van ${totaal} compleet</span></a>`;
 }
 
-/** Tabbladen met per tabblad een statusstip (compleet, aandacht, fout of nog leeg). */
+/** Vaste routes, gegroepeerd per taak in het dossier. */
 export function tabsHTML(d, tab, ondId, r, docs = dossierDocs(d)) {
   const v = voortgang(d, r, docs);
-  return `<nav class="tabs geen-print" id="dossiertabs" aria-label="Dossier" data-tab="${esc(tab)}" data-ond="${esc(ondId || '')}">${TABS.map(([k, l]) => {
-    const pad = PER_ONDERNEMING.includes(k) && ondId ? `/${ondId}` : '';
+  const link = (k) => {
     const s = v[k];
     const stip = s ? `<i class="stip ${s.status}" aria-hidden="true"></i>` : '';
     const teller = k === 'documenten' && s?.teller ? `<span class="teller">${s.teller}</span>` : '';
-    return `<a href="#/dossier/${esc(d.id)}/${k}${pad}" class="${k === tab ? 'actief' : ''}"${k === tab ? ' aria-current="page"' : ''}${s ? ` title="${esc(s.tekst)}"` : ''}>${stip}${esc(l)}${teller}${s ? `<span class="sr"> (${esc(STIP_TEKST[s.status])})</span>` : ''}</a>`;
-  }).join('')}</nav>`;
+    return `<a href="${dossierPad(d, k, PER_ONDERNEMING.includes(k) ? ondId : '')}" class="${k === tab ? 'actief' : ''}"${k === tab ? ' aria-current="page"' : ''}${s ? ` title="${esc(s.tekst)}"` : ''}>${stip}${esc(TAB_LABEL[k])}${teller}${s ? `<span class="sr"> (${esc(STIP_TEKST[s.status])})</span>` : ''}</a>`;
+  };
+  return `<nav class="dossier-tabs geen-print" id="dossiertabs" aria-label="Dossier" data-tab="${esc(tab)}" data-ond="${esc(ondId || '')}">
+    ${TAB_GROEPEN.map(([naam, sleutels]) => `<div class="dossier-tabgroep" role="group" aria-label="${naam}"><span aria-hidden="true">${naam}</span>
+      <div>${sleutels.map(link).join('')}</div></div>`).join('')}
+  </nav>`;
 }
 
 /** Alle stappen van de ViiZ-weergave op volgorde: per onderneming eerst balans, V&W en diversen, dan de volgende onderneming. */
@@ -136,7 +147,7 @@ function viizStappen(d) {
   TABS.forEach(([k, l]) => {
     if (PER_ONDERNEMING.includes(k)) return;
     stappen.push({ k, id: '', label: l });
-    if (k !== 'klant') return;
+    if (k !== 'documenten') return;
     (onds.length ? onds : [null]).forEach((o) => PER_ONDERNEMING.forEach((p) => stappen.push({
       k: p, id: o?.id || '', label: `${label[p]}${onds.length > 1 ? ` · ${o.naam || '(naamloos)'}` : ''}`,
     })));
@@ -162,13 +173,19 @@ function stapNav(d, tab, ondId) {
 
 export function renderDossier(d, tab, ondId, r) {
   const docs = dossierDocs(d);
-  if (weergaveDossier(d) === 'bzi') {
+  const bzi = weergaveDossier(d) === 'bzi';
+  if (!tab || tab === 'overzicht') {
+    return `${kopVoor(d, r)}${bzi ? '' : tabsHTML(d, 'overzicht', '', r, docs)}
+      <div id="tabinhoud">${tabOverzicht(d, r, docs, bzi)}</div>`;
+  }
+  if (bzi) {
     const ontbrekend = r.documenten.filter((x) => x.verplicht && !docAanwezig(docs, x)).length;
     return renderBZI(d, NAAR_BZI[tab] || tab, ondId, r, {
       ontbrekend,
       documenten: () => tabDocumenten(d, r, docs),
       berekening: () => tabBerekening(d, r),
       bziinvoer: () => renderBziInvoer(d, r),
+      notities: () => tabNotities(d, r),
       rapport: () => renderRapportPagina(d, r),
       fiat: () => tabFiat(d, r),
     });
@@ -193,7 +210,75 @@ export function renderDossier(d, tab, ondId, r) {
   const tabGeldig = TABS.some(([k]) => k === t) ? t : 'klant';
   const keuzeOnd = PER_ONDERNEMING.includes(t) && onds.length > 1
     ? `<div class="ondkeuze geen-print">${onds.map((o) => `<a href="#/dossier/${esc(d.id)}/${t}/${esc(o.id)}" class="${o.id === ond?.id ? 'actief' : ''}">${esc(o.naam || '(naamloos)')}</a>`).join('')}</div>` : '';
-  return `${dossierKop(d, r)}${tabsHTML(d, tabGeldig, ond?.id, r, docs)}${keuzeOnd}<div id="tabinhoud">${inhoud}</div>${stapNav(d, tabGeldig, ond?.id)}`;
+  return `${dossierKop(d, r)}${tabsHTML(d, tabGeldig, ond?.id, r, docs)}${keuzeOnd}
+    ${t !== 'rapport' ? `<h1 class="dossier-titel">${esc(TAB_LABEL[tabGeldig])}</h1>` : ''}
+    <div id="tabinhoud">${inhoud}</div>${stapNav(d, tabGeldig, ond?.id)}`;
+}
+
+const TRIAGE_LABEL = { ok: 'Compleet', aandacht: 'Te controleren', fout: 'Actie nodig', open: 'Open' };
+const TRIAGE_PIL = { ok: 'akkoord', aandacht: 'attentie', fout: 'niet_akkoord', open: 'neutraal' };
+
+function tabOverzicht(d, r, docs, bzi) {
+  const v = voortgang(d, r, docs);
+  const { klaar, totaal } = voortgangTelling(v);
+  const stappen = ['klant', 'documenten', 'balans', 'vw', 'ib', 'berekening', 'notities', 'fiat'];
+  const links = {
+    klant: dossierPad(d, bzi ? 'algemeen' : 'klant'),
+    balans: dossierPad(d, bzi ? 'bedrijf' : 'balans'),
+    vw: dossierPad(d, bzi ? 'bedrijf' : 'vw'),
+    ib: dossierPad(d, bzi ? 'bedrijf' : 'ib'),
+  };
+  const href = (k) => links[k] || dossierPad(d, k);
+  const volgende = AFGEROND.includes(d.status) ? 'rapport'
+    : d.status === 'beoordeling_2' ? 'fiat'
+    : stappen.find((k) => v[k] && v[k].status !== 'ok') || 'rapport';
+  const vervolg = { klant: 'Klantgegevens aanvullen', documenten: 'Stukken controleren', balans: 'Balans controleren', vw: 'V&W controleren', ib: 'IB-gegevens aanvullen', berekening: 'Voorwaarden beoordelen', notities: 'Onderbouwing vastleggen', fiat: 'Naar fiattering', rapport: 'Rapport openen' };
+  const bevindingen = (r.meldingen || []).filter((m) => m.niveau === 'niet_akkoord' || m.niveau === 'attentie');
+  const zwaar = bevindingen.filter((m) => m.niveau === 'niet_akkoord');
+  const selectie = [...zwaar, ...bevindingen.filter((m) => m.niveau === 'attentie')];
+  const onds = d.ondernemingen || [];
+  const status = (k) => pil(TRIAGE_PIL[v[k].status], TRIAGE_LABEL[v[k].status]);
+  const rij = (k) => `<li><a href="${href(k)}"><span><strong>${esc(TAB_LABEL[k])}</strong><small>${esc(v[k].tekst)}</small></span>${status(k)}${icoon('rechts')}</a></li>`;
+  const groep = (titel, sleutels) => `<section class="paneel overzicht-lijst"><h2>${titel}</h2>
+    <ul>${sleutels.filter((k) => v[k]).map(rij).join('')}</ul></section>`;
+  const detailLink = (k, label, ico) => `<a class="knop sec" href="${href(k)}">${icoon(ico)}${label}</a>`;
+  return `<div class="dossier-overzicht">
+    <section class="overzicht-start" aria-labelledby="overzicht-titel">
+      <div class="overzicht-intro">
+        <a class="overzicht-terug" href="#/aanvragen">${icoon('links')}Aanvragen</a>
+        <h1 id="overzicht-titel">Dossieroverzicht</h1>
+        <p>${esc(v[volgende]?.tekst || (AFGEROND.includes(d.status) ? 'Bekijk de vastgelegde beoordeling en onderbouwing.' : 'Bekijk de inkomensvaststelling en onderbouwing.'))}</p>
+        <div class="acties"><a class="knop" href="${href(volgende)}">${vervolg[volgende]}${icoon('pijl')}</a>
+          ${volgende !== 'rapport' ? detailLink('rapport', 'Rapport', 'document') : ''}</div>
+      </div>
+      <div class="overzicht-meters">
+        <div><span>Invoer compleet</span><strong>${klaar}<small> / ${totaal}</small></strong>
+          <progress max="${totaal || 1}" value="${klaar}" aria-label="Invoer compleet"></progress></div>
+        <div><span>Verplichte stukken ontbreken</span><strong>${v.documenten?.teller || 0}</strong>
+          <a href="${href('documenten')}">Bekijk stukken ${icoon('rechts')}</a></div>
+        <div><span>Rekenmeldingen</span><strong>${bevindingen.length}</strong>
+          <a href="${href('berekening')}">Bekijk berekening ${icoon('rechts')}</a></div>
+      </div>
+    </section>
+    <div class="overzicht-kolommen">
+      ${groep('Aanvraag en cijfers', ['klant', 'documenten', 'balans', 'vw', 'ib'])}
+      <div class="overzicht-stapel">
+        ${groep('Beoordeling', ['berekening', 'notities', 'fiat'])}
+        ${selectie.length ? `<section class="paneel overzicht-bevindingen"><h2>Rekenmeldingen</h2>
+          <ul>${selectie.slice(0, 3).map((m) => `<li>${stip(m.niveau)}<span>${esc(m.tekst)}</span></li>`).join('')}</ul>
+          <a href="${href('berekening')}">${selectie.length > 3 ? `Alle ${selectie.length} meldingen bekijken` : 'Onderbouwing in de berekening'} ${icoon('rechts')}</a></section>` : ''}
+      </div>
+    </div>
+    <section class="paneel overzicht-ondernemingen"><h2>Ondernemingen</h2>
+      ${onds.length ? `<ul>${onds.map((o) => {
+        const analyse = r.ondernemingen.find((a) => a.id === o.id);
+        return `<li><a href="${dossierPad(d, bzi ? 'bedrijf' : 'balans', o.id)}">${icoon('gebouw')}
+          <span><strong>${esc(o.naam || 'Naamloze onderneming')}</strong><small>${esc(RECHTSVORMEN[o.rechtsvorm]?.label || o.rechtsvorm || '')}</small></span>
+          ${analyse ? pil(analyse.status) : ''}${icoon('rechts')}</a></li>`;
+      }).join('')}</ul>` : `<p class="dempen">Er is nog geen onderneming toegevoegd.</p>${detailLink('klant', 'Naar klantgegevens', 'plus')}`}
+      ${bzi ? `<div class="acties overzicht-snel">${detailLink('bedrijven', 'Structuur', 'organogram')}${detailLink('verplichtingen', 'Verplichtingen', 'lijst')}${detailLink('bziinvoer', 'BZI-invoer', 'reken')}${detailLink('samenvatting', 'Samenvatting', 'notitie')}</div>` : ''}
+    </section>
+  </div>`;
 }
 
 function geenOnderneming(d) {
@@ -203,6 +288,12 @@ function geenOnderneming(d) {
 // ---------------------------------------------------------------------------
 // Klantgegevens
 // ---------------------------------------------------------------------------
+function intakeKlap(d, onderdeel, titel, inhoud) {
+  const id = `intake-${onderdeel}`;
+  const sleutel = `intake:${d.id}:${onderdeel}`;
+  return klapPaneel(sleutel, id, esc(titel), inhoud, { standaardDicht: true });
+}
+
 function tabKlant(d, r) {
   const a = d.aanvrager || {};
   const inst = d.instellingen || {};
@@ -212,28 +303,33 @@ function tabKlant(d, r) {
   const toetsjaarOpties = [['', `Standaard (${r.T3})`], ...[jaarNu - 1, jaarNu - 2, jaarNu - 3].map((y) => [String(y), String(y)])];
   const heeftVPB = (d.ondernemingen || []).some((o) => soortOndernemer(o.rechtsvorm) === 'VPB');
 
-  const aanvraag = `<div class="paneel"><h2>Aanvraag</h2><div class="raster-3">
+  const aanvraag = `<section class="paneel"><h2>Aanvraag</h2><div class="raster-3">
     ${keuze('Soort aanvraag', 'soort', { IKV: 'Inkomensverklaring (IKV)', NUL: '0-verklaring (nul-inkomen)' }, d.soort, { render: true })}
     ${keuze('Toetskader', 'kader', kaderOpties(), d.kader, { render: true, hint: `${kader.versie}. ${kader.bronStatus || ''}` })}
     ${veld('Berekeningsdatum', 'berekeningsdatum', d.berekeningsdatum, { type: 'datum', render: true })}
-    ${keuze('Laatste toetsjaar', 'instellingen.laatsteToetsjaar', toetsjaarOpties, inst.laatsteToetsjaar ?? '', { render: true, type: 'getal',
-      hint: `Definitieve cijfers vorig jaar verplicht vanaf ${kader.definitiefVerplichtVanaf.d}-${kader.definitiefVerplichtVanaf.m}.` })}
     ${keuze('Status', 'status', DOSSIER_STATUSSEN, d.status, { render: true })}
+    ${keuze('Advieskantoor', 'advieskantoorId', advOpties, d.advieskantoorId, { leeg: 'Geen / onbekend' })}
+    ${veld('Uiterste datum', 'uitersteDatum', d.uitersteDatum, { type: 'datum', render: true })}
+  </div></section>`;
+  const behandeling = intakeKlap(d, 'behandeling', 'Behandeling en dossieradministratie', `<div class="raster-3">
     ${keuze('Niveau dossier', 'niveau', ['Basis', 'Medium', 'Top'], d.niveau || 'Basis')}
     ${veld('Behandelaar (1e fiat)', 'behandelaar', d.behandelaar)}
-    ${keuze('Advieskantoor', 'advieskantoorId', advOpties, d.advieskantoorId, { leeg: 'Geen / onbekend' })}
     ${keuze('Opdrachtnemer (label)', 'label', ['ABN AMRO', 'Florius', 'Moneyou', 'ASN Bank', 'Knab', 'Overig'], d.label || ({ ASN: 'ASN Bank', KNAB: 'Knab' }[d.kader] || 'ABN AMRO'))}
     ${keuze('Afdeling', 'afdeling', ['FMD', 'IMV', 'RV'], d.afdeling || 'IMV', { hint: 'Bepaalt het format van de conclusie.' })}
     ${veld('Hypotheekaanvraagnummer', 'leningnummer', d.leningnummer)}
     ${veld('Aantal ondernemingen bij aanvraag', 'instellingen.initieelAantalOndernemingen', inst.initieelAantalOndernemingen, { type: 'getal' })}
     ${veld('Datum aanvraag', 'datumAanvraag', d.datumAanvraag || String(d.aangemaakt || '').slice(0, 10), { type: 'datum' })}
-    ${veld('Uiterste datum', 'uitersteDatum', d.uitersteDatum, { type: 'datum', render: true })}
     ${veld('Via', 'via', d.via, { placeholder: 'Bijv. adviseur, invoerservice, accountant' })}
     ${veld('Relatienummer (bestaande relatie)', 'relatienummer', d.relatienummer, { placeholder: 'Alleen bij een bestaande relatie' })}
   </div>
   <div class="raster-2" style="margin-top:14px">
     <div>${vink('Spoeddossier', 'spoed', !!d.spoed, { render: true })}</div>
     <div>${vink('Bestaande relatie van de geldverstrekker', 'bestaandeRelatie', !!d.bestaandeRelatie, { render: true })}</div>
+  </div>`);
+  const toetsopties = intakeKlap(d, 'toetsing', 'Toetsjaren en inkomenskeuzes', `<div class="raster-3">
+    ${keuze('Laatste toetsjaar', 'instellingen.laatsteToetsjaar', toetsjaarOpties, inst.laatsteToetsjaar ?? '', { render: true, type: 'getal',
+      hint: `Definitieve cijfers vorig jaar verplicht vanaf ${kader.definitiefVerplichtVanaf.d}-${kader.definitiefVerplichtVanaf.m}.` })}
+  </div><div class="raster-2" style="margin-top:14px">
     <div>${vink('Controlejaar / lopend jaar meenemen (als er cijfers zijn)', 'instellingen.controlejaar', inst.controlejaar !== false, { render: true })}</div>
     ${kader.vervangenVanaf && kader.familie === 'NHG' && d.soort === 'IKV' ? `<div>${vink('Oudste jaar vervangen door het gerealiseerde resultaat van het lopende jaar', 'instellingen.vervangOudsteJaar', !!inst.vervangOudsteJaar, { render: true, hint: `${kader.kort}: vanaf ${kader.vervangenVanaf.d}-${kader.vervangenVanaf.m} met tussentijdse balans en W&V${kader.id === 'ASN' ? '; op basis van het werkelijke aantal maanden, maximaal het laatste volledige jaar' : kader.id === 'KNAB' ? '; het vervangende jaar weegt 3×' : '; alleen hele maanden'}.` })}
       ${r.inkomen?.vergelijking ? `<p class="dempen klein" style="margin:6px 0 0 24px">Box 1 zonder vervanging ${esc(fmt.eur(r.inkomen.vergelijking.zonder))}, met vervanging ${esc(fmt.eur(r.inkomen.vergelijking.met))}.</p>` : ''}</div>` : ''}
@@ -241,14 +337,16 @@ function tabKlant(d, r) {
   ${heeftVPB && d.soort === 'IKV' ? box2Keuzes(d, kader, inst) : ''}
   ${d.soort === 'IKV' && kader.familie === 'NHG' && kader.id !== 'NHG' ? kaderKeuzes(d, kader, inst) : ''}
   ${kader.instelbaar?.length && d.soort === 'IKV' ? kaderParameters(d, kader) : ''}
-  </div>`;
+  `);
 
-  const aanvrager = `<div class="paneel"><h2>Aanvrager</h2><div class="raster-3">
+  const aanvrager = `<section class="paneel"><h2>Aanvrager</h2><div class="raster-3">
     ${veld('Voorletters', 'aanvrager.voorletters', a.voorletters)}
     ${veld('Tussenvoegsel', 'aanvrager.tussenvoegsel', a.tussenvoegsel)}
     ${veld('Achternaam', 'aanvrager.achternaam', a.achternaam)}
-    ${keuze('Geslacht', 'aanvrager.geslacht', { M: 'Man', V: 'Vrouw', X: 'Anders/onbekend' }, a.geslacht, { leeg: '' })}
     ${veld('Geboortedatum', 'aanvrager.geboortedatum', a.geboortedatum, { type: 'datum' })}
+  </div></section>`;
+  const contact = intakeKlap(d, 'contact', 'Adres en contactgegevens', `<div class="raster-3">
+    ${keuze('Geslacht', 'aanvrager.geslacht', { M: 'Man', V: 'Vrouw', X: 'Anders/onbekend' }, a.geslacht, { leeg: '' })}
     ${veld('Geboorteplaats', 'aanvrager.geboorteplaats', a.geboorteplaats)}
     ${veld('Straat', 'aanvrager.straat', a.straat)}
     ${veld('Huisnummer', 'aanvrager.huisnummer', a.huisnummer)}
@@ -256,21 +354,23 @@ function tabKlant(d, r) {
     ${veld('Woonplaats', 'aanvrager.woonplaats', a.woonplaats)}
     ${veld('Telefoon', 'aanvrager.telefoon', a.telefoon)}
     ${veld('E-mail', 'aanvrager.email', a.email, { type: 'email' })}
-  </div><p class="dempen klein" style="margin-top:10px">Leg geen BSN of rekeningnummers vast; die zijn voor de inkomensbepaling niet nodig.</p></div>`;
+  </div><p class="dempen klein" style="margin-top:10px">Leg geen BSN of rekeningnummers vast; die zijn voor de inkomensbepaling niet nodig.</p>`);
 
   const ondernemingen = `<div class="paneel"><div class="paginakop" style="margin:0 0 6px"><h2>Ondernemingen en structuur</h2>
     <button class="knop sec" data-actie="ond-toevoegen">${icoon('plus')}Onderneming toevoegen</button></div>
     ${(d.ondernemingen || []).map((o, i) => ondernemingKaart(d, o, i, r)).join('') || leeg('Nog geen ondernemingen vastgelegd.')}</div>`;
 
-  return `${aanvraag}${aanvrager}${ondernemingen}
-    ${paneelOrganogram(d, { bewerken: true, titel: 'Organogram en overige aandeelhouders' })}
-    ${paneelGeldstromen(d, r)}
+  const structuur = intakeKlap(d, 'organogram', 'Organogram en overige aandeelhouders',
+    paneelOrganogram(d, { bewerken: true, titel: 'Organogram en overige aandeelhouders' }));
+  const verplichtingen = intakeKlap(d, 'verplichtingen', 'Geldstromen en verplichtingen', `
+    ${paneelGeldstromen(d, r)}${heeftVPB ? paneelRC(d, r) + paneelLeningDirectie(d, r) : ''}${paneelZK(d)}`);
+  const aanvullende = intakeKlap(d, 'inkomen', 'Loondienst, 0-inkomen en afwijkingen', `
     ${kader.familie === 'NHG' || d.soort === 'NUL' ? paneelLoondienst(d, r) : ''}
-    ${heeftVPB ? paneelRC(d, r) : ''}
-    ${heeftVPB ? paneelLeningDirectie(d, r) : ''}
-    ${paneelZK(d)}
     ${d.soort === 'NUL' || (d.ondernemingen || []).some((o) => o.meenemen === false || o.nulInkomen) ? paneelNul(d) : ''}
-    ${d.soort === 'IKV' ? paneelAfwijkend(d, r) : ''}`;
+    ${d.soort === 'IKV' ? paneelAfwijkend(d, r) : ''}`);
+  return `<div class="intake-basis">${aanvraag}${aanvrager}</div>
+    ${ondernemingen}
+    <div class="intake-aanvullend">${behandeling}${contact}${toetsopties}${structuur}${verplichtingen}${aanvullende}</div>`;
 }
 
 // Keuzes voor box 2 per kader
@@ -843,12 +943,16 @@ export { docAanwezig };
 
 function tabDocumenten(d, r, docs) {
   const { jaren } = roosterJaren(d);
-  const lijstHTML = r.documenten.map((x) => {
-    const n = docs.filter((y) => y.categorie === x.categorie).length;
-    const ok = n >= (x.aantal || 1);
-    return `<tr><td><b>${esc(x.naam)}</b></td><td>${esc(x.wanneer)}</td><td>${esc(x.geldigheid)}</td>
-      <td>${x.verplicht ? (ok ? pil('akkoord', 'Aanwezig') : pil('attentie', n ? `${n} van ${x.aantal}` : 'Ontbreekt')) : pil('info', 'Optioneel')}</td></tr>`;
-  }).join('');
+  const ontbrekend = r.documenten.filter((x) => x.verplicht && !docAanwezig(docs, x));
+  const aanwezig = r.documenten.filter((x) => x.verplicht && docAanwezig(docs, x));
+  const optioneel = r.documenten.filter((x) => !x.verplicht);
+  const checklist = (items) => `<div class="scroll"><table class="tabel"><thead><tr><th>Document</th><th>Wanneer</th><th>Geldigheid</th><th>Uploadstatus</th></tr></thead>
+    <tbody>${items.map((x) => {
+      const n = docs.filter((y) => y.categorie === x.categorie).length;
+      const aantal = x.aantal || 1;
+      const label = x.verplicht ? (n >= aantal ? pil('akkoord', 'Aanwezig per categorie') : pil('attentie', n ? `${n} van ${aantal}` : 'Ontbreekt')) : pil('info', 'Optioneel');
+      return `<tr><td><b>${esc(x.naam)}</b></td><td>${esc(x.wanneer)}</td><td>${esc(x.geldigheid)}</td><td>${label}</td></tr>`;
+    }).join('')}</tbody></table></div>`;
   const docRijen = docs.sort((a, b) => String(b.aangemaakt).localeCompare(String(a.aangemaakt))).map((x) => {
     const ond = (d.ondernemingen || []).find((o) => o.id === x.ondId);
     return `<tr><td>${esc(x.naam)}</td><td>${esc(CATEGORIEEN[x.categorie] || x.categorie)}</td><td>${esc(x.jaar || '')}</td><td>${esc(ond?.naam || '')}</td>
@@ -856,20 +960,23 @@ function tabDocumenten(d, r, docs) {
       <td class="nowrap"><button class="knop link klein" data-actie="doc-download" data-id="${esc(x.id)}">Openen</button>
       <button class="knop link klein" data-actie="doc-verwijderen" data-id="${esc(x.id)}">Verwijderen</button></td></tr>`;
   }).join('');
-  const ontbrekend = r.documenten.filter((x) => x.verplicht && !docAanwezig(docs, x));
-  return `<div class="paneel"><div class="paginakop" style="margin:0 0 8px"><h2>Benodigde stukken</h2>
+  return `<div class="paneel documenten-checklist"><div class="paginakop" style="margin:0 0 8px"><h2>Benodigde stukken</h2>
       ${ontbrekend.length ? `<button class="knop sec" data-actie="mail-adviseur">${icoon('mail')}Ontbrekende stukken mailen naar adviseur</button>` : ''}</div>
-    <div class="scroll"><table class="tabel"><thead><tr><th>Document</th><th>Wanneer</th><th>Geldigheid</th><th>Status</th></tr></thead><tbody>${lijstHTML}</tbody></table></div></div>
+    <p class="dempen klein">De uploadstatus telt bestanden per categorie. Controleer zelf het boekjaar, de onderneming, de inhoud en de geldigheid.</p>
+    ${ontbrekend.length ? `<h3>Ontbrekend (${ontbrekend.length})</h3>${checklist(ontbrekend)}` : '<p>Voor alle verplichte categorieën zijn voldoende bestanden geüpload.</p>'}
+    ${aanwezig.length ? `<details><summary>Aanwezige stukken (${aanwezig.length})</summary>${checklist(aanwezig)}</details>` : ''}
+    ${optioneel.length ? `<details><summary>Optionele stukken (${optioneel.length})</summary>${checklist(optioneel)}</details>` : ''}
+  </div>
   <div class="paneel"><h2>Document toevoegen</h2>
     <div class="raster-3">
       <label class="veld"><span>Soort document</span><select id="doc-categorie">${Object.entries(CATEGORIEEN).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('')}</select></label>
       <label class="veld"><span>Jaar</span><select id="doc-jaar"><option value="">n.v.t.</option>${ordeJaren(jaren).map((y) => `<option>${y}</option>`).join('')}</select></label>
       <label class="veld"><span>Onderneming</span><select id="doc-ond"><option value="">Privé / algemeen</option>${(d.ondernemingen || []).map((o) => `<option value="${esc(o.id)}">${esc(o.naam)}</option>`).join('')}</select></label>
-      <label class="veld"><span>Bestand (pdf of afbeelding, max. 15 MB)</span><input id="doc-bestand" type="file" accept=".pdf,image/*,.xlsx,.xls,.csv,.docx,.txt"></label>
+      <label class="veld"><span>Bestand (max. 15 MB)</span><input id="doc-bestand" type="file" accept=".pdf,image/*,.xlsx,.xls,.csv,.docx,.txt"></label>
     </div>
     <div class="acties" style="margin-top:12px"><button class="knop" data-actie="doc-upload">Uploaden</button></div>
   </div>
-  <div class="paneel" style="padding:0"><div class="scroll"><table class="tabel"><thead><tr><th>Bestand</th><th>Soort</th><th>Jaar</th><th>Onderneming</th><th>Toegevoegd</th><th class="num">Grootte</th><th></th></tr></thead>
+  <div class="paneel"><h2>Geüploade bestanden (${docs.length})</h2><div class="scroll"><table class="tabel"><thead><tr><th>Bestand</th><th>Soort</th><th>Jaar</th><th>Onderneming</th><th>Toegevoegd</th><th class="num">Grootte</th><th></th></tr></thead>
     <tbody>${docRijen || `<tr><td colspan="7" class="leeg">Nog geen documenten geüpload.</td></tr>`}</tbody></table></div></div>`;
 }
 

@@ -87,6 +87,57 @@ test('NHG bijlage II voorbeeld 1: lopend jaar in lijn, gemiddelde 3 jaar', () =>
   assert.equal(r.inkomen.box1, 46000);
 });
 
+test('NHG kwartaaltermijnen: 1 februari Q4, 1 augustus Q2 en 1 november Q3', () => {
+  const controle = (datum, tot, T3 = 2025) => {
+    const d = ezDossier({ datum, T3, sfw: [43000, 45000, 50000], ytd: 30000, tot });
+    const uit = bereken(d);
+    return [uit.ondernemingen[0].checks.find((c) => c.key === 'tussentijds'), uit.documenten];
+  };
+  assert.equal(controle('2026-01-31', '2025-09-30', 2024)[0].status, 'akkoord');
+  assert.match(controle('2026-02-01', '2025-09-30', 2024)[0].tekst, /2025 t\/m Q4/);
+  assert.equal(controle('2026-02-01', '2025-09-30', 2024)[0].status, 'attentie');
+  assert.equal(controle('2026-02-01', '2025-12-31', 2024)[0].status, 'akkoord');
+  assert.equal(controle('2026-04-30', '2025-12-31')[0].status, 'akkoord');
+  assert.equal(controle('2026-07-31', '2026-03-31')[0].status, 'akkoord');
+  assert.equal(controle('2026-08-01', '2026-03-31')[0].status, 'attentie');
+  assert.equal(controle('2026-08-01', '2026-06-30')[0].status, 'akkoord');
+  assert.equal(controle('2026-10-31', '2026-06-30')[0].status, 'akkoord');
+  const [controleNov, stukken] = controle('2026-11-01', '2026-06-30');
+  assert.equal(controleNov.status, 'attentie');
+  assert.match(controleNov.tekst, /2026 t\/m Q3/);
+  assert.ok(stukken.some((s) => s.categorie === 'ob_aangifte' && s.naam.includes('2026 t/m Q3')));
+  assert.equal(controle('2026-11-01', '2026-09-30')[0].status, 'akkoord');
+  assert.equal(controle('2026-11-01', '2026-12-31')[0].status, 'attentie');
+});
+
+test('NHG: onderscheid een nihilresultaat van ontbrekende winstcijfers', () => {
+  const d = ezDossier({ datum: '2026-11-01', sfw: [43000, 45000, 50000], ytd: 0, tot: '2026-09-30' });
+  const toets = (uit) => uit.ondernemingen[0].checks.find((c) => c.key === 'winst');
+  const nulLopend = bereken(d);
+  assert.equal(nulLopend.C, 2026);
+  assert.equal(toets(nulLopend).status, 'niet_akkoord');
+  assert.equal(nulLopend.toetsinkomen, 0);
+
+  const jaren = d.ondernemingen[0].jaren;
+  jaren[2026].vw = { omzet: 30000 };
+  jaren[2025].vw = { omzet: 0 };
+  assert.equal(toets(bereken(d)).status, 'niet_akkoord');
+  delete jaren[2025].vw;
+  assert.equal(toets(bereken(d)).status, 'attentie');
+});
+
+test('NHG: een balans zonder resultaat opent een controlepunt zonder het basisinkomen af te toppen', () => {
+  const d = ezDossier({ datum: '2026-11-01', sfw: [43000, 45000, 50000], vervang: true });
+  d.ondernemingen[0].jaren[2026] = { status: 'tussentijds', tot: '2026-09-30', balans: { liquideMiddelen: 10000, evKapitaal: 10000 } };
+  const uit = bereken(d);
+  assert.equal(uit.C, 2026);
+  assert.equal(uit.vervanging, false);
+  assert.equal(uit.status, 'attentie');
+  assert.equal(uit.inkomen.controleExtr, null);
+  assert.equal(uit.inkomen.berekend, 46000);
+  assert.ok(uit.meldingen.some((m) => m.niveau === 'attentie' && m.tekst.includes('Inkomenstoets 2026 open')));
+});
+
 test('NHG bijlage II voorbeeld 2: geëxtrapoleerd lager dan gemiddelde', () => {
   const r = bereken(ezDossier({ sfw: [43000, 45000, 50000], ytd: 20000 }));
   assert.equal(r.inkomen.controleExtr, 40000);

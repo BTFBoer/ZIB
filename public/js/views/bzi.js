@@ -122,10 +122,11 @@ function zijbalk(d, stap, ondId, r, docsOntbrekend) {
     <div class="bzi-dossier">
       <div><b>${esc(d.nummer || '')}</b> <span class="badge-status ${esc(d.status)}">${esc(status)}</span>${d.spoed ? ' <span class="badge-spoed">Spoed</span>' : ''}</div>
       <div class="dempen klein">Laatste wijziging door ${esc(d.gewijzigdDoor || d.behandelaar || 'onbekend')} op ${esc(fmt.tijdstip(d.gewijzigd))}</div>
-      <a href="#/klanten" class="terug">${icoon('links')}Dossieroverzicht</a>
+      <a href="#/aanvragen" class="terug">${icoon('links')}Aanvragen</a>
     </div>
     <div class="bzi-stappen-kop">Stappen</div>
     <nav class="bzi-stappen" aria-label="Stappen">
+      ${link('overzicht', '', 'Dossieroverzicht', 'map')}
       ${link('algemeen', '', 'Algemeen', 'notitie')}
       ${link('bedrijven', '', 'Bedrijven', 'organogram')}
       ${boom}
@@ -138,6 +139,7 @@ function zijbalk(d, stap, ondId, r, docsOntbrekend) {
       <a href="${stapHref(d, 'documenten', '')}" class="${stap === 'documenten' ? 'actief' : ''}">${icoon('document')}<span>Documenten</span>${docsOntbrekend ? `<span class="teller">${docsOntbrekend}</span>` : ''}</a>
       ${link('berekening', '', 'Rekenstappen', 'reken')}
       ${link('bziinvoer', '', 'BZI-invoer (overzicht)', 'lijst')}
+      ${link('notities', '', 'Notities', 'notitie')}
       ${link('rapport', '', 'Rapport', 'document')}
       ${link('fiat', '', 'Fiattering en historie', 'check')}
     </nav>
@@ -145,7 +147,8 @@ function zijbalk(d, stap, ondId, r, docsOntbrekend) {
 }
 
 export function renderBZI(d, stap, ondId, r, gedeeld = {}) {
-  const geldig = ['algemeen', 'bedrijven', 'bedrijf', 'boekhouders', 'verplichtingen', 'samenvatting', 'documenten', 'berekening', 'bziinvoer', 'rapport', 'fiat'];
+  const dossierTabs = { documenten: 'Documenten', berekening: 'Rekenstappen', bziinvoer: 'BZI-invoer (overzicht)', notities: 'Notities', rapport: 'Rapport', fiat: 'Fiattering en historie' };
+  const geldig = ['algemeen', 'bedrijven', 'bedrijf', 'boekhouders', 'verplichtingen', 'samenvatting', ...Object.keys(dossierTabs)];
   let s = geldig.includes(stap) ? stap : 'algemeen';
   let id = ondId;
   if (s === 'bedrijf' && !(d.ondernemingen || []).some((o) => o.id === id)) {
@@ -162,18 +165,19 @@ export function renderBZI(d, stap, ondId, r, gedeeld = {}) {
     case 'documenten':
     case 'berekening':
     case 'bziinvoer':
+    case 'notities':
     case 'rapport':
-    case 'fiat': inhoud = `<h1>${esc({ documenten: 'Documenten', berekening: 'Rekenstappen', bziinvoer: 'BZI-invoer (overzicht)', rapport: 'Rapport', fiat: 'Fiattering en historie' }[s])}</h1>${gedeeld[s] ? gedeeld[s]() : ''}`; break;
+    case 'fiat': inhoud = `${s === 'rapport' ? '' : `<h1>${esc(dossierTabs[s])}</h1>`}${gedeeld[s]?.() || ''}`; break;
     default: inhoud = stapAlgemeen(d, r);
   }
-  const notities = ui.notitiesVerborgen ? '' : notitiePaneel(d, r, s === 'bedrijf' ? id : '');
+  const toonNotities = !ui.notitiesVerborgen && s !== 'notities';
   return `${bziKop(d, r)}
-    <div class="bzi${ui.notitiesVerborgen ? ' zonder-notities' : ''}">
+    <div class="bzi${toonNotities ? '' : ' zonder-notities'}">
       ${zijbalk(d, s, id, r, gedeeld.ontbrekend || 0)}
-      <section class="bzi-inhoud" id="tabinhoud">${inhoud}${['documenten', 'berekening', 'bziinvoer', 'rapport', 'fiat'].includes(s) ? '' : navKnoppen(d, s, id)}</section>
-      ${notities}
+      <section class="bzi-inhoud" id="tabinhoud">${inhoud}${dossierTabs[s] ? '' : navKnoppen(d, s, id)}</section>
+      ${toonNotities ? notitiePaneel(d, r, s === 'bedrijf' ? id : '') : ''}
     </div>
-    <button type="button" class="notities-wissel geen-print" data-actie="notities-paneel" title="${ui.notitiesVerborgen ? 'Notities tonen' : 'Notities verbergen'}">${icoon('notitie')}<span>${ui.notitiesVerborgen ? 'Notities' : 'Verberg notities'}</span></button>`;
+    ${s !== 'notities' ? `<button type="button" class="notities-wissel geen-print" data-actie="notities-paneel" title="${ui.notitiesVerborgen ? 'Notities tonen' : 'Notities verbergen'}">${icoon('notitie')}<span>${ui.notitiesVerborgen ? 'Notities' : 'Verberg notities'}</span></button>` : ''}`;
 }
 
 // ---------------------------------------------------------------------------

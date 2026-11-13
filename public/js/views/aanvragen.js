@@ -264,7 +264,7 @@ export function rijenAanvragen(afgerond) {
     return `<tr class="${meekijk ? 'meekijken' : ''}${sel.has(d.id) ? ' geselecteerd' : ''}" data-id="${esc(d.id)}">
       <td class="sel"><input type="checkbox" aria-label="Selecteer ${esc(d.nummer)}" data-actie="selecteer" data-id="${esc(d.id)}"${sel.has(d.id) ? ' checked' : ''}></td>
       <td class="acties-kol nowrap">
-        <a class="grid-ico" href="#/dossier/${esc(d.id)}" title="Klantgegevens openen">${icoon('persoon')}</a>
+        <a class="grid-ico" href="#/dossier/${esc(d.id)}/klant" title="Klantgegevens openen">${icoon('persoon')}</a>
         <a class="grid-ico${ontbreekt ? ' heeft' : ''}" href="#/dossier/${esc(d.id)}/documenten" title="Documenten${ontbreekt ? ` (${ontbreekt} verplichte ontbreken nog)` : ''}">${icoon('map')}${ontbreekt ? `<sup>${ontbreekt}</sup>` : ''}</a>
         <a class="grid-ico" href="#/dossier/${esc(d.id)}/berekening" title="Berekening en uitkomst">${icoon('reken')}</a>
         <button type="button" class="grid-ico${taken ? ' heeft' : ''}" data-actie="taken-dossier" data-id="${esc(d.id)}" title="Taken (${taken} open)">${icoon('taken')}${taken ? `<sup>${taken}</sup>` : ''}</button>
@@ -313,7 +313,29 @@ export function renderAanvragen(afgerond) {
     if (!n && ui.aanvragen.snel !== k) return '';
     return `<button type="button" class="snelfilter ${k}${ui.aanvragen.snel === k ? ' actief' : ''}" data-actie="snelfilter" data-snel="${k}" aria-pressed="${ui.aanvragen.snel === k}">${esc(label)} <b>${n}</b></button>`;
   }).join('');
-  return `<div class="viiz-tabs geen-print" role="tablist">
+  const urgentie = SNELFILTERS.filter(([k]) => ['telaat', 'bijna', 'taken'].includes(k));
+  return `<section class="werkstart geen-print" aria-labelledby="werkstart-titel">
+    <div class="werkstart-inhoud">
+      <div class="werkstart-label"><span></span> ZIB · WERKRUIMTE</div>
+      <h1 id="werkstart-titel">Aanvragen</h1>
+      <p>Van jaarcijfers naar een onderbouwd toetsinkomen.</p>
+      <div class="werkstart-acties">
+        <button class="knop" data-actie="nieuwe-aanvraag">${icoon('plus')} Nieuwe aanvraag</button>
+        <a class="knop sec" href="#/toetskaders">${icoon('boek')} Toetskaders</a>
+      </div>
+    </div>
+    <div class="werkstart-illustratie" aria-hidden="true"><span></span><span></span><span></span><span></span><svg viewBox="0 0 360 110" preserveAspectRatio="none"><path d="M0 99 61 73 113 83 175 49 231 58 285 21 360 9" /><circle cx="285" cy="21" r="5" /></svg></div>
+  </section>
+  ${afgerond ? '' : `<div class="werkstart-kaarten geen-print" aria-label="Dossiers die aandacht vragen">
+    ${urgentie.map(([k, label, test], i) => {
+      const n = basis.filter((d) => test(d, vandaag)).length;
+      return `<button type="button" class="werkkaart ${k}" data-actie="snelfilter" data-snel="${k}" aria-pressed="${ui.aanvragen.snel === k}">
+        <span class="werkkaart-ico">${icoon(['waarschuwing', 'klok', 'taken'][i])}</span>
+        <span><b>${n}</b><span>${esc(label)}</span></span>${icoon('pijl')}
+      </button>`;
+    }).join('')}
+  </div>`}
+  <div class="viiz-tabs geen-print" role="tablist">
       <a href="#/klanten" role="tab" class="${afgerond ? '' : 'actief'}" aria-selected="${!afgerond}">Nieuwe en lopende aanvragen <span class="teller">${lopend}</span></a>
       <a href="#/klanten/afgerond" role="tab" class="${afgerond ? 'actief' : ''}" aria-selected="${afgerond}">Afgeronde aanvragen <span class="teller">${klaar}</span></a>
     </div>
@@ -339,7 +361,6 @@ export function renderAanvragen(afgerond) {
     </div>
     <div class="fab-groep geen-print">
       ${afgerond ? `<button class="fab sec" data-actie="herbeoordeling" title="Aanvraag herbeoordeling">${icoon('herhaal')}<span>Herbeoordeling</span></button>` : ''}
-      <button class="fab" data-actie="nieuwe-aanvraag" title="Nieuwe klant">${icoon('plus')}<span>Nieuwe klant</span></button>
     </div>`;
 }
 

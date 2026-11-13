@@ -5,7 +5,7 @@ import { dertigProcentToets, totaalASN, totaalKNAB, totaalOPT } from './totaal.j
 import { beoordeelNul, zkLijst } from './nulverklaring.js';
 import { Trace, cel, g, p, lijstF, laagsteF } from './trace.js';
 import { documentenlijst } from '../schema/documenten.js';
-import { totalenJaar } from './financieel.js';
+import { heeftResultaatinvoer, totalenJaar } from './financieel.js';
 import { num, rond, rond2, gemiddelde, isIngevuld, todayISO, naamAanvrager } from '../util.js';
 
 export { KADERS, KADER_VOLGORDE, kaderVoor } from './kaders.js';
@@ -31,7 +31,7 @@ export function bepaalJaren(dossier) {
     const j = o.jaren?.[kandidaat] || o.jaren?.[String(kandidaat)];
     if (!j) return false;
     const t = totalenJaar(j);
-    return t.heeftVW || t.heeftBalans;
+    return t.heeftVW || t.heeftBalans || (kader.tussentijdsPerKwartaal && heeftResultaatinvoer(j));
   }) || (ib && Object.values(ib.perOnd || {}).some((x) => isIngevuld(x?.loon)));
   const C = inst.controlejaar === false || !heeftData ? null : kandidaat;
   return { kader, datum, jaarNu: P.jaarVan(datum), T, T3, C, kandidaatC: kandidaat };
@@ -356,7 +356,8 @@ export function vergelijkMethoden(perJaar, T) {
 // NHG: inkomen op totaalniveau (alle meegenomen ondernemingen + meegenomen loon/uitkeringen)
 // ---------------------------------------------------------------------------
 function totaalNHG(dossier, analyses, ctx, trace) {
-  const { T, C, vervanging, kader } = ctx;
+  const { T, vervanging, kader } = ctx;
+  const C = ctx.controleInkomenOntbreekt?.length ? null : ctx.C;
   const T3 = T[2];
   const ld = dossier.loondienst || {};
   const mee = analyses.filter((a) => a.meenemen);
@@ -379,7 +380,7 @@ function totaalNHG(dossier, analyses, ctx, trace) {
   let cReal = null;
   let cExtr = null;
   if (C) {
-    const met = mee.find((a) => a.jaren[C]?.heeftVW || isIngevuld(a.jaren[C]?.ibOnd?.loon));
+    const met = mee.find((a) => a.jaren[C]?.heeftResultaatinvoer || isIngevuld(a.jaren[C]?.ibOnd?.loon));
     factor = met ? met.jaren[C].factor : 1;
     const persReal = pers[C].ingevuld ? pers[C].totaal : pers[T3].totaal / factor;
     const persExtr = pers[C].ingevuld ? pers[C].totaal * factor : pers[T3].totaal;
@@ -827,7 +828,7 @@ export function bereken(dossier, opties = {}) {
   const { kader, datum, jaarNu, T, T3, C } = bepaalJaren(dossier);
   const inst = dossier.instellingen || {};
   const soort = dossier.soort === 'NUL' ? 'NUL' : 'IKV';
-  const vervanging = !!kader.vervangenVanaf && kader.familie === 'NHG' && soort === 'IKV' && !!inst.vervangOudsteJaar && !!C;
+  let vervanging = !!kader.vervangenVanaf && kader.familie === 'NHG' && soort === 'IKV' && !!inst.vervangOudsteJaar && !!C;
   const rc = berekenRC(dossier.rc);
   const leningDirectie = berekenLeningDirectie(dossier.leningDirectie);
   const onds = dossier.ondernemingen || [];
@@ -880,6 +881,16 @@ export function bereken(dossier, opties = {}) {
   });
 
   if (kader.familie !== 'ABN') analyses.forEach((a) => { if (nietMeeIds.has(a.id)) a.meenemen = false; });
+
+  if (kader.tussentijdsPerKwartaal && soort === 'IKV' && C) {
+    ctx.controleInkomenOntbreekt = analyses.filter((a, i) => a.meenemen && !a.geconsolideerd && onds[i].actief !== false
+      && a.jaren[C]?.actief && !a.jaren[C].heeftResultaatinvoer && !isIngevuld(a.jaren[C].ibOnd?.loon));
+    if (ctx.controleInkomenOntbreekt.length) {
+      const namen = ctx.controleInkomenOntbreekt.map((a) => a.naam).join(', ');
+      meldingen.push({ niveau: 'attentie', tekst: `Inkomenstoets ${C} open voor ${namen}. Vul het resultaat of het DGA-loon over de periode in. Tot die tijd toont ZIB de berekening op basis van de afgesloten toetsjaren.` });
+      ctx.vervanging = vervanging = false;
+    }
+  }
 
   // Ontvangen dividend uit minderheidsdeelnemingen (holdingroute ABN 3.63)
   const ontvangenMinderheid = (hoofdId) => {
@@ -972,7 +983,7 @@ export function bereken(dossier, opties = {}) {
   tj.rij('Definitieve cijfers vorig boekjaar verplicht vanaf', { waarde: cel(`${String(kader.definitiefVerplichtVanaf.d).padStart(2, '0')}-${String(kader.definitiefVerplichtVanaf.m).padStart(2, '0')}-${jaarNu}`, '', 'tekst') });
   tj.rij('Toetsjaren (TJr-3, TJr-2, TJr-1)', { waarde: cel(T.join(', '), '', 'tekst') });
   tj.rij('Controlejaar', { waarde: cel(C ? String(C) : 'Geen controlejaar', '', 'tekst') });
-  const cAn = C ? analyses.find((a) => a.jaren[C]?.heeftVW) : null;
+  const cAn = C ? analyses.find((a) => a.jaren[C]?.heeftVW || (kader.tussentijdsPerKwartaal && a.jaren[C]?.heeftResultaatinvoer)) : null;
   if (cAn) {
     const j = cAn.jaren[C];
     tj.rij('Cijfers controlejaar over periode', { waarde: cel(`${j.van.split('-').reverse().join('-')} t/m ${j.tot.split('-').reverse().join('-')}`, '', 'tekst') });
@@ -1113,8 +1124,9 @@ export function bereken(dossier, opties = {}) {
     meerdereBV: analyses.filter((a) => a.soort === 'VPB').length > 1,
     stilleReserves: onds.some((o) => Object.values(o.jaren || {}).some((j) => num(j?.div?.stilleReserves) > 0)),
     box3: onds.some((o) => Object.values(o.jaren || {}).some((j) => num(j?.div?.box3Ingezet) > kader.box3ZonderBewijs)),
-    vervanging,
+    vervanging: vervanging || (kader.tussentijdsPerKwartaal && !!kader.vervangenVanaf && !!inst.vervangOudsteJaar && soort === 'IKV'),
     belet: !!inst.belet?.actief,
+    kwartaaltermijn: kader.tussentijdsPerKwartaal && onds.some((o) => o.actief !== false) ? P.nhgKwartaaltermijn(datum) : null,
     tussentijdsVerplicht: !!kader.tussentijdsVerplichtVanaf && P.opOfNa(datum, kader.tussentijdsVerplichtVanaf.m, kader.tussentijdsVerplichtVanaf.d) && T3 === jaarNu - 1,
     starter: inkomen?.perOnderneming?.some((o) => o.factor && o.factor < 1) || !!inkomen?.starter,
     beroepsregister: onds.some((o) => ['medisch_juridisch', 'fysiotherapeut'].includes(o.beroepsgroep)),

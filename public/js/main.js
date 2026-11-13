@@ -16,6 +16,7 @@ import {
 } from './views/aanvragen.js';
 import { renderDossier, kopVoor, calcWaarde, docAanwezig, NAAR_BZI, NAAR_VIIZ, roosterJaren, weergaveDossier, TABS, tabsHTML } from './views/dossier.js';
 import { modaalCorrectie, correctieLijstHTML, modaalVaSamenstelling, modaalSalaris, MAANDEN_KORT } from './views/bzi.js';
+import { bziVerschil, maakBziCsv } from './views/bziinvoer.js';
 import {
   renderDocumenten, renderAdvieskantoren, renderMeekijken, renderFAQ, renderHulp, renderToetskaders,
   renderDownloads, renderTickets, renderTicket, renderMijnGegevens, renderLogin, renderEmail, emailFormulier,
@@ -100,7 +101,7 @@ export function render({ behoudScroll = false } = {}) {
       if (!d) { inhoud = leeg('Dit dossier bestaat niet (meer).', '<a class="knop" href="#/klanten">Naar aanvragen</a>'); break; }
       resultaat = bereken(d);
       noteerRecent(d.id);
-      inhoud = renderDossier(d, route.tab || (weergaveDossier(d) === 'bzi' ? 'algemeen' : 'klant'), route.ondId, resultaat);
+      inhoud = renderDossier(d, route.tab, route.ondId, resultaat);
       titel = `${d.nummer} ${naamAanvrager(d.aanvrager)}`;
       breed = weergaveDossier(d) === 'bzi';
       break;
@@ -199,6 +200,11 @@ const herberekenDossier = debounce(() => {
     const w = calcWaarde(d, el.dataset.calc, resultaat);
     el.textContent = w === null || w === undefined ? '' : fmt.getal(w);
     if (el.dataset.calc.endsWith('|VERSCHIL')) el.classList.toggle('fout', Math.abs(Number(w) || 0) > 1);
+  });
+  document.querySelectorAll('[data-bzi-verschil]').forEach((el) => {
+    const id = el.dataset.bziVerschil;
+    const hoofd = resultaat.inkomen?.perHoofdbedrijf?.find((x) => x.id === id);
+    if (hoofd) el.textContent = bziVerschil(ondVan(d, id)?.bziWerkelijk, hoofd.berekend);
   });
 }, 150);
 
@@ -417,8 +423,8 @@ document.addEventListener('click', (e) => {
 });
 
 // Stappen van de BZI-weergave (voor snelzoeken binnen het open dossier).
-const BZI_STAPPEN = [['algemeen', 'Algemeen'], ['bedrijven', 'Bedrijven'], ['boekhouders', 'Boekhouders'], ['verplichtingen', 'Geldstromen en verplichtingen'],
-  ['samenvatting', 'Samenvatting'], ['documenten', 'Documenten'], ['berekening', 'Rekenstappen'], ['bziinvoer', 'BZI-invoer (overzicht)'], ['rapport', 'Rapport'], ['fiat', 'Fiattering en historie']];
+const BZI_STAPPEN = [['overzicht', 'Dossieroverzicht'], ['algemeen', 'Algemeen'], ['bedrijven', 'Bedrijven'], ['boekhouders', 'Boekhouders'], ['verplichtingen', 'Geldstromen en verplichtingen'],
+  ['samenvatting', 'Samenvatting'], ['documenten', 'Documenten'], ['berekening', 'Rekenstappen'], ['bziinvoer', 'BZI-invoer (overzicht)'], ['notities', 'Notities'], ['rapport', 'Rapport'], ['fiat', 'Fiattering en historie']];
 
 function zoekenOpenen() {
   const d = huidigDossier();
@@ -565,6 +571,7 @@ function mailto({ aan = '', bcc = '', onderwerp = '', bericht = '' }) {
 function kopieDossier(bron, { status = 'documenten_uploaden', actie = '' } = {}) {
   const kopie = clone(bron);
   ['id', 'version', 'updated_at', 'updated_by', 'fiat', 'fiatteur', 'meekijken', 'teruggezet'].forEach((k) => delete kopie[k]);
+  for (const o of kopie.ondernemingen || []) delete o.bziWerkelijk;
   return nieuw('dossier', {
     ...kopie, nummer: volgendDossiernummer(), status, statusDatum: nowISO(), datumAanvraag: todayISO(),
     behandelaar: mijnNaam(), historie: [{ at: nowISO(), door: mijnNaam(), actie: actie || `Kopie gemaakt van dossier ${bron.nummer}` }],
@@ -947,8 +954,8 @@ const ACTIES = {
     const naar = el.dataset.weergave === 'viiz' ? 'viiz' : 'bzi';
     d.weergave = naar;
     opslaan(d);
-    const tab = route.tab;
-    const nieuweTab = naar === 'bzi' ? (NAAR_BZI[tab] || tab || 'algemeen') : (NAAR_VIIZ[tab] || tab || 'klant');
+    const tab = route.tab || 'overzicht';
+    const nieuweTab = naar === 'bzi' ? (NAAR_BZI[tab] || tab) : (NAAR_VIIZ[tab] || tab);
     const ond = route.ondId ? `/${route.ondId}` : '';
     const doel = `#/dossier/${d.id}/${nieuweTab}${['bedrijf', 'balans', 'vw', 'diversen', 'samenvatting', 'bedrijven'].includes(nieuweTab) ? ond : ''}`;
     if (location.hash === doel) render({ behoudScroll: true });
@@ -1166,6 +1173,11 @@ const ACTIES = {
     } catch {
       downloadBestand(`${el.dataset.doel}.txt`, tekst, 'text/plain');
     }
+  },
+  'bzi-csv'() {
+    const d = huidigDossier();
+    if (!d) return;
+    downloadBestand(`${d.nummer || 'dossier'}-bzi-invoer.csv`, maakBziCsv(d, bereken(d)), 'text/csv;charset=utf-8');
   },
   'boekhouder-toevoegen'() {
     const d = huidigDossier();
@@ -1463,9 +1475,11 @@ const ACTIES = {
   },
   afdrukken() {
     if (globalThis.ZIB_ARTIFACT) { toast('Afdrukken kan in de losse demo of je eigen installatie.'); return; }
-    window.print();
+    const dicht = [...document.querySelectorAll('#rapport details:not([open])')];
+    dicht.forEach((el) => { el.open = true; });
+    try { window.print(); } finally { dicht.forEach((el) => { el.open = false; }); }
   },
-  'rapport-download'() {
+  async 'rapport-download'() {
     const d = huidigDossier();
     const bron = document.querySelector('.rapport');
     if (!d || !bron) return;
@@ -1473,19 +1487,31 @@ const ACTIES = {
     const rapport = bron.cloneNode(true);
     rapport.querySelectorAll('.ingeklapt').forEach((x) => x.classList.remove('ingeklapt'));
     rapport.querySelectorAll('.geen-print').forEach((x) => x.remove());
+    rapport.querySelectorAll('details').forEach((x) => { x.open = true; });
     rapport.querySelectorAll('.hoofdstuk-kop > button').forEach((knop) => {
       knop.querySelectorAll('.ico').forEach((x) => x.remove());
       knop.replaceWith(...knop.childNodes);
     });
     const zonderFormules = bron.closest('.zonder-formules') ? ' zonder-formules' : '';
-    const css = [...document.querySelectorAll('style')].map((x) => x.textContent).join('\n');
+    let css;
+    try {
+      const stijlen = await Promise.all([...document.querySelectorAll('link[data-zib-stijl]')].map(async (link) => {
+        const res = await fetch(link.href, { mode: 'same-origin' });
+        if (!res.ok) throw new Error('Stijlbestand niet beschikbaar');
+        return res.text();
+      }));
+      css = [...stijlen, ...[...document.querySelectorAll('style[data-zib-stijl]')].map((x) => x.textContent)]
+        .join('\n').replace(/<\/style/gi, '<\\/style');
+    } catch {
+      toast('Rapportstijl kon niet worden geladen. Probeer opnieuw of kies Afdrukken of pdf.');
+      return;
+    }
     const html = `<!doctype html>
 <html lang="nl" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rapport ${esc(d.nummer || '')}</title>
-<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
 <style>${css}</style>
 </head>
 <body>
@@ -1673,7 +1699,12 @@ const ACTIES = {
   },
   'naar-kader'(el, e) {
     e?.preventDefault?.();
-    document.getElementById(`kader-${el.dataset.kader}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const kader = document.getElementById(`kader-${el.dataset.kader}`);
+    if (!kader) return;
+    if (kader.tagName === 'DETAILS') kader.open = true;
+    const rustig = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    kader.scrollIntoView({ behavior: rustig ? 'auto' : 'smooth', block: 'start' });
+    kader.querySelector('summary')?.focus({ preventScroll: true });
   },
   'download-doclijst'(el) {
     const kader = el.dataset.kader;

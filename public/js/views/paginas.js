@@ -158,21 +158,41 @@ function kenmerken(k) {
 
 export function renderToetskaders() {
   const ids = KADER_VOLGORDE;
+  const publiekeBronnen = {
+    NHG: ['https://www.nhg.nl/het-krijgen-van-nhg/een-hypotheek-voor-ondernemers', 'Toetskader en documentenlijst bij NHG'],
+    ABN: ['https://www.abnamro.nl/nl/prive/hypotheken/hypotheek-berekenen/inkomen.html', 'Publieke toelichting van ABN AMRO'],
+    KNAB: ['https://www.knab.nl/particulier/hypotheken/knab-hypotheek/ondernemers', 'Ondernemersbeleid en acceptatiegids bij Knab'],
+  };
   const rijen = kenmerken(KADERS.NHG).map(([label], i) => `<tr><td><b>${esc(label)}</b></td>${ids.map((id) => `<td>${esc(kenmerken(KADERS[id])[i][1])}</td>`).join('')}</tr>`).join('');
   const kaarten = ids.map((id) => {
     const k = KADERS[id];
-    return `<div class="paneel" id="kader-${id}"><h2>${esc(k.kort)} <span class="dempen klein">${esc(k.versie)}</span></h2>
+    const bron = publiekeBronnen[id];
+    return `<details class="stappen paneel kader-kaart" id="kader-${id}">
+      <summary>${esc(k.kort)} <span class="dempen klein">${esc(k.versie)}</span></summary>
+      <div class="inhoud">
       <p class="klein"><b>${esc(k.naam)}</b>. ${esc(k.bestemdVoor)}.</p>
       <p class="dempen klein">Bron: ${esc(k.bron)}. ${esc(k.bronStatus || '')}</p>
+      ${bron ? `<p><a href="${bron[0]}" target="_blank" rel="noopener noreferrer">${bron[1]}</a></p>` : ''}
       <h3>Regels</h3><ul>${k.regels.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
       ${k.aannames?.length ? `<h3>Interpretaties en aannames</h3><ul>${k.aannames.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
       ${k.instelbaar?.length ? `<p class="dempen klein">Instelbaar per dossier: ${esc(k.instelbaar.map((p) => `${(PARAM_LABELS[p] || [p])[0]} (standaard ${PARAM_LABELS[p]?.[1] === 'pct' ? pctK(leesPad(k, p)) : String(leesPad(k, p)).replace('.', ',')})`).join('; '))}.</p>` : ''}
-    </div>`;
+    </div></details>`;
   }).join('');
   return `${paginakop('Toetskaders', 'Vijf kaders in één rekenkern: wat ze vragen, waar ze verschillen en waar ZIB interpreteert.')}
     ${melding('info', 'Kies het kader per dossier bij Klantgegevens. Op het tabblad Berekening en in het rapport staat hetzelfde dossier volgens alle vijf kaders naast elkaar. De kaders van ABN AMRO, ASN Bank en Knab zijn in eigen woorden vertaald uit (interne) beleidsdocumenten: eigen interpretatie, geen officiële publicatie van de bank. Controleer bij twijfel de actuele versie bij de geldverstrekker.')}
     <div class="paneel"><h2>Naast elkaar</h2><div class="scroll"><table class="tabel compact"><thead><tr><th></th>${ids.map((id) => `<th><a href="#/toetskaders" data-actie="naar-kader" data-kader="${id}">${esc(KADERS[id].kort)}</a></th>`).join('')}</tr></thead><tbody>${rijen}</tbody></table></div></div>
-    ${kaarten}`;
+    ${kaarten}
+    <details class="stappen paneel kader-kaart"><summary>Andere geldverstrekkers <span class="dempen klein">Handmatig toetsen</span></summary>
+      <div class="inhoud">
+        <p>Deze bronnen hebben geen eigen berekening in ZIB. Controleer per aanvraag welke versie geldt, of NHG van toepassing is en of de geldverstrekker een eigen rekenexpert of beoordelingsroute vereist.</p>
+        <ul>
+          <li><a href="https://www.attens.nl/voor-adviseurs/documenten-en-formulieren" target="_blank" rel="noopener noreferrer">Attens · acceptatiegids voor adviseurs</a></li>
+          <li><a href="https://www.rabobank.nl/bedrijven/intermediairs/hypotheek/aan-de-slag/rabobank-intermediair-gids" target="_blank" rel="noopener noreferrer">Rabobank · actueel acceptatiebeleid en documentenlijst</a></li>
+          <li>NIBC · <a href="https://nibc.nl/media/zzqnjuq1/hypotheekgids-2026.pdf" target="_blank" rel="noopener noreferrer">Hypotheekgids §5.2</a> en <a href="https://nibc.nl/media/pidhezud/werkinstructie_toetsinkomen_ondernemers-202601.pdf" target="_blank" rel="noopener noreferrer">werkinstructie toetsinkomen ondernemers</a>. NHG is de basis; zonder NHG zijn onder voorwaarden specifieke afwijkingen mogelijk.</li>
+          <li>ING en Syntrus Achmea · raadpleeg de geldende acceptatiegids en controleer de route voor ondernemersinkomen.</li>
+        </ul>
+      </div>
+    </details>`;
 }
 
 export function renderFAQ() {
@@ -194,7 +214,7 @@ export function renderHulp() {
       <div class="paneel"><h2>Snel op weg</h2>
         <p><b>Zoeken:</b> Ctrl+K (of de knop Zoeken) springt naar een dossier, een tabblad van het open dossier, een pagina of een actie. Zoek op naam, dossiernummer, aanvraagnummer, onderneming of KvK-nummer.</p>
         <p><b>Lijsten:</b> filter per kolom in de rij onder de kolomkoppen, of met de snelfilters (te laat, binnen twee dagen, spoed, open taken, mijn dossiers). Met Kolommen kies je welke kolommen je ziet. Een rode uiterste datum is verstreken, een oranje valt binnen twee dagen.</p>
-        <p><b>Nieuwe klant:</b> knop rechtsonder in de aanvragenlijst. Kies de soort aanvraag (met of zonder NHG, inkomensverklaring of 0-verklaring).</p>
+        <p><b>Nieuwe aanvraag:</b> knop bovenaan de aanvragenlijst. Kies de soort aanvraag (met of zonder NHG, inkomensverklaring of 0-verklaring).</p>
         <p><b>Voortgang:</b> de stip voor een tabblad laat zien of het compleet is (rond), aandacht vraagt (ruit), een fout bevat (vierkant) of nog leeg is (ring). Onder elk tabblad staan Vorige en Volgende om het dossier van links naar rechts te doorlopen.</p>
         <p><b>Invoer:</b> met Enter en de pijltjes omhoog en omlaag loop je door een kolom. Een kolom of blok uit een spreadsheet plak je in één keer: ZIB toont eerst wat waar terechtkomt.</p>
         <p><b>Volgorde van de jaren:</b> in de invoer staat het meest recente jaar links (van nieuw naar oud); overzichten zoals de berekening, de samenvatting en het rapport lopen van oud naar nieuw.</p>
