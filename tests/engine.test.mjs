@@ -27,7 +27,8 @@ function ezDossier({ kader = 'NHG', datum = '2026-07-15', T3 = 2025, sfw, ytd, v
     ib[y] = { perOnd: { o1: { sfw: sfw[i] } } };
   });
   if (ytd !== undefined) {
-    jaren[C] = { status: 'tussentijds', van: van || `${C}-01-01`, tot: tot || `${C}-06-30`, vw: { omzet: ytd } };
+    jaren[C] = { status: 'tussentijds', van: van || `${C}-01-01`, tot: tot || `${C}-06-30`, vw: { omzet: ytd },
+      ...(vervang ? { balans: { liquideMiddelen: 10000, evKapitaal: 10000 } } : {}) };
   }
   return {
     id: 'd1', soort: 'IKV', kader, berekeningsdatum: datum,
@@ -147,6 +148,23 @@ test('NHG bijlage II voorbeeld 2: geëxtrapoleerd lager dan gemiddelde', () => {
 test('NHG bijlage II voorbeeld 3: vervanging, laatste jaar hoger dan B', () => {
   const r = bereken(ezDossier({ sfw: [42000, 45000, 50000], ytd: 45000, vervang: true }));
   assert.equal(r.inkomen.box1, 46667);
+  assert.deepEqual(r.rekenkeuzes.vervanging, { beschikbaar: true, gevraagd: true, toegepast: true, reden: '' });
+});
+
+test('NHG: vervanging volgt het controlejaar, de ingangsdatum en de vereiste tussentijdse balans', () => {
+  const d = ezDossier({ sfw: [42000, 45000, 50000], ytd: 45000, vervang: true });
+  d.instellingen.controlejaar = false;
+  const uit = bereken(d);
+  assert.equal(uit.inkomen.box1, 45667);
+  assert.equal(uit.rekenkeuzes.controlejaar.actief, false);
+  assert.match(uit.rekenkeuzes.vervanging.reden, /controlejaar aan/);
+  d.instellingen.controlejaar = true;
+  d.berekeningsdatum = '2026-03-31';
+  d.ondernemingen[0].jaren[2026].tot = '2026-03-31';
+  assert.match(bereken(d).rekenkeuzes.vervanging.reden, /1-4/);
+  d.berekeningsdatum = '2026-04-01';
+  delete d.ondernemingen[0].jaren[2026].balans;
+  assert.match(bereken(d).rekenkeuzes.vervanging.reden, /tussentijdse balans/);
 });
 
 test('NHG bijlage II voorbeeld 4: maximeren op laatste volledige boekjaar', () => {
@@ -166,7 +184,7 @@ test('NHG bijlage II voorbeeld 6: vervanging, gemiddelde met lopend jaar', () =>
 
 test('Rekenvoorbeeld rapportage: vervanging met bijzondere baten en factor 2,4', () => {
   const d = ezDossier({ datum: '2023-05-31', T3: 2022, sfw: [3759, 18519, 29032], ytd: 11731,
-    van: '2023-01-01', tot: '2023-05-30', vervang: true });
+    van: '2023-01-01', tot: '2023-05-31', vervang: true });
   d.ondernemingen[0].jaren[2022].vw.bijzondereBaten = 3941;
   const r = bereken(d);
   assert.equal(r.ondernemingen[0].jaren[2022].inkomen.totaal, 25091);

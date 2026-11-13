@@ -191,7 +191,7 @@ function stapNav(d, tab, ondId) {
   </nav>`;
 }
 
-export function renderDossier(d, tab, ondId, r, { documenten } = {}) {
+export function renderDossier(d, tab, ondId, r, { documenten, berekend = false } = {}) {
   const docs = documenten ?? dossierDocs(d);
   const bzi = weergaveDossier(d) === 'bzi';
   const onds = d.ondernemingen || [];
@@ -208,7 +208,7 @@ export function renderDossier(d, tab, ondId, r, { documenten } = {}) {
       documenten: () => tabDocumenten(d, r, docs),
       invoer: () => renderKerninvoer(d, ond, roosterJaren(d), r),
       ib: () => tabIB(d, r),
-      berekening: () => tabBerekening(d, r, ondId),
+      berekening: () => tabBerekening(d, r, ondId, berekend),
       bziinvoer: () => renderBziInvoer(d, r),
       notities: () => tabNotities(d, r),
       rapport: () => renderRapportPagina(d, r),
@@ -223,7 +223,7 @@ export function renderDossier(d, tab, ondId, r, { documenten } = {}) {
     case 'vw': inhoud = ond ? tabRooster(d, ond, 'vw', r) : geenOnderneming(d); break;
     case 'diversen': inhoud = ond ? tabRooster(d, ond, 'diversen', r) : geenOnderneming(d); break;
     case 'ib': inhoud = tabIB(d, r); break;
-    case 'berekening': inhoud = tabBerekening(d, r, ondId); break;
+    case 'berekening': inhoud = tabBerekening(d, r, ondId, berekend); break;
     case 'bziinvoer': inhoud = renderBziInvoer(d, r); break;
     case 'rapport': inhoud = renderRapportPagina(d, r); break;
     case 'documenten': inhoud = tabDocumenten(d, r, docs); break;
@@ -833,9 +833,9 @@ export function weergaveOpties({ formules = true } = {}) {
   </div>`;
 }
 
-function tabBerekening(d, r, ondId) {
+function tabBerekening(d, r, ondId, berekend) {
   const a = ondId && r.ondernemingen.find((o) => o.id === ondId);
-  if (!a) return renderRekenwerkruimte(d, r);
+  if (!a) return renderRekenwerkruimte(d, r, { berekend });
   const over = a.box2?.overwinst ? `<details class="stappen reken-uitklap"><summary>Berekening overwinst</summary><div class="reken-uitklap-inhoud">${overwinstBlok(d, r, a)}</div></details>` : '';
   const stroom = r.inkomen?.geldstromen?.filter((x) => x.van === a.id || x.naar === a.id);
   const geld = stroom?.length ? `<details class="stappen reken-uitklap"><summary>Geldstromen van de onderneming</summary><div class="reken-uitklap-inhoud">${geldstromenTabel(r, stroom)}</div></details>` : '';

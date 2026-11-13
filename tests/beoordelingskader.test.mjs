@@ -16,7 +16,7 @@ const voorbeeld = () => {
 
 function controleerBeoordeling(d, r, verwacht, anderKader) {
   for (const tab of tabs) {
-    const html = renderDossier(d, tab, '', r);
+    const html = renderDossier(d, tab, '', r, { berekend: true });
     assert.ok(html.includes(`data-beoordelingskader="${verwacht}"`), `${tab}: verwacht toetskader ${verwacht}`);
     assert.ok(!html.includes('data-analysekader='), `${tab}: onverwachte vergelijking`);
     assert.equal(anderKader.exec(html)?.[0], undefined, `${tab}: een ander kader staat in beeld`);
@@ -119,7 +119,7 @@ test('Inkomensanalyse vergelijkt alle kaders ook na een eerdere keuze voor NHG',
   assert.equal(uitkomsten.find((v) => v.id === 'ING').beleid?.indicatie, 95500);
   assert.equal(uitkomsten.find((v) => v.id === 'NHG').vastgesteld, 92550);
   for (const tab of tabs) {
-    const html = renderDossier(d, tab, '', r);
+    const html = renderDossier(d, tab, '', r, { berekend: true });
     assert.ok(html.includes('data-inkomensanalyse'), `${tab}: ontbrekende vergelijking`);
     for (const id of KADER_VOLGORDE) assert.ok(html.includes(`data-analysekader="${id}"`), `${tab}: ${id} ontbreekt`);
   }

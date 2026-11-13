@@ -1,10 +1,10 @@
 import { vergelijkKaders } from '../engine/index.js';
-import { METHODE_LABEL } from '../engine/beleid.js';
 import { heeftBedrag, heeftResultaatVoorBelasting } from '../engine/financieel.js';
-import { rekenInvoerStatus } from '../engine/reken-invoer.js';
 import { esc, fmt } from '../util.js';
 import { icoon, pil } from './ui.js';
 import { kerninvoerPad } from './kerninvoer.js';
+import { renderInkomenTabel, renderOndernemingInkomen, renderRekenUitkomst } from './rekenuitkomst.js';
+import { renderRekenBronvergelijking, renderRekenkeuzes } from './rekenkeuzes.js';
 import { renderTrace } from './trace-view.js';
 import { ui } from './uistate.js';
 
@@ -16,85 +16,14 @@ function linkNaar(d, tab, tekst, { ondId, bind } = {}) {
   return `<a class="reken-link geen-print" href="${esc(kerninvoerPad(d, tab, ondId, bind))}">${esc(tekst)}${icoon('pijl')}</a>`;
 }
 
-function metriek(label, waarde) {
-  return `<div class="reken-metriek"><dt>${esc(label)}</dt><dd>${esc(waarde)}</dd></div>`;
-}
-
-function bronLink(url) {
-  return /^https:\/\//i.test(url || '')
-    ? `<a class="reken-link geen-print" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Beleidsbron${icoon('pijl')}</a>` : '';
-}
-
 function oefenVoorbeeld(d, kader) {
   return d.demo === true && Number.isFinite(d.oefenverklaringen?.[kader]?.bedrag) ? d.oefenverklaringen[kader] : null;
-}
-
-function oefenVerklaring(d, kader) {
-  const voorbeeld = oefenVoorbeeld(d, kader);
-  if (!voorbeeld) return '';
-  const herkomst = [voorbeeld.opsteller, fmt.datum(voorbeeld.datum)].filter(Boolean).join(' · ');
-  return `<p class="reken-oefen"><b>Fictieve oefenverklaring</b> ${esc(bedrag(voorbeeld.bedrag))}${herkomst ? ` · ${esc(herkomst)}` : ''}. Deze telt alleen als voorbeeld.</p>`;
 }
 
 function resultaatOordeel(status, beleid, blokkeert) {
   if (status === 'niet_akkoord') return pil(status);
   if (blokkeert) return pil('attentie', beleid?.methode === 'extern' && !beleid.bewijs ? 'Bewijsstuk nodig' : 'Invoer nodig');
   return pil(status, beleid && status === 'akkoord' ? 'Ter beoordeling' : undefined);
-}
-
-function enkelKaderKop(d, r, geblokkeerd) {
-  const p = r.beleid;
-  const nul = r.soort === 'NUL';
-  const oordeel = resultaatOordeel(r.status, p, geblokkeerd);
-  const methode = p ? METHODE_LABEL[p.methode] : '';
-  let hoofdlabel = 'Toetsinkomen';
-  let hoofdwaarde = geblokkeerd ? 'Invoer aanvullen' : bedrag(r.toetsinkomen);
-  let toelichting = 'Bedrag per jaar';
-  let aanvullend = '';
-  if (nul) {
-    hoofdlabel = 'Nulverklaring';
-    hoofdwaarde = r.nul?.conclusie || 'Ter beoordeling';
-    toelichting = '';
-  } else if (p) {
-    if (p.bewijs) {
-      hoofdlabel = 'Toetsinkomen op basis van bewijsstuk';
-      hoofdwaarde = bedrag(p.bedrag);
-      toelichting = [p.bewijs.opsteller, fmt.datum(p.bewijs.datum)].filter(Boolean).join(' · ');
-      if (p.bewijs.bedrag !== p.bedrag) aanvullend += metriek('Bedrag op bewijsstuk', bedrag(p.bewijs.bedrag));
-    } else if (p.methode === 'extern') {
-      hoofdlabel = 'Inkomensverklaring of bankbeoordeling';
-      hoofdwaarde = 'Bewijsstuk nodig';
-      toelichting = 'Registreer bedrag, datum en opsteller bij Klantgegevens.';
-    } else {
-      hoofdlabel = 'Berekende indicatie';
-      hoofdwaarde = Number.isFinite(p.bedrag) ? bedrag(p.bedrag) : 'Nog te bepalen';
-      toelichting = 'Bedrag per jaar, ter beoordeling';
-    }
-    if ((p.bewijs || p.methode === 'extern') && Number.isFinite(p.indicatie)) {
-      aanvullend += metriek('Eigen rekenindicatie', bedrag(p.indicatie));
-    }
-  } else if (!geblokkeerd && Number.isFinite(r.vastgesteld) && r.vastgesteld !== r.toetsinkomen) {
-    aanvullend += metriek('Vastgesteld inkomen', bedrag(r.vastgesteld));
-  }
-  if (!nul && d.broncontrole?.controlepunten?.length && !d.notities?.bronverschilOnderbouwing?.trim()) {
-    toelichting = 'Herberekening op beschikbare cijfers; bronvergelijking staat bij Fiattering.';
-    if (hoofdwaarde === '€ 0') hoofdwaarde = 'Nog niet vastgesteld';
-  }
-  if (!nul && (!geblokkeerd || p)) {
-    if (Number.isFinite(r.inkomen?.box1)) aanvullend += metriek('Box 1 volgens de berekening', bedrag(r.inkomen.box1));
-    if (Number.isFinite(r.inkomen?.box2)) aanvullend += metriek('Box 2 volgens de berekening', bedrag(r.inkomen.box2));
-  }
-  return `<section class="reken-overzicht" data-beoordelingskader="${esc(r.kader)}" aria-labelledby="reken-titel">
-    <div class="reken-overzicht-kop">
-      <div><h2 id="reken-titel">${esc(r.kaderCfg.kort)}</h2><p>${esc([r.kaderVersie, methode].filter(Boolean).join(' · '))}</p></div>
-      <div class="reken-overzicht-acties">${oordeel}${bronLink(p?.bronUrl || r.kaderCfg.bronUrl)}</div>
-    </div>
-    <div class="reken-uitkomst">
-      <div class="reken-hoofdwaarde${nul ? ' reken-hoofdwaarde-tekst' : ''}"><span>${esc(hoofdlabel)}</span><strong>${esc(hoofdwaarde)}</strong>${toelichting ? `<p>${esc(toelichting)}</p>` : ''}</div>
-      ${aanvullend ? `<dl class="reken-metrieken">${aanvullend}</dl>` : ''}
-    </div>
-    ${oefenVerklaring(d, r.kader)}
-  </section>`;
 }
 
 function invoerActie(d, punt, ondId) {
@@ -191,22 +120,6 @@ function persoonlijkeCijfers(d, jaren, C) {
   </details>`;
 }
 
-function jaarTotaal(r, jaren, ontbreekt) {
-  if (r.soort === 'NUL' || r.inkomensanalyse) return '';
-  const inkomen = r.inkomen;
-  if (!inkomen || !Object.values(inkomen.perJaar || {}).some(Number.isFinite)) return '';
-  const punten = [...ontbreekt.dossier, ...ontbreekt.ondernemingen.flatMap((o) => o.punten)];
-  const onvolledig = (jaar) => !r.beleid && punten.some((punt) => punt.blokkeert
-    && (!punt.jaren?.length || punt.jaren.includes(jaar)));
-  const inhoud = rij('Jaarbedrag in het toetskader', jaren, (jaar) => {
-    if (onvolledig(jaar)) return BEDRAG_LEEG;
-    return bedrag(inkomen.perJaar?.[jaar] ?? (jaar === r.C ? inkomen.controleReal : null));
-  }, true);
-  const controle = r.C && Number.isFinite(inkomen.controleExtr) && !onvolledig(r.C)
-    ? rij('Controlejaar op jaarbasis', jaren, (jaar) => jaar === r.C ? bedrag(inkomen.controleExtr) : BEDRAG_LEEG) : '';
-  return `<div class="scroll"><table class="tabel reken-tabel reken-jaartotaal">${tabelKop(jaren, r.C)}<tbody>${inhoud}${controle}</tbody></table></div>`;
-}
-
 function analyseUitkomst(d, x) {
   if (x.fout) return ['Niet te berekenen', ''];
   if (x.beleid) {
@@ -255,35 +168,10 @@ function analysePaneel(d, uitkomsten, compact) {
 }
 
 export function renderUitkomstentabel(d, r, { controles = false } = {}) {
-  const ontbreekt = rekenInvoerStatus(d, r);
   const jaren = [...new Set([...r.T, ...(r.C ? [r.C] : [])])].sort((a, b) => a - b);
-  const analyses = r.ondernemingen || [];
-  const perOnd = new Map((r.inkomen?.perOnderneming || []).map((o) => [o.id, o]));
-  const bedragenPerJaar = (a, y) => {
-    if (r.soort === 'NUL' || a.meenemen === false) return null;
-    const j = a.jaren?.[y];
-    if (!j?.actief) return null;
-    if (r.beleid && analyses.length === 1 && Number.isFinite(r.beleid.perJaar?.[y])) return r.beleid.perJaar[y];
-    if (a.soort === 'VPB' ? !heeftBedrag(j.ibOnd?.loon) && !heeftBedrag(j.vwRuw?.salarisDGA)
-      : !j.heeftResultaatinvoer && !heeftBedrag(j.ibOnd?.sfw)) return null;
-    const p = perOnd.get(a.id);
-    if (y === r.C) return p?.perJaar?.[y]?.inkomen ?? p?.controleReal ?? j.inkomen?.totaal;
-    return p?.perJaar?.[y]?.inkomen ?? p?.jaren?.[y] ?? j.inkomen?.totaal;
-  };
-  const tabel = analyses.length ? `<div class="scroll"><table class="tabel reken-tabel uitkomsten-tabel" data-uitkomstentabel>
-    <thead><tr><th scope="col">Onderneming</th>${jaren.map((y) => `<th scope="col" class="num">${esc(y)}${y === r.C ? '<small>Gerealiseerd</small>' : ''}</th>`).join('')}<th scope="col" class="num">Berekend per jaar</th></tr></thead>
-    <tbody>${r.inkomen?.dgaGezamenlijk ? `<tr class="totaal"><th scope="row">DGA-loon gezamenlijk<small>Voor alle eigen vennootschappen</small></th>${jaren.map((y) => `<td class="num">${esc(bedrag(r.inkomen.dgaGezamenlijk.perJaar?.[y]?.inkomen))}</td>`).join('')}<td class="num"><strong>${esc(bedrag(r.inkomen.dgaGezamenlijk.toetsinkomen))}</strong>${r.inkomen.dgaGezamenlijk.inUitkomst ? '' : '<small>Ter beoordeling</small>'}</td></tr>` : ''}${analyses.map((a) => {
-    const p = perOnd.get(a.id);
-    const open = ontbreekt.ondernemingen.find((o) => o.id === a.id)?.punten.some((x) => x.blokkeert);
-    const heeftHistorie = r.T.some((y) => Number.isFinite(bedragenPerJaar(a, y)));
-    const totaal = r.soort === 'NUL' || a.meenemen === false || r.inkomensanalyse ? null : r.beleid && analyses.length === 1 ? r.beleid.indicatie ?? r.beleid.bedrag
-      : heeftHistorie && !open ? p?.berekend ?? (Number.isFinite(p?.gemiddelde) ? Math.max(0, p.gemiddelde) + (p.box2 || 0) : null) : null;
-    return `<tr><th scope="row"><a href="${esc(kerninvoerPad(d, 'berekening', a.id))}">${esc(a.naam)}${icoon('rechts')}</a><small>${esc(a.rechtsvormKort || '')}${a.meenemen === false ? ' · Buiten het inkomen' : ''}</small></th>
-      ${jaren.map((y) => `<td class="num">${esc(bedrag(bedragenPerJaar(a, y)))}</td>`).join('')}<td class="num"><strong>${esc(bedrag(totaal))}</strong></td></tr>`;
-  }).join('')}</tbody></table></div>` : '<p class="reken-neutraal">Er zijn geen ondernemingen opgenomen in deze aanvraag.</p>';
   return `<section class="reken-paneel uitkomsten" aria-label="Uitkomsten per onderneming">
     <div class="reken-paneel-kop"><div><h2>Uitkomsten per onderneming</h2><p class="reken-neutraal">Open een onderneming voor de jaarcijfers en rekenstappen.</p></div></div>
-    ${tabel}${!r.inkomensanalyse ? jaarTotaal(r, jaren, ontbreekt) : ''}${persoonlijkeCijfers(d, jaren, r.C)}
+    ${renderInkomenTabel(d, r)}${persoonlijkeCijfers(d, jaren, r.C)}
   </section>${r.inkomensanalyse ? analysePaneel(d, vergelijkKaders(d), !controles) : ''}`;
 }
 
@@ -295,20 +183,16 @@ export function renderOndernemingBerekening(d, r, a, { details = '', weergave = 
     <section class="reken-paneel"${r.inkomensanalyse ? '' : ` data-beoordelingskader="${esc(r.kader)}"`}>
       <div class="reken-paneel-kop"><div>${linkNaar(d, 'berekening', 'Alle uitkomsten')}<h2>${esc(a.naam)}</h2>${r.inkomensanalyse ? '' : `<p class="reken-neutraal">${esc(r.kaderCfg.kort)} · ${esc(r.kaderVersie)}</p>`}</div>
       ${linkNaar(d, 'invoer', 'Cijfers bewerken', { ondId: a.id })}</div>
-      ${jaarTabelBedrijf(a, bron, jaren, r.C)}
     </section>
+    ${renderOndernemingInkomen(d, r, a)}
+    <details class="stappen reken-uitklap"><summary>Onderliggende jaarcijfers</summary><div class="reken-uitklap-inhoud">${jaarTabelBedrijf(a, bron, jaren, r.C)}</div></details>
     ${r.inkomensanalyse ? `<section class="reken-paneel"><h2>Uitkomsten voor het dossier</h2><p>De kaders berekenen een dossieruitkomst. Voor meerdere ondernemingen is die niet altijd aan één onderneming toe te rekenen.</p>${renderAnalyseTabel(d, undefined, { compact: true })}</section>` : `<section class="reken-paneel"><div class="reken-paneel-kop"><h2>Rekenstappen</h2>${weergave}</div>${renderTrace({ ...a.trace, secties: (a.trace?.secties || []).filter((s) => !['controles', 'voorwaarden'].includes(s.groep)) })}${r.beleid ? `<details class="stappen reken-uitklap"><summary>Berekening volgens ${esc(r.kaderCfg.kort)}</summary><div class="reken-uitklap-inhoud">${renderTrace({ ...r.trace, secties: (r.trace?.secties || []).filter((s) => s.groep === 'inkomen') })}</div></details>` : ''}${details}</section>`}
   </div>`;
 }
 
-export function renderRekenwerkruimte(d, r) {
-  const ontbreekt = rekenInvoerStatus(d, r);
-  const punten = [...ontbreekt.dossier, ...ontbreekt.ondernemingen.flatMap((o) => o.punten)];
-  const analyse = r.inkomensanalyse;
+export function renderRekenwerkruimte(d, r, { berekend = false } = {}) {
   return `<div class="berekening rekenwerkruimte${ui.formules ? '' : ' zonder-formules'}">
-    ${analyse ? `<section class="reken-overzicht" aria-labelledby="reken-titel">
-      <div class="reken-overzicht-kop"><div><h2 id="reken-titel">Inkomensanalyse</h2><p>Vergelijk de uitkomsten op dezelfde dossierinvoer.</p></div></div>
-    </section>` : enkelKaderKop(d, r, punten.some((punt) => punt.blokkeert))}
-    ${renderUitkomstentabel(d, r)}
+    ${renderRekenkeuzes(d, r, berekend)}
+    ${berekend ? `<div id="rekenresultaten" class="rekenwerkruimte">${renderRekenUitkomst(d, r)}${r.inkomensanalyse ? analysePaneel(d, vergelijkKaders(d), true) : renderRekenBronvergelijking(d, r)}</div>` : ''}
   </div>`;
 }

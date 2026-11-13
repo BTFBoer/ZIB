@@ -225,17 +225,21 @@ function berekenVenn({ dossier, analyses, ctx, nhg, invoer = {} }) {
     if (jaarbasis < reeks[2]) checks.push(check('niet_akkoord', 'Voor deze versie van de Venn-gids moet het geëxtrapoleerde resultaat vanaf 1 augustus minstens gelijk zijn aan het voorgaande jaar.'));
   }
   let box1 = vennWeging(reeks);
+  const vervanging = { toegepast: false, reden: '' };
   if (invoer.tussentijdsVervangen === true) {
     const controleBalans = controleJaar?.heeftBalans
       && (!controleJaar.aggBalans || balansOntbreekt(controleBron).length === 0);
     if (!opOfNa(ctx.datum, 8, 1) || tussenResultaat === null || !controleBalans) {
-      checks.push(check('attentie', 'Vervanging op verzoek kan vanaf 1 augustus met gerealiseerde cijfers, een tussentijdse balans en controle van de btw-aangiften.'));
+      vervanging.reden = 'Vervanging op verzoek kan vanaf 1 augustus met gerealiseerde cijfers, een tussentijdse balans en controle van de btw-aangiften.';
+      checks.push(check('attentie', vervanging.reden));
     } else if (!ib && !aanwezig(controleJaar.ibOnd?.loon)) {
-      checks.push(check('attentie', 'Vul het gerealiseerde arbeidsinkomen uit onderneming over het lopende jaar in voor vervanging.'));
+      vervanging.reden = 'Vul het gerealiseerde arbeidsinkomen uit onderneming over het lopende jaar in voor vervanging.';
+      checks.push(check('attentie', vervanging.reden));
     } else {
       const gerealiseerd = ib ? tussenResultaat * controleJaar.aandeel - aftrek(controleJaar) : num(controleJaar.ibOnd.loon) - aftrek(controleJaar);
       const begrensd = Math.min(gerealiseerd, reeks[2]);
       box1 = vennWeging([reeks[1], reeks[2], begrensd]);
+      vervanging.toegepast = true;
       stappen.push(stap('Vervanging op verzoek', `Gerealiseerd ${ctx.C}, maximaal het inkomen over ${T[2]}. Rekenvariant met ${T[1]}, ${T[2]} en ${ctx.C}.`, begrensd));
       checks.push(check('attentie', 'Laat de rekenexpert de gebruikte jaren bij tussentijdse vervanging bevestigen.'));
     }
@@ -243,11 +247,11 @@ function berekenVenn({ dossier, analyses, ctx, nhg, invoer = {} }) {
   stappen.push(stap('Gewogen inkomen', box1.formule, box1.gemiddelde));
   stappen.push(stap('Box 1 na plafond laatste jaar', 'Laagste van het gewogen gemiddelde en het inkomen van het laatste meegewogen jaar', box1.bedrag));
   const perJaar = Object.fromEntries(T.map((y, i) => [y, reeks[i]]));
-  if (ib || !geconsolideerd) return resultaat(box1.bedrag, { box1: box1.bedrag, perJaar });
+  if (ib || !geconsolideerd) return resultaat(box1.bedrag, { box1: box1.bedrag, perJaar, vervanging });
   const duurVastgesteld = hoofdBron.startdatum && addMonthsISO(hoofdBron.startdatum, 36) <= aanvraagDatum
     && (!dochter || (dochter.startdatum && addMonthsISO(dochter.startdatum, 36) <= aanvraagDatum));
   const dga = vennDga(hoofd, jaren, bronjaren, winst, box1.bedrag, venn2025, { ...invoer, overwinst: duurVastgesteld && invoer.overwinst }, stappen, checks);
-  return resultaat(dga.bedrag, { box1: box1.bedrag, box2: rond(dga.dividend + dga.overwinst), perJaar });
+  return resultaat(dga.bedrag, { box1: box1.bedrag, box2: rond(dga.dividend + dga.overwinst), perJaar, vervanging });
 }
 
 function ingRekeningCourant(dossier, invoer, stappen, checks) {

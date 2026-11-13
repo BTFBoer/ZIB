@@ -50,6 +50,7 @@ import { renderBronarchief } from './views/bronarchief.js';
 const app = document.getElementById('app');
 let route = { pagina: 'aanvragen' };
 let resultaat = null;
+let laatsteBerekening = null;
 let gbVoorbeeld = null;
 let dossierconcept = null;
 let dossierOpslag = null;
@@ -107,6 +108,10 @@ function dossierVoorRoute(id) {
 
 function huidigDossier() {
   return route.pagina === 'dossier' ? dossierVoorRoute(route.id) : null;
+}
+
+function rekenGrondslag(d) {
+  return JSON.stringify(beoordelingsInhoud(d));
 }
 
 function conceptGewijzigd() {
@@ -334,7 +339,9 @@ export function render({ behoudScroll = false } = {}) {
       if (!d) { inhoud = leeg('Dit dossier bestaat niet (meer).', '<a class="knop" href="#/klanten">Naar aanvragen</a>'); break; }
       resultaat = bereken(d);
       noteerRecent(d.id);
-      inhoud = renderDossier(d, route.tab, route.ondId, resultaat, { documenten: conceptDocumenten(d) });
+      const rekentab = ['berekening', 'samenvatting'].includes(route.tab);
+      const berekend = rekentab && laatsteBerekening?.id === d.id && laatsteBerekening.grondslag === rekenGrondslag(d);
+      inhoud = renderDossier(d, route.tab, route.ondId, resultaat, { documenten: conceptDocumenten(d), berekend });
       titel = `${d.nummer} ${naamAanvrager(d.aanvrager)}`;
       breed = weergaveDossier(d) === 'bzi';
       break;
@@ -562,6 +569,17 @@ function verwerkBinding(el, magRenderen) {
   }
   if (doel.soort === 'dossier') {
     werkDossierconceptBij(doel.obj);
+    if (el.hasAttribute('data-rekenkeuze')) {
+      laatsteBerekening = null;
+      const uitkomst = document.getElementById('rekenresultaten');
+      if (uitkomst) uitkomst.hidden = true;
+      const status = app.querySelector('[data-rekenstatus]');
+      if (status) status.textContent = 'Rekenkeuzes gewijzigd. Klik op Berekenen voor de nieuwe uitkomst.';
+      const vervanging = app.querySelector('[data-reken-vervanging]');
+      if (vervanging && el.hasAttribute('data-reken-controlejaar')) vervanging.disabled = waarde === false;
+      app.querySelectorAll('[data-reken-keuze-uitkomst]').forEach((veld) => { veld.hidden = true; });
+      return;
+    }
     herberekenDossier();
   } else opslaan(doel.obj);
   if (el.dataset.render && magRenderen) {
@@ -1112,6 +1130,15 @@ function zetKlapDOM(bak, dicht) {
 }
 
 const ACTIES = {
+  'dossier-berekenen'() {
+    const d = huidigDossier();
+    if (!d || dossierOpslag || !['berekening', 'samenvatting'].includes(route.tab)) return;
+    laatsteBerekening = { id: d.id, grondslag: rekenGrondslag(d) };
+    render({ behoudScroll: true });
+    const kop = document.getElementById('rekenresultaten-titel');
+    kop?.focus({ preventScroll: true });
+    kop?.scrollIntoView({ block: 'start' });
+  },
   browseroverdracht() { return biedBrowseroverdrachtAan(() => render()); },
   'zoek-open'() { zoekenOpenen(); },
   'dossier-opslaan'() { return dossierOpslaan(); },

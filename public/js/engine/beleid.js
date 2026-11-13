@@ -82,6 +82,7 @@ export function toetsBeleidsprofiel(profiel, dossier, analyses, ctx, nhg) {
     methode: extern ? 'extern' : grondslag.methode || (profiel.methode === 'extern' ? 'eigen' : profiel.methode),
     bedrag, indicatie, stappen, checks, bewijs,
     box1: grondslag.box1, box2: grondslag.box2, rc: grondslag.rc,
+    ...(grondslag.vervanging ? { vervanging: grondslag.vervanging } : {}),
     versie: grondslag.versie || profiel.versie,
     bronUrl: grondslag.bronUrl || profiel.bronUrl,
     perJaar: grondslag.perJaar || {},

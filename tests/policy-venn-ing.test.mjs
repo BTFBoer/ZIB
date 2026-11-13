@@ -67,6 +67,12 @@ test('Venn gebruikt gerealiseerde tussentijdse winst bij de optionele augustusva
   const uitkomst = venn.bereken(fixture);
   assert.equal(uitkomst.bedrag, 50000);
   assert.equal(uitkomst.stappen.find((s) => s.label === 'Vervanging op verzoek').waarde, 50000);
+  assert.deepEqual(uitkomst.vervanging, { toegepast: true, reden: '' });
+  fixture.ctx.C = null;
+  const zonderControlejaar = venn.bereken(fixture);
+  assert.equal(zonderControlejaar.bedrag, 70000);
+  assert.equal(zonderControlejaar.vervanging.toegepast, false);
+  assert.equal(zonderControlejaar.stappen.some((s) => s.label === 'Vervanging op verzoek'), false);
 });
 
 test('ING behandelt nul in een ingediende IB-aangifte als werkelijk resultaat en ontbrekend saldo als open', () => {

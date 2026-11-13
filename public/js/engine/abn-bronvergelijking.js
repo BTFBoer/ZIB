@@ -56,6 +56,7 @@ export function vergelijkAbnBronmodel(d, ctx, analyses, st, dga, zeggenschap, ov
   const perJaar = {};
   if (dga?.factor !== 1 || !dga.compleet || !T.every((jaar) => Number.isFinite(dga.perJaar[jaar]?.inkomen))) open.push('De herleidbare loonreeks voor drie volledige boekjaren ontbreekt.');
   if ([...relevanteBV].some((id) => ondernemingen.get(id)?.holdingroute)) open.push('De ingestelde holdingroute wijkt af van dit horizontale bronmodel.');
+  const ibOndernemingen = analyses.filter((a) => a.soort === 'IB' && opgenomenInBron(a) && !a.geconsolideerd && ondernemingen.get(a.id)?.actief !== false);
   for (const jaar of T) {
     let winst = 0;
     let uitgekeerd = 0;
@@ -114,6 +115,27 @@ export function vergelijkAbnBronmodel(d, ctx, analyses, st, dga, zeggenschap, ov
   const uitgekeerd = Math.max(0, Math.min(gemiddeldeVan('uitgekeerd'), l.uitgekeerd, winstplafond));
   const ruimte = opties.uitkeringsruimteMaximeren ? l.uitkeringsruimte : Infinity;
   const nietUitgekeerd = opties.overwinstMeenemen ? Math.max(0, Math.min(gemiddeldeVan('nietUitgekeerd'), l.nietUitgekeerd, winstplafond - uitgekeerd, ruimte)) : 0;
+  // Overzicht!C63:F67: begrens box 2 per kolom en pas het laatste-jaarplafond op het totaal toe.
+  // De bronimport bevat de vertaling van de BV-route. Een IB-onderneming vraagt haar eigen bronkeuzes.
+  const verticaleBox2 = (betaald, over, plafond) => Math.max(0, Math.min(
+    betaald + (opties.overwinstMeenemen ? over : 0), plafond,
+    opties.overwinstMeenemen ? Math.min(betaald, plafond) + ruimte : Infinity,
+  ));
+  const rowPerJaar = T.map((jaar) => getal(d.ib?.[jaar]?.row) ?? 0);
+  const verticaalGemiddeld = gemiddeldeVan('dga') + verticaleBox2(gemiddeldeVan('uitgekeerd'), gemiddeldeVan('nietUitgekeerd'), winstplafond) + gemiddelde(rowPerJaar);
+  const verticaalLaatste = l.dga + verticaleBox2(l.uitgekeerd, l.nietUitgekeerd, Infinity) + rowPerJaar.at(-1);
+  const verticaal = ibOndernemingen.length ? null : rond2(Math.min(verticaalGemiddeld, verticaalLaatste));
   return { perJaar, open: [], dga: dga.toetsinkomen, overigeInkomsten, uitgekeerd: rond2(uitgekeerd), nietUitgekeerd: rond2(nietUitgekeerd),
-    winstplafond: rond2(winstplafond), uitkeringsruimte: l.uitkeringsruimte, horizontaal: rond2(dga.toetsinkomen + overigeInkomsten + uitgekeerd + nietUitgekeerd) };
+    winstplafond: rond2(winstplafond), uitkeringsruimte: l.uitkeringsruimte, horizontaal: rond2(dga.toetsinkomen + overigeInkomsten + uitgekeerd + nietUitgekeerd),
+    verticaal, verticaalGemiddeld: verticaal === null ? null : rond2(verticaalGemiddeld), verticaalLaatste: verticaal === null ? null : rond2(verticaalLaatste) };
+}
+
+export function kiesAbnVaststelling(d, vergelijking) {
+  const keuze = d.instellingen?.abnVaststelling;
+  const methode = keuze === 'verticaal' || keuze === 'horizontaal' ? keuze : vergelijking ? 'horizontaal' : null;
+  if (!methode) return null;
+  const horizontaal = vergelijking?.horizontaal ?? null;
+  const verticaal = vergelijking?.verticaal ?? null;
+  const bedrag = methode === 'horizontaal' ? horizontaal : verticaal;
+  return { methode, bedrag, bron: bedrag === null ? 'open' : 'herberekend', horizontaal, verticaal };
 }

@@ -4,7 +4,9 @@
   min-width: 0;
 }
 
-.reken-overzicht, .reken-paneel {
+.rekenwerkruimte[hidden] { display: none; }
+
+.reken-paneel {
   min-width: 0;
   border: 1px solid var(--lijn);
   border-radius: var(--radius);
@@ -13,12 +15,7 @@
   scroll-margin-top: 96px;
 }
 
-.reken-overzicht {
-  background: linear-gradient(112deg, var(--mint-zacht), var(--vlak) 76%);
-  border-left: 4px solid var(--teal);
-}
-
-.reken-overzicht-kop, .reken-paneel-kop {
+.reken-paneel-kop {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -26,60 +23,11 @@
   gap: 6px 16px;
 }
 
-.reken-overzicht h2 {
-  margin: 0;
-  font-size: clamp(23px, 3vw, 32px);
-  line-height: 1.14;
-  letter-spacing: -.032em;
-}
-
-.reken-overzicht-kop p, .reken-hoofdwaarde p {
-  margin: 4px 0 0;
-  color: var(--grijs);
-  font-size: 13px;
-}
-
-.reken-overzicht-acties, .reken-snelkeuze {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px 12px;
-}
-
-.reken-snelkeuze { gap: 6px; }
-
-.reken-uitkomst {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px 22px;
-  margin-top: 17px;
-  padding-top: 15px;
-  border-top: 1px solid var(--lijn);
-}
-
-.reken-hoofdwaarde {
-  flex: 1 1 255px;
-  min-width: 0;
-}
-
-.reken-hoofdwaarde > span, .reken-metriek dt {
+.reken-metriek dt {
   color: var(--grijs);
   font-weight: 650;
   font-size: 13px;
 }
-
-.reken-hoofdwaarde > strong {
-  display: block;
-  margin-top: 4px;
-  color: var(--inkt);
-  font-size: clamp(24px, 4vw, 43px);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.08;
-  letter-spacing: -.035em;
-  overflow-wrap: anywhere;
-}
-
-.reken-hoofdwaarde-tekst > strong { font-size: clamp(17px, 2vw, 23px); }
 
 .reken-metrieken {
   display: flex;
@@ -173,7 +121,6 @@
 .reken-uitklap > .reken-invoerpunten, .reken-uitklap-inhoud { padding: 3px 11px 9px; }
 .reken-uitklap-inhoud { min-width: 0; }
 .reken-uitklap-inhoud > .reken-link { margin-top: 4px; }
-.reken-jaartotaal { margin-top: 2px; }
 .reken-tabel { width: 100%; min-width: 430px; }
 .reken-tabel.reken-analysetabel { min-width: 740px; }
 .reken-tabel th[scope="row"] { text-align: left; background: transparent; color: var(--inkt); }
@@ -186,36 +133,55 @@
 .reken-analyse-uitleg ul { margin: 3px 0 4px; padding-left: 18px; }
 .reken-analyse-uitleg li + li { margin-top: 4px; }
 
-.reken-oefen {
-  margin: 9px 0 0;
-  padding: 7px 9px;
-  color: var(--info);
-  background: var(--info-bg);
-  border-radius: 5px;
-  font-size: 12px;
-}
-
 @media (max-width: 560px) {
-  .reken-overzicht, .reken-paneel { scroll-margin-top: 85px; }
-  .reken-snelkeuze .knop { min-height: 39px; }
+  .reken-paneel { scroll-margin-top: 85px; }
   .reken-paneel-kop { row-gap: 4px; }
   .reken-invoerpunten > li { display: block; }
   .reken-invoerpunten .reken-link { min-height: 34px; }
 }
 
 @media print {
-  .reken-paneel, .reken-overzicht { background: none; border-color: #ccc; box-shadow: none; }
-  .reken-overzicht { break-inside: avoid; }
+  .reken-paneel { background: none; border-color: #ccc; box-shadow: none; }
   .reken-tabel, .reken-tabel.reken-analysetabel { min-width: 0; }
   .reken-tabel small { white-space: normal; }
 }
 .uitkomsten-tabel th:first-child { min-width: 160px; }
 .uitkomsten-tabel th a { display: inline-flex; align-items: center; gap: 4px; color: var(--accenttekst); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .uitkomsten .reken-paneel-kop p { margin: 3px 0 0; }
-.uitkomsten-tabel .num, .reken-jaartotaal .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.uitkomsten-tabel .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
 #fiat-controles > .paginakop, #fiat-inkomenswijziging > h2 { margin-bottom: 12px; }
 #tabinhoud > .reken-paneel, #tabinhoud > .uitkomsten, .bzi-inhoud > .reken-paneel, .bzi-inhoud > .uitkomsten { margin-bottom: 14px; }
 .fiat-controles + .fiat-controles, .fiat-inkomensgroep + .fiat-inkomensgroep { margin-top: 8px; }
 .fiat-controlelijst { padding: 0; margin: 0; list-style: none; }
 .fiat-controle { padding: 8px 0; border-bottom: 1px solid var(--lijn-zacht); overflow-wrap: anywhere; }
 .fiat-inkomenswijziging + .fiat-inkomenswijziging { margin-top: 8px; }
+
+.reken-algemeen { border-top: 3px solid var(--teal); }
+.reken-algemeen h2, #rekenresultaten h2, .reken-bedrijfblok h2 { margin: 0; }
+.reken-keuzetabel { width: 100%; }
+.reken-keuzetabel th[scope="row"] { width: 43%; font-weight: 620; }
+.reken-keuzetabel select { min-width: min(200px, 100%); max-width: 100%; }
+.reken-keuzetabel small { display: block; margin-top: 4px; color: var(--grijs); }
+.reken-keuze-acties { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 14px; }
+#rekenresultaten-titel { scroll-margin-top: 106px; }
+#rekenresultaten-titel:focus-visible { outline: 2px solid var(--teal); outline-offset: 5px; }
+.reken-inkomenstabel { min-width: 720px; }
+.reken-inkomenstabel thead th, .reken-toetsingstabel thead th { white-space: normal; }
+.reken-inkomenstabel thead tr:first-child th, .reken-toetsingstabel thead th {
+  background: var(--groen-donker);
+  color: #fff;
+}
+.reken-inkomenstabel thead tr:first-child th small, .reken-toetsingstabel thead th small { color: #e2f0ee; }
+.reken-inkomenstabel th.reken-tabelkop { text-align: left; }
+.reken-inkomenstabel tbody th, .reken-inkomenstabel tbody td { background: var(--info-bg); }
+.reken-inkomenstabel tfoot th, .reken-inkomenstabel tfoot td { border-top: 2px solid var(--accenttekst); }
+.reken-inkomenstabel tfoot tr.totaal td.reken-uitkomstbedrag { background: var(--att-bg); color: var(--att); }
+.reken-toetsingstabel { min-width: 540px; }
+.reken-toetsingstabel tbody th[scope="row"] { background: var(--mint); }
+.reken-toetsingstabel tbody td { background: var(--achtergrond); }
+.reken-toetsingstabel .reken-toetsing-totaal > * { border-top: 2px solid var(--accenttekst); font-weight: 700; }
+.reken-toetsing-status { text-align: center; }
+.reken-bedrijfblok .scroll + .scroll { margin-top: 13px; }
+.reken-bedrijfblok summary { color: var(--accenttekst); }
+.reken-bedrijfblok > .reken-paneel-kop + .scroll { margin-top: 8px; }
+.reken-bronnentabel { margin-top: 8px; }

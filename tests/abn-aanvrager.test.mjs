@@ -56,6 +56,13 @@ test('De groepsvergelijking begrenst ontvangen minderheidsdividend en toont de h
   assert.equal(bron.nietUitgekeerd, 27000);
   assert.equal(bron.uitkeringsruimte, 40000);
   assert.equal(bron.horizontaal, 93666.67);
+  assert.equal(bron.verticaal, 94333.33);
+  assert.equal(r.inkomen.abnVaststelling.methode, 'horizontaal');
+  d.instellingen = { abnVaststelling: 'verticaal', controlejaar: false };
+  r = bereken(d);
+  assert.deepEqual(r.inkomen.abnVaststelling, { methode: 'verticaal', bedrag: 94333.33, bron: 'herberekend', horizontaal: 93666.67, verticaal: 94333.33 });
+  assert.equal(r.toetsinkomen, null);
+  assert.equal(r.vastgesteld, null);
   assert.ok(!r.inkomen.geldstromen.some((s) => s.naar === houder.id && s.perJaar[2025].ontvangen === 25000));
 
   d.ondernemingen.at(-1).meenemen = true;

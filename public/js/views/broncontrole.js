@@ -5,7 +5,7 @@ const labels = { bzi: 'Bron: BZI', horizontaal: 'Bron: horizontaal', verticaal: 
 const bedrag = (waarde) => Number.isFinite(waarde) ? fmt.eur(waarde) : '—';
 const bronTekst = (bron) => typeof bron === 'string' ? bron : [bron?.bestand, bron?.locatie].filter(Boolean).join(' · ');
 
-function renderBronUitkomsten(uitkomsten) {
+export function renderBronUitkomsten(uitkomsten) {
   if (!uitkomsten.length) return '';
   const rijen = uitkomsten.map((x) => {
     const datumStatus = [x.peildatum ? fmt.datum(x.peildatum) : '', x.statusBron].filter(Boolean).join(' · ');
