@@ -1,5 +1,9 @@
 import { num, isIngevuld } from '../util.js';
 
+export function heeftBedrag(v) {
+  return (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '')) && Number.isFinite(Number(v));
+}
+
 export function balansTotalen(b = {}) {
   const v = (k) => num(b[k]);
   const IVA = v('ivaGoodwillEV') + v('ivaGoodwillNietEV') + v('ivaOverig');
@@ -43,6 +47,38 @@ export function heeftVW(w = {}) {
   return Object.entries(w).some(([k, x]) => k !== 'prognose' && k !== 'fte' && num(x) !== 0);
 }
 
+/** Een expliciet nulresultaat is invoer. Bij totaalposten volstaat alleen omzet niet. */
+export function heeftResultaatinvoer(jd = {}) {
+  const agg = jd.bzi || {};
+  return heeftResultaatDetail(jd) || heeftBedrag(agg.nettowinst)
+    || (heeftBedrag(agg.resultaatVoorBelasting) && heeftBedrag(agg.vpb));
+}
+
+function heeftResultaatDetail(jd) {
+  return heeftVW(jd.vw) || (!heeftAggVW(jd.bzi) && Object.entries(jd.vw || {}).some(([k, x]) =>
+    k !== 'prognose' && k !== 'fte' && heeftBedrag(x)));
+}
+
+export function heeftResultaatVoorBelasting(jd = {}) {
+  const agg = jd.bzi || {};
+  return heeftResultaatDetail(jd) || heeftBedrag(agg.resultaatVoorBelasting)
+    || (heeftBedrag(agg.nettowinst) && heeftBedrag(agg.vpb));
+}
+
+/** Alleen de actieve, meegetelde ondernemingsjaren bepalen of de NHG-bedragen onderbouwd zijn. */
+export function nhgInkomenBeschikbaar(nhg) {
+  if (!Number.isFinite(nhg?.toetsinkomen)) return false;
+  if (!nhg.ondernemingen || !nhg.T) return true;
+  const mee = nhg.ondernemingen.filter((a) => a.meenemen !== false && !a.geconsolideerd);
+  return mee.length > 0 && mee.every((a) => nhg.T.every((y) => {
+    const j = a.jaren?.[y];
+    if (j?.actief === false || j?.meegeteld === false) return true;
+    return a.soort === 'VPB'
+      ? heeftBedrag(j?.ibOnd?.loon) || heeftBedrag(j?.vwRuw?.salarisDGA)
+      : j?.heeftResultaatinvoer || heeftBedrag(j?.ibOnd?.sfw);
+  }));
+}
+
 /** Diversen-post met terugval op een V&W-post wanneer de post leeg is gelaten. */
 export function metTerugval(div = {}, key, terugval) {
   return isIngevuld(div[key]) ? num(div[key]) : num(terugval);
@@ -54,7 +90,18 @@ export function metTerugval(div = {}, key, terugval) {
 // balanstotaal, vlottende activa en kort vreemd vermogen. Zodra er detailposten zijn, gaan die voor.
 // ---------------------------------------------------------------------------
 export const AGG_BALANS = ['ev', 'bt', 'va', 'kvv'];
-export const AGG_VW = ['omzet', 'nettowinst'];
+export const AGG_VW = ['omzet', 'nettowinst', 'resultaatVoorBelasting'];
+
+/** Volledige totaalinvoer voorkomt dat een lege balanspost als nul aan een ratio meedoet. */
+export function balansOntbreekt(jd = {}) {
+  if (heeftBalans(jd.balans)) return [];
+  return AGG_BALANS.filter((key) => !heeftBedrag(jd.bzi?.[key]));
+}
+
+export function voorraadTotaal(agg = {}) {
+  if (heeftBedrag(agg.voorraad)) return num(agg.voorraad);
+  return heeftBedrag(agg.vaDetail?.voorraden) ? num(agg.vaDetail.voorraden) : null;
+}
 
 export function heeftAggBalans(agg = {}) {
   return AGG_BALANS.some((k) => isIngevuld(agg[k]));
@@ -82,16 +129,20 @@ export function totalenJaar(jd = {}) {
     const TA = num(agg.bt);
     const VA = num(agg.va);
     const KVV = num(agg.kvv);
-    bal = { IVA: 0, MVA: 0, FVA: 0, VOORRADEN: 0, VORDERINGEN: 0, VA, TA, EV, VZ: 0,
+    bal = { IVA: 0, MVA: 0, FVA: 0, VOORRADEN: voorraadTotaal(agg) ?? 0, VORDERINGEN: 0, VA, TA, EV, VZ: 0,
       LVV: TA - EV - KVV, KVV, TP: TA, VERSCHIL: 0, aggregaat: true };
   } else {
     bal = balansTotalen(b);
   }
   let vw;
   if (aggW) {
-    const NW = num(agg.nettowinst);
-    vw = { OMZET: num(agg.omzet), BRUTO: 0, AFSCHRIJVINGEN: 0, KOSTEN: 0, BEDRIJFSRESULTAAT: NW, FIN: 0,
-      BUITENGEWOON: 0, RVB: NW, NW, KOSTPRIJS: 0, aggregaat: true };
+    const voorBelasting = heeftBedrag(agg.resultaatVoorBelasting);
+    const netto = heeftBedrag(agg.nettowinst);
+    const belasting = heeftBedrag(agg.vpb);
+    const NW = netto ? num(agg.nettowinst) : voorBelasting && belasting ? num(agg.resultaatVoorBelasting) - num(agg.vpb) : 0;
+    const RVB = voorBelasting ? num(agg.resultaatVoorBelasting) : NW + (netto && belasting ? num(agg.vpb) : 0);
+    vw = { OMZET: num(agg.omzet), BRUTO: 0, AFSCHRIJVINGEN: num(agg.afschrijvingen), KOSTEN: 0, BEDRIJFSRESULTAAT: NW, FIN: 0,
+      BUITENGEWOON: 0, RVB, NW, KOSTPRIJS: 0, aggregaat: true };
   } else {
     vw = vwTotalen(w);
   }

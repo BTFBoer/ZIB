@@ -91,6 +91,16 @@ export function opOfNa(iso, maand, dag) {
   return p.m > maand || (p.m === maand && p.d >= dag);
 }
 
+/** Minimale NHG-dekking bij kalenderboekjaren, toetskader IKV 01.2026 p. 10. */
+export function nhgKwartaaltermijn(datum) {
+  const p = parseISO(datum);
+  if (!p) return null;
+  if (p.m >= 11) return { jaar: p.y, kwartaal: 3, tot: `${p.y}-09-30`, vanaf: '1 november' };
+  if (p.m >= 8) return { jaar: p.y, kwartaal: 2, tot: `${p.y}-06-30`, vanaf: '1 augustus' };
+  if (p.m >= 2 && p.m < 5) return { jaar: p.y - 1, kwartaal: 4, tot: `${p.y - 1}-12-31`, vanaf: '1 februari' };
+  return null;
+}
+
 export function jaarVan(iso) {
   const p = parseISO(iso);
   return p ? p.y : new Date().getFullYear();

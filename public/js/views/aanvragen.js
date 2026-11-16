@@ -2,9 +2,9 @@
 // aanvragenlijst van de rekensoftware: vaste kolommen, sorteren, zoeken, filter, paginering,
 // pop-ups voor status, hypotheekaanvraagnummer, taken, kopiëren en herbeoordelen.
 import { esc, fmt, naamAanvrager, todayISO } from '../util.js';
-import { lijst, get, state } from '../state.js';
+import { lijst, get, state, kanBeleidsvoorbeeldenLaden } from '../state.js';
 import { bereken } from '../engine/index.js';
-import { soortOndernemer, KADERS } from '../engine/kaders.js';
+import { dossierMetNhg, soortOndernemer, KADERS, KADER_VOLGORDE } from '../engine/kaders.js';
 import { AFGEROND, DOSSIER_STATUSSEN } from '../schema/fields.js';
 import { docAanwezig } from '../schema/documenten.js';
 import { deadlineKlasse, deadlineTekst, kolomFilterPast } from '../lijsten.js';
@@ -22,7 +22,7 @@ export function samenvatting(d) {
   let r;
   try {
     const res = bereken(d);
-    r = { status: res.status, vastgesteld: res.vastgesteld, soort: res.soort, bron: res.bron, berekend: res.berekend,
+    r = { status: res.status, vastgesteld: res.vastgesteld, soort: res.soort, bron: res.bron, berekend: res.berekend, beleid: res.beleid,
       vereist: (res.documenten || []).filter((x) => x.verplicht).map((x) => ({ categorie: x.categorie, aantal: x.aantal })) };
   } catch (e) {
     r = { status: 'attentie', vastgesteld: 0, fout: e.message };
@@ -32,9 +32,10 @@ export function samenvatting(d) {
 }
 
 export function soortAanvraagTekst(d) {
+  if (d.soort === 'ANALYSE') return 'Inkomensanalyse';
   const k = KADERS[d.kader];
   const label = d.label || (k && d.kader !== 'NHG' ? k.kort : '');
-  const nhg = k?.nhg ? 'met NHG' : 'zonder NHG';
+  const nhg = dossierMetNhg(d) ? 'met NHG' : 'zonder NHG';
   return `${d.soort === 'NUL' ? '0-verklaring' : 'IKV'} ${label} ${nhg}`.replace(/\s+/g, ' ').trim();
 }
 
@@ -84,7 +85,7 @@ function initialen(naam) {
 //   w(d): sorteerwaarde
 const KOLOMMEN = [
   { k: 'naam', label: 'Naam', std: true, stdAfg: true, filter: 'tekst', w: (d) => naamAanvrager(d.aanvrager).toLowerCase(), tekst: (d) => naamAanvrager(d.aanvrager) },
-  { k: 'hypotheek', label: 'Hypotheek<br>aanvr. nr.', lang: 'Hypotheekaanvraagnummer', std: true, stdAfg: true, filter: 'tekst', w: (d) => d.leningnummer || '', tekst: (d) => d.leningnummer || '' },
+  { k: 'hypotheek', label: 'Aanvraag-<br>nummer', lang: 'Aanvraag- of leningnummer', std: true, stdAfg: true, filter: 'tekst', w: (d) => d.leningnummer || '', tekst: (d) => d.leningnummer || '' },
   { k: 'eerder', label: '', vast: true, sorteer: false, w: () => 0 },
   { k: 'nr', label: 'Nr.', lang: 'Dossiernummer', std: true, stdAfg: true, filter: 'tekst', w: (d) => d.nummer || '', tekst: (d) => d.nummer || '' },
   { k: 'datumAanvraag', label: 'Datum<br>aanvraag', lang: 'Datum aanvraag', filter: 'tekst', w: datumAanvraag, tekst: (d) => fmt.datum(datumAanvraag(d)) },
@@ -100,7 +101,7 @@ const KOLOMMEN = [
   { k: 'statutair', label: 'Statutaire naam<br>Onderneming 1', lang: 'Onderneming', std: true, stdAfg: true, filter: 'tekst', w: (d) => (d.ondernemingen?.[0]?.naam || '').toLowerCase(), tekst: (d) => (d.ondernemingen || []).map((o) => o.naam || '').join(' ') },
   { k: 'advies', label: 'Advieskantoor', filter: 'tekst', w: (d) => (get(d.advieskantoorId)?.naam || '').toLowerCase(), tekst: (d) => get(d.advieskantoorId)?.naam || '' },
   { k: 'via', label: 'Via', filter: 'tekst', w: (d) => d.via || '', tekst: (d) => d.via || '' },
-  { k: 'opdrachtnemer', label: 'Opdracht-<br>nemer', lang: 'Opdrachtnemer', filter: 'tekst', w: (d) => d.label || '', tekst: (d) => d.label || '' },
+  { k: 'opdrachtnemer', label: 'Geld-<br>verstrekker', lang: 'Geldverstrekker', filter: 'tekst', w: (d) => d.label || KADERS[d.kader]?.kort || '', tekst: (d) => d.label || KADERS[d.kader]?.kort || '' },
   { k: 'uitkomst', label: 'Uitkomst', std: true, stdAfg: true, filter: 'keuze', w: (d) => ['akkoord', 'attentie', 'niet_akkoord'].indexOf(samenvatting(d).status), tekst: (d) => STATUS_TEKST[samenvatting(d).status] || '' },
   { k: 'inkomen', label: 'Zakelijk<br>inkomen', lang: 'Zakelijk inkomen', stdAfg: true, w: (d) => samenvatting(d).vastgesteld || 0, num: true },
 ];
@@ -140,6 +141,7 @@ const SNELFILTERS = [
   ['spoed', 'Spoed', (d) => !!d.spoed],
   ['taken', 'Met open taken', (d) => openTaken(d).length > 0],
   ['mijn', 'Mijn dossiers', (d) => { const m = state.profiel?.naam || ''; return !!m && (d.behandelaar === m || d.fiatteur === m); }],
+  ['beleid-voorbeelden', 'Oefendossiers', (d) => d.id.startsWith('dos_demo_beleid_')],
 ];
 
 function sortering(afgerond) {
@@ -223,9 +225,19 @@ function cel(d, k) {
     case 'statutair': return esc(d.ondernemingen?.[0]?.naam || '');
     case 'advies': return esc(get(d.advieskantoorId)?.naam || '');
     case 'via': return esc(d.via || '');
-    case 'opdrachtnemer': return esc(d.label || '');
-    case 'inkomen': return d.soort === 'NUL' ? '€ 0' : esc(fmt.eur(s().vastgesteld));
-    case 'uitkomst': return pil(s().status);
+    case 'opdrachtnemer': return esc(d.label || KADERS[d.kader]?.kort || '');
+    case 'inkomen': {
+      if (d.soort === 'ANALYSE') return '–';
+      if (d.soort === 'NUL') return '€ 0';
+      const r = s();
+      if (r.beleid) {
+        const waarde = r.beleid.bedrag ?? r.beleid.indicatie;
+        return waarde === null ? (r.beleid.methode === 'extern' ? 'Bewijsstuk nodig' : 'Invoer aanvullen')
+          : `${esc(fmt.eur(waarde))} <span class="dempen klein">${r.beleid.bewijs ? 'bewijsstuk' : 'indicatief'}</span>`;
+      }
+      return esc(fmt.eur(r.vastgesteld));
+    }
+    case 'uitkomst': return d.soort === 'ANALYSE' ? pil('neutraal', 'Vergelijking') : pil(s().status);
     default: return '';
   }
 }
@@ -264,7 +276,7 @@ export function rijenAanvragen(afgerond) {
     return `<tr class="${meekijk ? 'meekijken' : ''}${sel.has(d.id) ? ' geselecteerd' : ''}" data-id="${esc(d.id)}">
       <td class="sel"><input type="checkbox" aria-label="Selecteer ${esc(d.nummer)}" data-actie="selecteer" data-id="${esc(d.id)}"${sel.has(d.id) ? ' checked' : ''}></td>
       <td class="acties-kol nowrap">
-        <a class="grid-ico" href="#/dossier/${esc(d.id)}" title="Klantgegevens openen">${icoon('persoon')}</a>
+        <a class="grid-ico" href="#/dossier/${esc(d.id)}/klant" title="Klantgegevens openen">${icoon('persoon')}</a>
         <a class="grid-ico${ontbreekt ? ' heeft' : ''}" href="#/dossier/${esc(d.id)}/documenten" title="Documenten${ontbreekt ? ` (${ontbreekt} verplichte ontbreken nog)` : ''}">${icoon('map')}${ontbreekt ? `<sup>${ontbreekt}</sup>` : ''}</a>
         <a class="grid-ico" href="#/dossier/${esc(d.id)}/berekening" title="Berekening en uitkomst">${icoon('reken')}</a>
         <button type="button" class="grid-ico${taken ? ' heeft' : ''}" data-actie="taken-dossier" data-id="${esc(d.id)}" title="Taken (${taken} open)">${icoon('taken')}${taken ? `<sup>${taken}</sup>` : ''}</button>
@@ -309,11 +321,37 @@ export function renderAanvragen(afgerond) {
   const eigen = ui.aanvragen.kolommen;
   const zichtbaar = new Set(zichtbareKolommen(afgerond).map((k) => k.k));
   const chips = afgerond ? '' : SNELFILTERS.map(([k, label, test]) => {
+    if (k === 'beleid-voorbeelden') return '';
     const n = basis.filter((d) => test(d, vandaag)).length;
     if (!n && ui.aanvragen.snel !== k) return '';
     return `<button type="button" class="snelfilter ${k}${ui.aanvragen.snel === k ? ' actief' : ''}" data-actie="snelfilter" data-snel="${k}" aria-pressed="${ui.aanvragen.snel === k}">${esc(label)} <b>${n}</b></button>`;
   }).join('');
-  return `<div class="viiz-tabs geen-print" role="tablist">
+  const urgentie = SNELFILTERS.filter(([k]) => ['telaat', 'bijna', 'taken'].includes(k));
+  return `<section class="werkstart geen-print" aria-labelledby="werkstart-titel">
+    <div class="werkstart-inhoud">
+      <div class="werkstart-label"><span></span> ZIB · WERKRUIMTE</div>
+      <h1 id="werkstart-titel">Aanvragen</h1>
+      <p>Van jaarcijfers naar een onderbouwd toetsinkomen.</p>
+      <div class="werkstart-acties">
+        <button class="knop" data-actie="nieuwe-aanvraag">${icoon('plus')} Nieuwe aanvraag</button>
+        <a class="knop sec" href="#/toetskaders">${icoon('boek')} Toetskaders</a>
+        ${!afgerond && state.me?.hosting === 'sites' ? '<button type="button" class="knop sec" data-actie="browseroverdracht">Dossiers uit deze browser</button>' : ''}
+        ${state.me?.hosting === 'sites' ? '<a class="knop sec" href="#/bronarchief">Historische brondossiers</a>' : ''}
+        ${!afgerond && kanBeleidsvoorbeeldenLaden() ? `<button type="button" class="knop sec" data-actie="beleid-voorbeelden-laden" aria-pressed="${ui.aanvragen.snel === 'beleid-voorbeelden'}">${icoon('map')} Oefendossiers</button>` : ''}
+      </div>
+    </div>
+    <div class="werkstart-illustratie" aria-hidden="true"><span></span><span></span><span></span><span></span><svg viewBox="0 0 360 110" preserveAspectRatio="none"><path d="M0 99 61 73 113 83 175 49 231 58 285 21 360 9" /><circle cx="285" cy="21" r="5" /></svg></div>
+  </section>
+  ${afgerond ? '' : `<div class="werkstart-kaarten geen-print" aria-label="Dossiers die aandacht vragen">
+    ${urgentie.map(([k, label, test], i) => {
+      const n = basis.filter((d) => test(d, vandaag)).length;
+      return `<button type="button" class="werkkaart ${k}" data-actie="snelfilter" data-snel="${k}" aria-pressed="${ui.aanvragen.snel === k}">
+        <span class="werkkaart-ico">${icoon(['waarschuwing', 'klok', 'taken'][i])}</span>
+        <span><b>${n}</b><span>${esc(label)}</span></span>${icoon('pijl')}
+      </button>`;
+    }).join('')}
+  </div>`}
+  <div class="viiz-tabs geen-print" role="tablist">
       <a href="#/klanten" role="tab" class="${afgerond ? '' : 'actief'}" aria-selected="${!afgerond}">Nieuwe en lopende aanvragen <span class="teller">${lopend}</span></a>
       <a href="#/klanten/afgerond" role="tab" class="${afgerond ? 'actief' : ''}" aria-selected="${afgerond}">Afgeronde aanvragen <span class="teller">${klaar}</span></a>
     </div>
@@ -339,22 +377,28 @@ export function renderAanvragen(afgerond) {
     </div>
     <div class="fab-groep geen-print">
       ${afgerond ? `<button class="fab sec" data-actie="herbeoordeling" title="Aanvraag herbeoordeling">${icoon('herhaal')}<span>Herbeoordeling</span></button>` : ''}
-      <button class="fab" data-actie="nieuwe-aanvraag" title="Nieuwe klant">${icoon('plus')}<span>Nieuwe klant</span></button>
     </div>`;
 }
 
 // ---------------------------------------------------------------------------
 // Inhoud van de pop-ups
 // ---------------------------------------------------------------------------
+const IKV_TOELICHTING = {
+  NHG: ' · met NHG',
+  ABN: ' · Woonbeleid, zonder NHG',
+  ASN: ' · zonder NHG (voorheen de Volksbank)',
+  KNAB: ' · zonder NHG',
+  OPT: ' · referentiekader van ZIB',
+};
+// Inkomensverklaringen per toetskader in alfabetische volgorde (de naam staat vooraan); daarna de overige soorten.
 export const SOORT_KEUZES = [
-  ['IKV|NHG', 'Inkomensverklaring met NHG'],
-  ['IKV|ABN', 'Inkomensverklaring zonder NHG (ABN AMRO Woonbeleid)'],
-  ['IKV|ASN', 'Inkomensverklaring zonder NHG (ASN Bank, voorheen de Volksbank)'],
-  ['IKV|KNAB', 'Inkomensverklaring zonder NHG (Knab)'],
-  ['IKV|OPT', 'Inkomensverklaring volgens het Optimaal toetskader (referentie)'],
-  ['NUL|ABN', '0-verklaring / beoordelingsverklaring zonder NHG'],
-  ['NUL|NHG', '0-verklaring / beoordelingsverklaring met NHG'],
+  ...KADER_VOLGORDE.map((id) => [`IKV|${id}`, `${KADERS[id].kort}${IKV_TOELICHTING[id] || ''}`, 'Inkomensverklaring']),
+  ['NUL|ABN', '0-verklaring / beoordelingsverklaring zonder NHG', 'Overige soorten'],
+  ['NUL|NHG', '0-verklaring / beoordelingsverklaring met NHG', 'Overige soorten'],
+  ['ANALYSE|ABN', 'Inkomensanalyse (alle toetskaders)', 'Overige soorten'],
 ];
+const soortOpties = (gekozen) => [...new Set(SOORT_KEUZES.map(([, , groep]) => groep))].map((groep) => `<optgroup label="${esc(groep)}">${SOORT_KEUZES.filter(([, , g]) => g === groep)
+  .map(([k, l]) => `<option value="${esc(k)}"${k === gekozen ? ' selected' : ''}>${esc(l)}</option>`).join('')}</optgroup>`).join('');
 
 export function modaalNieuweKlant() {
   const adv = lijst('advieskantoor').sort((a, b) => a.naam.localeCompare(b.naam));
@@ -362,12 +406,12 @@ export function modaalNieuweKlant() {
     <label class="veld"><span>Voorletter(s) klant *</span><input name="voorletters" autocomplete="off"></label>
     <label class="veld"><span>Tussenvoegsel</span><input name="tussenvoegsel" autocomplete="off"></label>
     <label class="veld"><span>Achternaam klant *</span><input name="achternaam" autocomplete="off"></label>
-    <fieldset class="keuzes"><legend>Soort aanvraag *</legend>
-      ${SOORT_KEUZES.map(([k, l], i) => `<label class="check"><input type="radio" name="soortkader" value="${k}"${i === 1 ? ' checked' : ''}><span>${esc(l)}</span></label>`).join('')}
-    </fieldset>
+    <label class="veld"><span>Soort aanvraag en toetskader *</span><select name="soortkader">
+      ${soortOpties('IKV|ABN')}
+    </select></label>
     <div class="raster-2" style="grid-template-columns:1fr 1fr;gap:12px">
-      <label class="veld"><span>Geldverstrekker (label)</span><select name="label">${['ABN AMRO', 'Florius', 'Moneyou', 'ASN Bank', 'Knab', 'Overig'].map((x) => `<option>${x}</option>`).join('')}</select></label>
-      <label class="veld"><span>Hypotheekaanvraagnummer</span><input name="leningnummer" autocomplete="off"></label>
+      <label class="veld"><span>Label (alleen bij ABN AMRO)</span><select name="label">${['ABN AMRO', 'Florius', 'Moneyou'].map((x) => `<option>${x}</option>`).join('')}</select></label>
+      <label class="veld"><span>Aanvraag- of leningnummer</span><input name="leningnummer" autocomplete="off"></label>
       <label class="veld"><span>Advieskantoor</span><select name="advieskantoor"><option value="">Geen / onbekend</option>${adv.map((a) => `<option value="${esc(a.id)}">${esc(a.naam)}</option>`).join('')}</select></label>
       <label class="veld"><span>Uiterste datum</span><input type="date" name="uiterste"></label>
     </div>

@@ -429,12 +429,91 @@ function deWit() {
   };
 }
 
+const sector = { sector: 'toegestaan' };
+const achmea = { ...sector, gelijkeActiviteiten: true, bijtellingGecontroleerd: true, balansBeoordeeld: true };
+const beleidsvoorbeelden = [
+  ['VENN', 'Venn', '0110', { ...sector, bronVersie: '2026-07', faillissement: 'nee', verhuurInOnderneming: 'nee' }],
+  ['ING', 'ING', '0111', { ondernemersduur: 'drie' }],
+  ['RABO', 'Rabobank', '0112', { raboRoute: 'ikv', raboKanaal: 'intermediair' }, 90500],
+  ['NIBC', 'NIBC', '0113', { nibcMethode: 'gewogen', nibcAanboddatum: '2026-09-15' }, 93500],
+  ['ATTENS', 'Attens', '0114', achmea],
+  ['SYNTRUS', 'Syntrus Achmea', '0115', { ...achmea, kanaal: 'direct', raadhuys: false }],
+  ['LLOYDS', 'Lloyds Bank', '0116', { ...sector, balansBeoordeeld: true }, 94000],
+  ['MUNT', 'MUNT Hypotheken', '0117', { ...sector, bestaandeMunt: false }, 91500],
+  ['MERIUS', 'Merius Hypotheken', '0118', {}, 92000],
+  ['NN', 'Nationale-Nederlanden', '0119', {}, 95000],
+  ['ASR', 'a.s.r.', '0120', {}, 89750],
+  ['BIJBOUWE', 'bijBouwe Basis', '0121', { ...sector, toetreding: false }, 90000],
+  ['DYNAMIC', 'Dynamic Verhuurhypotheek', '0122', { ...sector, verhuurDoel: true, toetreding: false, actueelJaarinkomen: 97500 }, 90500],
+  ['BUNQ', 'bunq Easy Mortgage', '0123', { ...sector, gewogen: true }, 96000],
+  ['TULP', 'Tulp Hypotheek', '0124', { ...sector, actueelJaarinkomen: 52500 }, 42500],
+];
+
+function voorbeeldTulp() {
+  const dossier = elAmrani();
+  const [onderneming] = dossier.ondernemingen;
+  onderneming.startdatum = '2025-01-01';
+  delete onderneming.jaren[2024];
+  dossier.ib[2023] = { voorStart: 38000 };
+  dossier.ib[2024] = { voorStart: 42000 };
+  return dossier;
+}
+
+function oefenverklaring(bedrag) {
+  return { bedrag, datum: '2026-08-25', opsteller: 'Fictieve rekenexpert' };
+}
+
+function maakBeleidsvoorbeeld([kader, label, nummer, invoer, oefenbedrag]) {
+  const analyse = kader === 'ANALYSE';
+  const sjabloon = kader === 'TULP' ? voorbeeldTulp() : jansen();
+  const beleidsinvoer = analyse
+    ? Object.fromEntries(beleidsvoorbeelden.map(([id, , , velden]) => [id, id === 'TULP' ? { ...sector } : { ...velden }]))
+    : { [kader]: { ...invoer } };
+  // Oefenverklaringen zijn weergavedata. De rekenkern ontvangt ze nooit als externe bewijsinvoer.
+  const oefenverklaringen = analyse
+    ? Object.fromEntries(beleidsvoorbeelden.filter(([, , , , bedrag]) => bedrag !== undefined)
+      .map(([id, , , , bedrag]) => [id, oefenverklaring(id === 'TULP' ? 92000 : bedrag)]))
+    : oefenbedrag === undefined ? {} : { [kader]: oefenverklaring(oefenbedrag) };
+  let toelichting = 'Vergelijk de beleidsroute, cijferuitkomst en gevraagde onderbouwing.';
+  if (analyse) toelichting = 'Vergelijk alle kaders met dezelfde ingevoerde cijfers. Een oefenverklaring simuleert de externe route.';
+  if (kader === 'TULP') toelichting = 'De ondernemer begon in januari 2025. Gebruik voor 2023 en 2024 het loon vóór de start en voor 2025 de fiscale winst.';
+  if (kader === 'ASR' || kader === 'BIJBOUWE') toelichting = 'Vergelijk de indicatie op NHG-grondslag met het bedrag in de fictieve verklaring. Een rekenexpert stelt het formele inkomen vast.';
+  return {
+    ...sjabloon,
+    id: `dos_demo_beleid_${kader.toLowerCase()}`,
+    nummer: `ZIB-2026-${nummer}`,
+    kader: analyse ? 'NHG' : kader,
+    soort: analyse ? 'ANALYSE' : 'IKV',
+    demo: true,
+    label,
+    status: 'beoordeling_1',
+    aanvrager: { voorletters: 'T.', achternaam: `Voorbeeld ${label}` },
+    leningnummer: `DEMO-${nummer}`,
+    uitersteDatum: '',
+    beleidsinvoer,
+    oefenverklaringen,
+    ...(kader === 'RABO' || analyse ? { berekeningsdatum: '2026-11-13' } : {}),
+    notities: { algemeen: `Fictieve oefencasus. ${toelichting}` },
+  };
+}
+
+const analyseVoorbeeld = ['ANALYSE', 'Inkomensanalyse', '0125'];
+
+export function beleidsvoorbeeldVoor(kader) {
+  const voorbeeld = kader === 'ANALYSE' ? analyseVoorbeeld : beleidsvoorbeelden.find(([id]) => id === kader);
+  return voorbeeld ? maakBeleidsvoorbeeld(voorbeeld) : null;
+}
+
+export function beleidVoorbeelden() {
+  return [...beleidsvoorbeelden, analyseVoorbeeld].map(maakBeleidsvoorbeeld);
+}
+
 export function demoRecords() {
   return [
     { id: 'adv_demo_westland', type: 'advieskantoor', naam: 'Hypotheekhuis Voorbeeld', afm: '12000001', contactpersoon: 'J. van Leeuwen', email: 'info@hypotheekhuis.example', telefoon: '0100 000000', plaats: 'Naaldwijk', aangemaakt: nu },
     { id: 'adv_demo_vandijk', type: 'advieskantoor', naam: 'Van Dijk Financieel Advies (demo)', afm: '12000002', contactpersoon: 'E. van Dijk', email: 'advies@vandijk.example', telefoon: '0100 000001', plaats: 'Leiden', aangemaakt: nu },
     { id: 'adv_demo_rijnmond', type: 'advieskantoor', naam: 'Rijnmond Hypotheken (demo)', afm: '12000003', contactpersoon: 'K. Bos', email: 'kantoor@rijnmond.example', telefoon: '0100 000002', plaats: 'Rotterdam', aangemaakt: nu },
-    vanDalen(), jansen(), deVries(), bakker(), elAmrani(), visser(), mulder(), deWit(), ...renewiRecords(),
+    vanDalen(), jansen(), deVries(), bakker(), elAmrani(), visser(), mulder(), deWit(), ...renewiRecords(), ...beleidVoorbeelden(),
     { id: 'taak_demo_1', type: 'taak', titel: 'Btw-aangifte Q2 2026 opvragen', dossierId: 'dos_demo_elamrani', toegewezenAan: 'A. de Groot', deadline: '2026-10-07', status: 'open', door: 'A. de Groot', aangemaakt: nu },
     { id: 'taak_demo_2', type: 'taak', titel: '2e beoordeling uitvoeren', dossierId: 'dos_demo_devries', toegewezenAan: 'R. Smit', deadline: '2026-10-03', status: 'open', door: 'A. de Groot', aangemaakt: nu },
     { id: 'taak_demo_3', type: 'taak', titel: 'Google check en KvK-adrescheck vastleggen', dossierId: 'dos_demo_bakker', toegewezenAan: 'A. de Groot', deadline: '2026-10-05', status: 'open', door: 'A. de Groot', aangemaakt: nu },

@@ -6,7 +6,7 @@ import { icoon } from './ui.js';
 // Hoofdmenu in de volgorde van de rekensoftware. "Klanten" is het overzicht van de aanvragen.
 // De dagelijkse onderdelen staan in de balk; de overige onder "Meer", zodat het menu ook op een laptop past.
 export const MENU_HOOFD = [
-  ['#/klanten', 'Klanten', 'klanten'],
+  ['#/klanten', 'Aanvragen', 'klanten'],
   ['#/documenten', 'Documenten', 'documenten'],
   ['#/advieskantoren', 'Advieskantoren', 'advieskantoren'],
   ['#/taken', 'Alle Taken', 'taken'],
@@ -72,7 +72,7 @@ export function balk(actief) {
   const extra = (key) => (key === 'mijn-taken' ? teller : '');
   const meerActief = MENU_MEER.some(([, , key]) => key === actief);
   return `<header class="balk"><div class="balk-binnen">
-    <a class="woordmerk" href="#/klanten" title="Nieuwe en lopende aanvragen"><b>ZIB</b><span>Zakelijk inkomen</span></a>
+    <a class="woordmerk" href="#/klanten" title="Naar aanvragen"><span class="woordmerk-teken" aria-hidden="true">${icoon('reken')}</span><span class="woordmerk-tekst"><b>ZIB</b><span>Zakelijk inkomen</span></span></a>
     <nav class="menu" aria-label="Hoofdmenu">
       ${MENU_HOOFD.map((m) => menuLink(m, actief, extra(m[2]))).join('')}
       <details class="uitklap menu-meer">

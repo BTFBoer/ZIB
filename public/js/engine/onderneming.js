@@ -1,6 +1,6 @@
 import { soortOndernemer, RECHTSVORMEN, bandbreedteVoor, solvNorm as normSolv, sectorControle } from './kaders.js';
 import * as P from './periods.js';
-import { totalenJaar, metTerugval } from './financieel.js';
+import { heeftResultaatinvoer, totalenJaar, metTerugval } from './financieel.js';
 import { WINST_CORRECTIES, VERMOGENS_CORRECTIES, getekend } from '../schema/correcties.js';
 import { num, rond, rond2, gemiddelde, isIngevuld } from '../util.js';
 import { Trace, cel, g, r, p, somF, lijstF, laagsteF } from './trace.js';
@@ -79,7 +79,7 @@ export function balansCorrecties(b = {}, div = {}, { kader, soort, beroepsgroep,
     add(['vaPos', 'evPos', 'tvPos'], 'box3', 'Box 3 vermogen (ingezet bij deze onderneming)', num(div.box3Ingezet));
     add(['vaPos', 'evPos', 'tvPos'], 'surplusOntvangen', 'Surplus werkkapitaal ontvangen van groep', num(div.surplusOntvangen));
     add(['evPos'], 'overigPos', 'Overige positieve correctie eigen vermogen', num(div.balansOverigPositief));
-  } else {
+  } else if (kader.correctieModel !== 'NEUTRAAL') {
     const factor = kader.goodwillFactor(beroepsgroep);
     const goodwill = (v('ivaGoodwillEV') + v('ivaGoodwillNietEV')) * factor;
     const label = factor === 1 ? 'Immateriële vaste activa'
@@ -90,10 +90,12 @@ export function balansCorrecties(b = {}, div = {}, { kader, soort, beroepsgroep,
       add(['evNeg', 'tvNeg'], 'leningDGA', 'Lening directie (activazijde)', v('fvaDGA'));
     }
   }
-  add(['vaNeg'], 'gRekening', 'Liquide middelen niet ter vrije beschikking (G-rekening)', v('liquideNietVrij'));
-  add(['vaNeg', 'evNeg', 'tvNeg'], 'dubieus', 'Dubieuze debiteuren zonder voorziening', num(div.dubieuzeDebiteuren));
-  add(['vaNeg', 'evNeg', 'tvNeg'], 'surplusIngezet', 'Surplus werkkapitaal ingezet bij groep', num(div.surplusIngezet));
-  add(['evNeg', 'tvNeg'], 'overigNeg', 'Overige negatieve correctie', num(div.balansOverigNegatief));
+  if (kader.correctieModel !== 'NEUTRAAL') {
+    add(['vaNeg'], 'gRekening', 'Liquide middelen niet ter vrije beschikking (G-rekening)', v('liquideNietVrij'));
+    add(['vaNeg', 'evNeg', 'tvNeg'], 'dubieus', 'Dubieuze debiteuren zonder voorziening', num(div.dubieuzeDebiteuren));
+    add(['vaNeg', 'evNeg', 'tvNeg'], 'surplusIngezet', 'Surplus werkkapitaal ingezet bij groep', num(div.surplusIngezet));
+    add(['evNeg', 'tvNeg'], 'overigNeg', 'Overige negatieve correctie', num(div.balansOverigNegatief));
+  }
 
   // Handmatige vermogenscorrecties (types zoals in de rekentool van de bank)
   hand.forEach((x, i) => {
@@ -207,6 +209,29 @@ function enOf(ok3, okC, heeftC, herstel) {
   return NOK;
 }
 
+function toetsKwartaaldekking(ond, J, T, termijn, datum, start) {
+  const { jaar, kwartaal, tot, vanaf } = termijn;
+  const label = `${jaar} t/m Q${kwartaal}`;
+  if (start && start > tot) return { status: 'nvt', tekst: `De onderneming bestond nog niet in ${label}.` };
+  const laatste = J[T[2]];
+  const bron = ond.jaren?.[jaar];
+  const boekjaarStart = start && start > `${jaar}-01-01` ? start : `${jaar}-01-01`;
+  const gebroken = laatste?.status === 'definitief' && laatste.tot !== `${T[2]}-12-31`;
+  if (gebroken) return { status: ATT, tekst: 'Gebroken boekjaar: controleer de benodigde periode van de tussentijdse cijfers en OB-aangiften bij de rekenexpert.' };
+
+  const j = J[jaar];
+  if (!j || !j.heeftResultaatinvoer) {
+    return { status: ATT, tekst: `Voer vanaf ${vanaf} de winst- en verliesrekening over ${label} in en controleer de OB-aangiften over dezelfde periode.` };
+  }
+  if (kwartaal === 4 && j.status === 'definitief' && j.tot === tot) {
+    return { status: AKK, tekst: `Definitieve winst- en verliesrekening over ${jaar} aanwezig. Controleer de OB-aangiften t/m Q4.` };
+  }
+  if (!bron?.tot || j.van > boekjaarStart || j.tot < tot || j.tot > datum || !P.volledigeMaanden(j.van, j.tot)) {
+    return { status: ATT, tekst: `Controleer de periode. Vanaf ${vanaf} moeten de tussentijdse cijfers ${label} bestrijken en op een volledige maand eindigen.` };
+  }
+  return { status: AKK, tekst: `Winst- en verliesrekening bestrijkt ${label}. Controleer de OB-aangiften over dezelfde periode.` };
+}
+
 // ---------------------------------------------------------------------------
 // Analyse van één onderneming
 // ---------------------------------------------------------------------------
@@ -284,7 +309,8 @@ export function analyseerOnderneming(ond, ctx) {
     // Correcties op het resultaat (ondernemingsniveau)
     const incBaten = handTypes.has('incidenteleBaat') ? 0 : metTerugval(div, 'incidenteleBaten', vwRuw.bijzondereBaten);
     const incLastenRuw = handTypes.has('incidenteleLast') ? 0 : metTerugval(div, 'incidenteleLasten', vwRuw.bijzondereLasten);
-    const incLasten = kader.incidenteelAlleenFiscaal && div.incidenteleLastenFiscaal === false ? 0 : incLastenRuw;
+    // Kaders die alleen fiscale incidentele lasten toestaan (NHG): pas corrigeren na het expliciete vinkje.
+    const incLasten = kader.incidenteelAlleenFiscaal && div.incidenteleLastenFiscaal !== true ? 0 : incLastenRuw;
     const willekeurig = kader.fiscaleCorrecties ? num(div.willekeurigeAfschrijving) : 0;
     // ASN 3.6: vervallen huurlasten bij een bedrijfsruimte in de nieuwe woning (85% van de kale huur).
     const huur = kader.vervallenHuurPct ? rond(num(div.vervallenHuurlasten) * kader.vervallenHuurPct) : 0;
@@ -394,7 +420,7 @@ export function analyseerOnderneming(ond, ctx) {
     // Geldstromen binnen de structuur (BZI: management fee en intern dividend naar de aandeelhouder)
     res.jaren[y] = {
       y, isC, status, van, tot, factor, actief, meegeteld, aandeel: aY,
-      heeftBalans: tj.heeftBalans, heeftVW: tj.heeftVW, aggBalans: tj.aggBalans, aggVW: tj.aggVW,
+      heeftBalans: tj.heeftBalans, heeftVW: tj.heeftVW, heeftResultaatinvoer: heeftResultaatinvoer(jd), aggBalans: tj.aggBalans, aggVW: tj.aggVW,
       balans, vwRuw, div, bal: bt, vw: vt,
       winst: { NW: vt.NW, RVB: vt.RVB, pos: winstPos, neg: winstNeg, NWcor, RVBcor, NWcorExtr: NWcor * factor },
       corr, ...rt, solvRuimte, liqRuimte,
@@ -403,9 +429,14 @@ export function analyseerOnderneming(ond, ctx) {
       omlDeb, omlCred,
       geldstroom: {
         managementFee: num(agg.managementFee),
+        managementFeeBron: agg.managementFee,
         internDividend: num(agg.internDividend),
+        internDividendBron: agg.internDividend,
         ontvangenFee: jd.geldstromen?.ontvangenFee || {},
         ontvangenDividend: jd.geldstromen?.ontvangenDividend || {},
+        totaalOntvangenFee: jd.geldstromen?.totaalOntvangenFee,
+        totaalOntvangenDividend: jd.geldstromen?.totaalOntvangenDividend,
+        dividendPriveBruto: jd.geldstromen?.dividendPriveBruto,
         nogTeOntvangenDividend: isIngevuld(jd.geldstromen?.nogTeOntvangenDividend)
           ? num(jd.geldstromen.nogTeOntvangenDividend) : num(jd.balansDetail?.vordOverig?.dividend),
         dividendDGA: jd.geldstromen?.dividendDGA,
@@ -443,6 +474,7 @@ export function analyseerOnderneming(ond, ctx) {
   }
 
   // Definitieve cijfers laatste toetsjaar
+  const kwartaaltermijn = kader.tussentijdsPerKwartaal && ond.actief !== false ? P.nhgKwartaaltermijn(datum) : null;
   const defVerplicht = P.opOfNa(datum, kader.definitiefVerplichtVanaf.m, kader.definitiefVerplichtVanaf.d)
     ? ctx.jaarNu - 1 : ctx.jaarNu - 2;
   if (ctx.soort !== 'NUL') {
@@ -456,7 +488,10 @@ export function analyseerOnderneming(ond, ctx) {
     }
     const ttVerplicht = !!kader.tussentijdsVerplichtVanaf && P.opOfNa(datum, kader.tussentijdsVerplichtVanaf.m, kader.tussentijdsVerplichtVanaf.d)
       && T3 === ctx.jaarNu - 1 && ond.actief !== false;
-    if (ttVerplicht && !(C && J[C]?.heeftVW)) {
+    if (kwartaaltermijn) {
+      const { status, tekst } = toetsKwartaaldekking(ond, J, T, kwartaaltermijn, datum, start);
+      add('tussentijds', 'Tussentijdse cijfers en periode', status, tekst);
+    } else if (ttVerplicht && !(C && J[C]?.heeftVW)) {
       add('tussentijds', 'Tussentijdse cijfers lopend jaar', ATT,
         `Vanaf ${kader.tussentijdsVerplichtVanaf.d}/${kader.tussentijdsVerplichtVanaf.m} is een tussentijdse winst- en verliesrekening over ${ctx.jaarNu} verplicht.`);
     } else if (C && J[C]?.heeftVW) {
@@ -479,7 +514,15 @@ export function analyseerOnderneming(ond, ctx) {
 
   // Winstgevendheid
   const toetsen = kader.toetsen || {};
-  if (toetsen.winst === 'NHG') {
+  if (toetsen.winst === 'POSITIEF' && ctx.soort !== 'NUL') {
+    const laatste = J[T3];
+    const w3 = laatste?.heeftResultaatinvoer ? laatste.winst.NWcor : null;
+    const wC = C && J[C]?.heeftResultaatinvoer ? J[C].winst.NWcorExtr : null;
+    const positiefLopendVereist = kwartaaltermijn && kwartaaltermijn.jaar === C && kwartaaltermijn.kwartaal !== 4;
+    const nietPositief = (w3 !== null && w3 <= 0) || (wC !== null && (wC < 0 || (wC === 0 && positiefLopendVereist)));
+    add('winst', 'Winstgevendheid', nietPositief ? NOK : w3 === null ? ATT : AKK,
+      `Nettowinst na correcties ${T3}: ${w3 === null ? 'vul de winst- en verliesrekening in' : g(w3)} (positief vereist).${wC !== null ? ` Controlejaar (geëxtrapoleerd): ${g(wC)}${positiefLopendVereist ? ' (positief vereist)' : ''}.` : ''}`);
+  } else if (toetsen.winst === 'NHG' || toetsen.winst === 'POSITIEF') {
     const w3 = J[T3]?.winst.NWcor ?? 0;
     const wC = C && J[C]?.heeftVW ? J[C]?.winst.NWcorExtr : null;
     const ok = w3 >= 0 && (wC === null || wC === undefined || wC >= 0);
@@ -660,7 +703,14 @@ export function analyseerOnderneming(ond, ctx) {
     res.maxOnttrekkenNvt = `Geen zeggenschap (belang ${p(res.aandeel)}): onttrekken kan alleen via een dividendbesluit van de aandeelhouders.`;
   }
 
-  res.status = slechtste(checks.map((c) => c.status));
+  if (kader.beleid && ctx.soort !== 'NUL') {
+    // Alleen algemene invoerfouten blijven staan. Ratio- en winstnormen komen uit het profiel.
+    res.checks = checks.filter((c) => /^(balans|plausibel)/.test(c.key));
+    delete res.maxOnttrekken;
+    delete res.benodigdBox3;
+    delete res.benodigdBox3Detail;
+  }
+  res.status = res.checks.length ? slechtste(res.checks.map((c) => c.status)) : 'nvt';
   bouwTraceOnderneming(res, ctx, kolLabels);
   return res;
 }
@@ -1222,7 +1272,7 @@ function bouwTraceOnderneming(res, ctx, kolLabels) {
   // Winstgevendheid
   const s2 = t.sectie('Berekening winstgevendheid', { ...k, groep: 'kengetallen',
     richtlijn: kader.toetsen?.winst === 'ABN' ? 'Positief resultaat in het laatste boekjaar en in een van de twee voorgaande boekjaren.'
-      : kader.toetsen?.winst === 'LAATSTE' ? 'Minimaal het laatste boekjaar positief (nettowinst na correcties).'
+      : kader.toetsen?.winst === 'LAATSTE' || kader.toetsen?.winst === 'POSITIEF' ? 'Minimaal het laatste boekjaar positief (nettowinst na correcties).'
         : 'Nettowinst na correcties ≥ 0 in het laatste toetsjaar en in het controlejaar.' });
   rij(s2, 'Totale omzet', (j) => cel(j.vw.OMZET + num(j.vwRuw.overigeOpbrengsten)));
   if (detailVW) {

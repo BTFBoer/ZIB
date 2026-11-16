@@ -27,7 +27,8 @@ function ezDossier({ kader = 'NHG', datum = '2026-07-15', T3 = 2025, sfw, ytd, v
     ib[y] = { perOnd: { o1: { sfw: sfw[i] } } };
   });
   if (ytd !== undefined) {
-    jaren[C] = { status: 'tussentijds', van: van || `${C}-01-01`, tot: tot || `${C}-06-30`, vw: { omzet: ytd } };
+    jaren[C] = { status: 'tussentijds', van: van || `${C}-01-01`, tot: tot || `${C}-06-30`, vw: { omzet: ytd },
+      ...(vervang ? { balans: { liquideMiddelen: 10000, evKapitaal: 10000 } } : {}) };
   }
   return {
     id: 'd1', soort: 'IKV', kader, berekeningsdatum: datum,
@@ -87,6 +88,57 @@ test('NHG bijlage II voorbeeld 1: lopend jaar in lijn, gemiddelde 3 jaar', () =>
   assert.equal(r.inkomen.box1, 46000);
 });
 
+test('NHG kwartaaltermijnen: 1 februari Q4, 1 augustus Q2 en 1 november Q3', () => {
+  const controle = (datum, tot, T3 = 2025) => {
+    const d = ezDossier({ datum, T3, sfw: [43000, 45000, 50000], ytd: 30000, tot });
+    const uit = bereken(d);
+    return [uit.ondernemingen[0].checks.find((c) => c.key === 'tussentijds'), uit.documenten];
+  };
+  assert.equal(controle('2026-01-31', '2025-09-30', 2024)[0].status, 'akkoord');
+  assert.match(controle('2026-02-01', '2025-09-30', 2024)[0].tekst, /2025 t\/m Q4/);
+  assert.equal(controle('2026-02-01', '2025-09-30', 2024)[0].status, 'attentie');
+  assert.equal(controle('2026-02-01', '2025-12-31', 2024)[0].status, 'akkoord');
+  assert.equal(controle('2026-04-30', '2025-12-31')[0].status, 'akkoord');
+  assert.equal(controle('2026-07-31', '2026-03-31')[0].status, 'akkoord');
+  assert.equal(controle('2026-08-01', '2026-03-31')[0].status, 'attentie');
+  assert.equal(controle('2026-08-01', '2026-06-30')[0].status, 'akkoord');
+  assert.equal(controle('2026-10-31', '2026-06-30')[0].status, 'akkoord');
+  const [controleNov, stukken] = controle('2026-11-01', '2026-06-30');
+  assert.equal(controleNov.status, 'attentie');
+  assert.match(controleNov.tekst, /2026 t\/m Q3/);
+  assert.ok(stukken.some((s) => s.categorie === 'ob_aangifte' && s.naam.includes('2026 t/m Q3')));
+  assert.equal(controle('2026-11-01', '2026-09-30')[0].status, 'akkoord');
+  assert.equal(controle('2026-11-01', '2026-12-31')[0].status, 'attentie');
+});
+
+test('NHG: onderscheid een nihilresultaat van ontbrekende winstcijfers', () => {
+  const d = ezDossier({ datum: '2026-11-01', sfw: [43000, 45000, 50000], ytd: 0, tot: '2026-09-30' });
+  const toets = (uit) => uit.ondernemingen[0].checks.find((c) => c.key === 'winst');
+  const nulLopend = bereken(d);
+  assert.equal(nulLopend.C, 2026);
+  assert.equal(toets(nulLopend).status, 'niet_akkoord');
+  assert.equal(nulLopend.toetsinkomen, 0);
+
+  const jaren = d.ondernemingen[0].jaren;
+  jaren[2026].vw = { omzet: 30000 };
+  jaren[2025].vw = { omzet: 0 };
+  assert.equal(toets(bereken(d)).status, 'niet_akkoord');
+  delete jaren[2025].vw;
+  assert.equal(toets(bereken(d)).status, 'attentie');
+});
+
+test('NHG: een balans zonder resultaat opent een controlepunt zonder het basisinkomen af te toppen', () => {
+  const d = ezDossier({ datum: '2026-11-01', sfw: [43000, 45000, 50000], vervang: true });
+  d.ondernemingen[0].jaren[2026] = { status: 'tussentijds', tot: '2026-09-30', balans: { liquideMiddelen: 10000, evKapitaal: 10000 } };
+  const uit = bereken(d);
+  assert.equal(uit.C, 2026);
+  assert.equal(uit.vervanging, false);
+  assert.equal(uit.status, 'attentie');
+  assert.equal(uit.inkomen.controleExtr, null);
+  assert.equal(uit.inkomen.berekend, 46000);
+  assert.ok(uit.meldingen.some((m) => m.niveau === 'attentie' && m.tekst.includes('Inkomenstoets 2026 open')));
+});
+
 test('NHG bijlage II voorbeeld 2: geëxtrapoleerd lager dan gemiddelde', () => {
   const r = bereken(ezDossier({ sfw: [43000, 45000, 50000], ytd: 20000 }));
   assert.equal(r.inkomen.controleExtr, 40000);
@@ -96,6 +148,23 @@ test('NHG bijlage II voorbeeld 2: geëxtrapoleerd lager dan gemiddelde', () => {
 test('NHG bijlage II voorbeeld 3: vervanging, laatste jaar hoger dan B', () => {
   const r = bereken(ezDossier({ sfw: [42000, 45000, 50000], ytd: 45000, vervang: true }));
   assert.equal(r.inkomen.box1, 46667);
+  assert.deepEqual(r.rekenkeuzes.vervanging, { beschikbaar: true, gevraagd: true, toegepast: true, reden: '' });
+});
+
+test('NHG: vervanging volgt het controlejaar, de ingangsdatum en de vereiste tussentijdse balans', () => {
+  const d = ezDossier({ sfw: [42000, 45000, 50000], ytd: 45000, vervang: true });
+  d.instellingen.controlejaar = false;
+  const uit = bereken(d);
+  assert.equal(uit.inkomen.box1, 45667);
+  assert.equal(uit.rekenkeuzes.controlejaar.actief, false);
+  assert.match(uit.rekenkeuzes.vervanging.reden, /controlejaar aan/);
+  d.instellingen.controlejaar = true;
+  d.berekeningsdatum = '2026-03-31';
+  d.ondernemingen[0].jaren[2026].tot = '2026-03-31';
+  assert.match(bereken(d).rekenkeuzes.vervanging.reden, /1-4/);
+  d.berekeningsdatum = '2026-04-01';
+  delete d.ondernemingen[0].jaren[2026].balans;
+  assert.match(bereken(d).rekenkeuzes.vervanging.reden, /tussentijdse balans/);
 });
 
 test('NHG bijlage II voorbeeld 4: maximeren op laatste volledige boekjaar', () => {
@@ -115,7 +184,7 @@ test('NHG bijlage II voorbeeld 6: vervanging, gemiddelde met lopend jaar', () =>
 
 test('Rekenvoorbeeld rapportage: vervanging met bijzondere baten en factor 2,4', () => {
   const d = ezDossier({ datum: '2023-05-31', T3: 2022, sfw: [3759, 18519, 29032], ytd: 11731,
-    van: '2023-01-01', tot: '2023-05-30', vervang: true });
+    van: '2023-01-01', tot: '2023-05-31', vervang: true });
   d.ondernemingen[0].jaren[2022].vw.bijzondereBaten = 3941;
   const r = bereken(d);
   assert.equal(r.ondernemingen[0].jaren[2022].inkomen.totaal, 25091);
@@ -537,6 +606,17 @@ test('Lening directie: annuïteit en contractuele termijn', () => {
   const ld = berekenLeningDirectie({ hoofdsom: 100000, rente: 3, looptijdMnd: 360 });
   assert.equal(ld.maandlast, 421.6);
   assert.equal(berekenLeningDirectie({ hoofdsom: 100000, rente: 3, looptijdMnd: 360, termijn: 450 }).maandlast, 450);
+});
+
+test('Een contractuele termijn zonder hoofdsom blijft zichtbaar en vraagt een leningovereenkomst', () => {
+  const d = { soort: 'IKV', kader: 'ABN', berekeningsdatum: '2026-09-01', leningDirectie: { termijn: 305.75 } };
+  const r = bereken(d);
+  assert.equal(r.leningDirectie.maandlast, 305.75);
+  assert.equal(r.leningDirectie.hoofdsom, null);
+  assert.equal(r.leningDirectie.berekend, null);
+  assert.match(r.leningDirectie.tekst, /€ 305,75 per maand\. Hoofdsom nog te verifiëren/);
+  assert.ok(r.documenten.some((x) => x.categorie === 'leningovereenkomst' && x.verplicht));
+  assert.equal(berekenLeningDirectie({ termijn: '' }).maandlast, 0);
 });
 
 test('DGA-inkomen lopend jaar uit de salarisstrook', () => {
