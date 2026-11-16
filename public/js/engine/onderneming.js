@@ -309,7 +309,8 @@ export function analyseerOnderneming(ond, ctx) {
     // Correcties op het resultaat (ondernemingsniveau)
     const incBaten = handTypes.has('incidenteleBaat') ? 0 : metTerugval(div, 'incidenteleBaten', vwRuw.bijzondereBaten);
     const incLastenRuw = handTypes.has('incidenteleLast') ? 0 : metTerugval(div, 'incidenteleLasten', vwRuw.bijzondereLasten);
-    const incLasten = kader.incidenteelAlleenFiscaal && div.incidenteleLastenFiscaal === false ? 0 : incLastenRuw;
+    // Kaders die alleen fiscale incidentele lasten toestaan (NHG): pas corrigeren na het expliciete vinkje.
+    const incLasten = kader.incidenteelAlleenFiscaal && div.incidenteleLastenFiscaal !== true ? 0 : incLastenRuw;
     const willekeurig = kader.fiscaleCorrecties ? num(div.willekeurigeAfschrijving) : 0;
     // ASN 3.6: vervallen huurlasten bij een bedrijfsruimte in de nieuwe woning (85% van de kale huur).
     const huur = kader.vervallenHuurPct ? rond(num(div.vervallenHuurlasten) * kader.vervallenHuurPct) : 0;

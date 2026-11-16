@@ -532,6 +532,21 @@ function zetWaarde(obj, pad, waarde) {
   setPath(obj, pad, waarde);
 }
 
+/** De rekenwijze bij de rekenkeuzes en de rekenroute in de beleidsinvoer (NIBC, bunq) blijven met elkaar in lijn. */
+function synchroniseerRekenwijze(d, bind, waarde) {
+  if (bind === 'instellingen.rekenwijze') {
+    if (d.kader === 'NIBC') {
+      const huidig = d.beleidsinvoer?.NIBC?.nibcMethode;
+      if (waarde === '123') setPath(d, 'beleidsinvoer.NIBC.nibcMethode', 'gewogen');
+      else if (huidig === 'gewogen') setPath(d, 'beleidsinvoer.NIBC.nibcMethode', 'standaard');
+    }
+    if (d.kader === 'BUNQ') setPath(d, 'beleidsinvoer.BUNQ.gewogen', waarde === '123');
+  } else if ((bind === 'beleidsinvoer.NIBC.nibcMethode' || bind === 'beleidsinvoer.BUNQ.gewogen') && d.instellingen) {
+    // Een gekozen route in de beleidsinvoer gaat voor; de rekenwijze volgt die route weer.
+    delete d.instellingen.rekenwijze;
+  }
+}
+
 function verwerkBinding(el, magRenderen) {
   if (dossierOpslag) return;
   const doel = doelVoor(el);
@@ -545,6 +560,7 @@ function verwerkBinding(el, magRenderen) {
     if (fout) { toast(fout); render({ behoudScroll: true }); return; }
   }
   zetWaarde(doel.obj, el.dataset.bind, waarde);
+  if (doel.soort === 'dossier' && doel.obj.type === 'dossier') synchroniseerRekenwijze(doel.obj, bind, waarde);
   if (doel.soort === 'profiel') {
     bewaarProfiel(doel.obj);
     return;
@@ -1260,7 +1276,8 @@ const ACTIES = {
       nummer: volgendDossiernummer(), soort, kader, status: 'documenten_uploaden', statusDatum: nowISO(), datumAanvraag: todayISO(),
       ...(soort === 'ANALYSE' ? { weergave: 'viiz' } : {}),
       niveau: 'Basis', behandelaar: mijnNaam(), advieskantoorId: modaalVeld('advieskantoor'), berekeningsdatum: todayISO(),
-      label: KADERS[kader]?.beleid?.kort || modaalVeld('label') || 'ABN AMRO', afdeling: 'IMV', leningnummer: modaalVeld('leningnummer'),
+      label: kader === 'ABN' ? modaalVeld('label') || 'ABN AMRO' : KADERS[kader]?.kort || modaalVeld('label') || '',
+      ...(kader === 'ABN' ? { afdeling: 'IMV' } : {}), leningnummer: modaalVeld('leningnummer'),
       uitersteDatum: modaalVeld('uiterste'), spoed: !!modaalVeld('spoed'),
       aanvrager: { voorletters: modaalVeld('voorletters'), tussenvoegsel: modaalVeld('tussenvoegsel'), achternaam: modaalVeld('achternaam') },
       instellingen: { controlejaar: true, initieelAantalOndernemingen: 1, box2Route: 'route1' },

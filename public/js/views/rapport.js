@@ -1,6 +1,6 @@
 import { esc, fmt, naamAanvrager, num, isIngevuld } from '../util.js';
 import { get, lijst } from '../state.js';
-import { RECHTSVORMEN, SOORTEN, kaderVoor, PARAM_LABELS } from '../engine/kaders.js';
+import { KADERS, RECHTSVORMEN, SOORTEN, kaderVoor, PARAM_LABELS } from '../engine/kaders.js';
 import { organogramGraaf, vergelijkKaders } from '../engine/index.js';
 import { zkLijst, zkTekst } from '../engine/nulverklaring.js';
 import { BALANS_RIJEN, VW_RIJEN } from '../schema/fields.js';
@@ -622,7 +622,7 @@ export function conceptFinancieel(d, r, ondId) {
 /** Algemene concepttekst: (eerdere en huidige) structuur en DGA-inkomen lopend jaar uit de salarisstrook. */
 export function conceptAlgemeen(d) {
   const regels = [];
-  if (d.bestaandeRelatie) regels.push(`Betreft een bestaande relatie van ${d.label || 'ABN AMRO'}${d.relatienummer ? ` (${d.relatienummer})` : ''}.`, '');
+  if (d.bestaandeRelatie) regels.push(`Betreft een bestaande relatie van ${d.label || KADERS[d.kader]?.kort || 'de geldverstrekker'}${d.relatienummer ? ` (${d.relatienummer})` : ''}.`, '');
   regels.push(organogramNotitie(d));
   Object.entries(d.salarisStrook || {}).forEach(([id, s]) => {
     if (!s?.f) return;

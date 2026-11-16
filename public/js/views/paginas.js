@@ -1,6 +1,6 @@
 import { esc, fmt, naamAanvrager, todayISO } from '../util.js';
 import { lijst, get, state, opslagvoorkeur, mijnNaam } from '../state.js';
-import { kaderLabel, SOORTEN, KADERS, BASIS_KADERS, KADER_VOLGORDE, PARAM_LABELS, leesPad } from '../engine/kaders.js';
+import { alfabetisch, kaderLabel, SOORTEN, KADERS, BASIS_KADERS, KADER_VOLGORDE, PARAM_LABELS, leesPad } from '../engine/kaders.js';
 import { BELEIDSPROFIELEN, METHODE_LABEL } from '../engine/beleid.js';
 import { CATEGORIEEN } from '../schema/documenten.js';
 import { RUBRIEKEN, postVoorRekening } from '../schema/rekeningschema.js';
@@ -158,7 +158,7 @@ function kenmerken(k) {
 }
 
 export function renderToetskaders() {
-  const ids = BASIS_KADERS;
+  const ids = alfabetisch(BASIS_KADERS);
   const publiekeBronnen = {
     NHG: ['https://www.nhg.nl/het-krijgen-van-nhg/een-hypotheek-voor-ondernemers', 'Toetskader en documentenlijst bij NHG'],
     ABN: ['https://www.abnamro.nl/nl/prive/hypotheken/hypotheek-berekenen/inkomen.html', 'Publieke toelichting van ABN AMRO'],
@@ -179,7 +179,7 @@ export function renderToetskaders() {
       ${k.instelbaar?.length ? `<p class="dempen klein">Instelbaar per dossier: ${esc(k.instelbaar.map((p) => `${(PARAM_LABELS[p] || [p])[0]} (standaard ${PARAM_LABELS[p]?.[1] === 'pct' ? pctK(leesPad(k, p)) : String(leesPad(k, p)).replace('.', ',')})`).join('; '))}.</p>` : ''}
     </div></details>`;
   }).join('');
-  const profielen = BELEIDSPROFIELEN.map((p) => `<details class="stappen paneel kader-kaart" id="kader-${esc(p.id)}" data-beleid-kaart>
+  const profielen = alfabetisch(BELEIDSPROFIELEN.map((p) => p.id)).map((id) => BELEIDSPROFIELEN.find((p) => p.id === id)).map((p) => `<details class="stappen paneel kader-kaart" id="kader-${esc(p.id)}" data-beleid-kaart>
     <summary>${esc(p.kort)} <span class="dempen klein">${esc(METHODE_LABEL[p.methode])}</span></summary>
     <div class="inhoud"><p><b>${esc(p.versie)}</b> · ${esc(p.bron)}</p>
       ${p.bronStatus ? `<p class="dempen">${esc(p.bronStatus)}</p>` : ''}

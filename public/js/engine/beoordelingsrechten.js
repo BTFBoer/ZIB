@@ -78,7 +78,8 @@ export function toegestaneInkomensBesluiten(dossier, onderneming = null) {
   const kader = kaderVoor(dossier).id;
   if (!onderneming) return BASIS_KADERS.includes(kader) ? ['berekend', 'afwijkend'] : [];
   if (kader === 'ABN') return onderneming.parentId ? [] : ['berekend', 'afwijkend', 'geen', 'nul'];
-  return BASIS_KADERS.includes(kader) ? ['berekend', 'nul'] : [];
+  // Overige kaders: per onderneming een eigen jaarinkomen (overrule) of € 0 (alleen risicobeoordeling).
+  return BASIS_KADERS.includes(kader) ? ['berekend', 'afwijkend', 'nul'] : [];
 }
 
 /** Bescherm bedrag, keuze en onderbouwing als één besluit. */

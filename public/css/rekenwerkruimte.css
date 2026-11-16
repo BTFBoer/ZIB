@@ -178,6 +178,16 @@
 .reken-inkomenstabel tfoot tr.totaal td.reken-uitkomstbedrag { background: var(--att-bg); color: var(--att); }
 .reken-inkomenstabel tfoot td.reken-uitkomstbedrag small { color: inherit; opacity: .85; white-space: normal; }
 .reken-inkomenstabel tbody tr.reken-aanpassing > * { background: var(--vlak); font-style: italic; }
+/* Rekenwijzen: niet aangeboden = grijs en leeg, toegepast = vet */
+.reken-tabel td.reken-nvt {
+  color: var(--grijs);
+  background: repeating-linear-gradient(135deg, rgba(0, 0, 0, .055), rgba(0, 0, 0, .055) 6px, rgba(0, 0, 0, .025) 6px, rgba(0, 0, 0, .025) 12px);
+}
+.reken-tabel td.reken-toegepast { font-weight: 700; }
+.reken-rekenwijzetabel { min-width: 300px; max-width: 520px; margin-top: 6px; }
+.reken-keuzetabel td > small { display: block; margin-top: 4px; color: var(--grijs); }
+.reken-aanpassen { border-top: 1px solid var(--lijn); margin-top: 6px; }
+.reken-aanpassen h3 { margin: 14px 0 6px; font-size: 16px; }
 .reken-toetsingstabel { min-width: 540px; }
 .reken-toetsingstabel tbody th[scope="row"] { background: var(--mint); }
 .reken-toetsingstabel tbody td { background: var(--achtergrond); }

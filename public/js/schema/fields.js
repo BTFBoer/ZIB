@@ -190,7 +190,7 @@ export const DIVERSEN_RIJEN = [
   { k: 'incidenteleBaten', label: 'Incidentele baten (corrigeren)', sign: -1,
     hint: 'Leeg = de bijzondere baten uit de V&W. Vul 0 in als die niet incidenteel zijn.' },
   { k: 'incidenteleLasten', label: 'Incidentele lasten (corrigeren)', sign: +1,
-    hint: 'Leeg = de bijzondere lasten uit de V&W. NHG: alleen indien fiscaal van aard.' },
+    hint: 'Leeg = de bijzondere lasten uit de V&W. NHG: telt alleen mee als je hieronder aanvinkt dat ze fiscaal van aard zijn.' },
   { k: 'willekeurigeAfschrijving', label: 'Willekeurige afschrijving', sign: +1, als: 'fiscaleCorrecties' },
   { k: 'investeringsaftrek', label: 'Investeringsaftrek', sign: +1, als: 'fiscaleCorrecties', soorten: ['IB'],
     hint: 'Fiscale aftrek: positief corrigeren op de saldo fiscale winst.' },
@@ -220,7 +220,8 @@ export const DIVERSEN_RIJEN = [
 ];
 
 export const DIVERSEN_VLAGGEN = [
-  { k: 'incidenteleLastenFiscaal', label: 'Incidentele lasten zijn fiscaal van aard', als: 'incidenteelAlleenFiscaal', standaard: true },
+  // Standaard uit: incidentele lasten tellen onder NHG pas als correctie mee na een bewuste, onderbouwde keuze.
+  { k: 'incidenteleLastenFiscaal', label: 'Incidentele lasten zijn fiscaal van aard', als: 'incidenteelAlleenFiscaal', standaard: false },
   { k: 'leningDGAGedekt', label: 'Lening u/g aan DGA is gedekt (eigen woning of box 3 onroerend goed)', soorten: ['VPB'], standaard: false },
   { k: 'cashflowNietToepassen', label: 'Cashflowcorrectie niet toepassen (gemotiveerd: geen negatieve invloed op verdiencapaciteit)', als: 'cashflowCorrectie', standaard: false },
 ];

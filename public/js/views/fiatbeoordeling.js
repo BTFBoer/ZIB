@@ -8,9 +8,9 @@ import { icoon, melding, pil } from './ui.js';
 const STATUS = { niet_akkoord: 0, attentie: 1, info: 2, akkoord: 3, nvt: 4 };
 const soortKeuze = {
   berekend: 'Berekend inkomen gebruiken',
-  afwijkend: 'Afwijkend bedrag vastleggen',
+  afwijkend: 'Overrule: afwijkend jaarinkomen vastleggen',
   geen: 'Geen inkomen afgeven',
-  nul: '€ 0, alleen risico beoordelen',
+  nul: '0-inkomen afgeven (alleen risicobeoordeling)',
 };
 const dossierLink = (d, tab, ond = '', veld = '') => `#/dossier/${encodeURIComponent(d.id)}/${tab}${ond ? `/${encodeURIComponent(ond)}` : ''}${veld ? `?veld=${encodeURIComponent(veld)}` : ''}`;
 
@@ -95,7 +95,7 @@ function invoervak(label, naam, waarde, rijen) {
   return `<label class="veld"><span>${esc(label)}</span><textarea rows="${rijen}" name="${naam}">${esc(waarde || '')}</textarea></label>`;
 }
 
-function inkomensWijziging(d, r, o, blokkade) {
+function inkomensWijziging(d, r, o, blokkade, { open = false } = {}) {
   const doel = o || d;
   const afw = doel.afwijkend || {};
   const opties = toegestaneInkomensBesluiten(d, o);
@@ -105,9 +105,11 @@ function inkomensWijziging(d, r, o, blokkade) {
   const motivatie = besluit.motivatie || afw.motivatie;
   const titel = o?.naam || 'Totaal dossier';
   const h = o && r.inkomen?.perHoofdbedrijf?.find((x) => x.id === o.id);
+  const p = o && !h ? r.inkomen?.perOnderneming?.find((x) => x.id === o.id) : null;
   const waarden = h ? `ZIB-indicatie ${fmt.eur(h.berekend)} · Woonbeleid ${fmt.eur(h.woonbeleidVoorAfslag)}`
-    : o ? 'Het inkomen blijft bij een risicobeoordeling buiten de berekening.' : `Berekend inkomen ${fmt.eur(r.berekend)}`;
-  return `<details class="stappen fiat-inkomenswijziging"${gekozen !== 'berekend' ? ' open' : ''}>
+    : p ? `Berekend gemiddeld jaarinkomen ${fmt.eur(p.gemiddelde)}${p.box2 ? ` · box 2 ${fmt.eur(p.box2)}` : ''}. Een overrule vervangt het inkomen van deze onderneming in alle jaren.`
+      : o ? 'Bij een 0-inkomen blijft de onderneming alleen in de risicobeoordeling.' : `Berekend inkomen ${fmt.eur(r.berekend)}`;
+  return `<details class="stappen fiat-inkomenswijziging"${gekozen !== 'berekend' || open ? ' open' : ''}>
     <summary>${esc(titel)} <span class="dempen klein">· ${esc(soortKeuze[gekozen])}</span></summary>
     <div class="inhoud" data-inkomenswijziging>
       <p>${esc(waarden)}${afw.actief && isIngevuld(afw.bedrag) ? ` · Afwijkend bedrag ${esc(fmt.eur(num(afw.bedrag)))}` : ''}</p>
@@ -123,6 +125,14 @@ function inkomensWijziging(d, r, o, blokkade) {
       <div class="acties"><button class="knop sec" type="button" data-actie="inkomenswijziging" data-ond="${esc(o?.id || '')}">Inkomensbesluit overnemen</button></div>`}
     </div>
   </details>`;
+}
+
+/** Inkomensbesluit voor één onderneming (overrule of 0-inkomen), met dezelfde accreditatiecontrole als bij Fiattering. */
+export function renderInkomensbesluitOnderneming(d, r, o) {
+  if (d.soort !== 'IKV' || !o) return '';
+  const blokkade = wijzigingsBlokkade(actorVoor(state.profiel, state.me), d);
+  const blok = inkomensWijziging(d, r, o, blokkade, { open: true });
+  return blok ? `${blokkade ? melding('attentie', esc(blokkade)) : ''}${blok}` : '';
 }
 
 export function renderFiatBeoordeling(d, r, docs = [], { broncontroles = '' } = {}) {

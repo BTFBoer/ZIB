@@ -38,6 +38,7 @@ import { dossierWerkbalk } from './dossierwerkbalk.js';
 import { renderFiatBeoordeling } from './fiatbeoordeling.js';
 import { renderBroncontrole } from './broncontrole.js';
 import { hoofduitkomst } from './uitkomst.js';
+import { REKENWIJZEN, effectieveRekenwijze, rekenwijzenVoor } from '../engine/rekenwijze.js';
 
 export const TABS = [
   ['overzicht', 'Dossieroverzicht'],
@@ -326,20 +327,26 @@ function tabKlant(d, r) {
     ${keuze('Advieskantoor', 'advieskantoorId', advOpties, d.advieskantoorId, { leeg: 'Geen / onbekend' })}
     ${veld('Uiterste datum', 'uitersteDatum', d.uitersteDatum, { type: 'datum', render: true })}
   </div></section>`;
+  // Algemene dossieradministratie; de labels en afdelingen van ABN AMRO verschijnen alleen als ABN AMRO de gekozen geldverstrekker is.
+  // Optimaal en NHG zijn toetskaders, geen geldverstrekker: dan een algemene benaming.
+  const geldverstrekker = !['OPT', 'NHG'].includes(d.kader) && KADERS[d.kader]?.kort || 'de geldverstrekker';
+  const abnGekozen = d.kader === 'ABN';
   const behandeling = intakeKlap(d, 'behandeling', 'Behandeling en dossieradministratie', `<div class="raster-3">
-    ${keuze('Niveau dossier', 'niveau', ['Basis', 'Medium', 'Top'], d.niveau || 'Basis')}
-    ${veld('Behandelaar (1e fiat)', 'behandelaar', d.behandelaar)}
-    ${keuze('Opdrachtnemer (label)', 'label', ['ABN AMRO', 'Florius', 'Moneyou', 'ASN Bank', 'Knab', 'Overig'], d.label || ({ ASN: 'ASN Bank', KNAB: 'Knab' }[d.kader] || 'ABN AMRO'))}
-    ${keuze('Afdeling', 'afdeling', ['FMD', 'IMV', 'RV'], d.afdeling || 'IMV', { hint: 'Bepaalt het format van de conclusie.' })}
-    ${veld('Hypotheekaanvraagnummer', 'leningnummer', d.leningnummer)}
+    ${keuze('Niveau dossier (complexiteit)', 'niveau', ['Basis', 'Medium', 'Top'], d.niveau || 'Basis', { hint: 'Bepaalt welke accreditatie mag beoordelen en fiatteren.' })}
+    ${veld('Behandelaar (eerste beoordeling)', 'behandelaar', d.behandelaar)}
+    ${abnGekozen
+      ? keuze('Label ABN AMRO', 'label', ['ABN AMRO', 'Florius', 'Moneyou'], ['ABN AMRO', 'Florius', 'Moneyou'].includes(d.label) ? d.label : 'ABN AMRO')
+      : `<label class="veld"><span>Geldverstrekker / toetskader</span><input type="text" value="${esc(KADERS[d.kader]?.kort || '')}" readonly aria-readonly="true"><small class="dempen">Wijzig dit bij Aanvraag hierboven.</small></label>`}
+    ${abnGekozen ? keuze('Afdeling ABN AMRO', 'afdeling', ['FMD', 'IMV', 'RV'], d.afdeling || 'IMV', { hint: 'Bepaalt het format van de conclusie.' }) : ''}
+    ${veld('Aanvraag- of leningnummer', 'leningnummer', d.leningnummer)}
     ${veld('Aantal ondernemingen bij aanvraag', 'instellingen.initieelAantalOndernemingen', inst.initieelAantalOndernemingen, { type: 'getal' })}
     ${veld('Datum aanvraag', 'datumAanvraag', d.datumAanvraag || String(d.aangemaakt || '').slice(0, 10), { type: 'datum' })}
     ${veld('Via', 'via', d.via, { placeholder: 'Bijv. adviseur, invoerservice, accountant' })}
-    ${veld('Relatienummer (bestaande relatie)', 'relatienummer', d.relatienummer, { placeholder: 'Alleen bij een bestaande relatie' })}
+    ${veld(`Klantnummer bij ${geldverstrekker}`, 'relatienummer', d.relatienummer, { placeholder: 'Alleen bij een bestaande relatie' })}
   </div>
   <div class="raster-2" style="margin-top:14px">
     <div>${vink('Spoeddossier', 'spoed', !!d.spoed, { render: true })}</div>
-    <div>${vink('Bestaande relatie van de geldverstrekker', 'bestaandeRelatie', !!d.bestaandeRelatie, { render: true })}</div>
+    <div>${vink(`Bestaande relatie van ${geldverstrekker}`, 'bestaandeRelatie', !!d.bestaandeRelatie, { render: true })}</div>
   </div>`);
   const toetsopties = intakeKlap(d, 'toetsing', 'Toetsjaren en inkomenskeuzes', `<div class="raster-3">
     ${keuze('Laatste toetsjaar', 'instellingen.laatsteToetsjaar', toetsjaarOpties, inst.laatsteToetsjaar ?? '', { render: true, type: 'getal',
@@ -469,6 +476,11 @@ export function renderAnalyseKaderKeuzes(d, id) {
     velden.push(keuze('ABN AMRO-bronmethode', `${prefix}.abnVaststelling`, { standaard: 'Standaard Woonbeleid', horizontaal: 'Horizontaal', verticaal: 'Verticaal' }, inst.abnVaststelling || (d.abnGroep ? 'horizontaal' : 'standaard')));
   }
   if (['ASN', 'KNAB', 'OPT'].includes(id)) velden.push(vink('Relevant voorafgaand dienstverband', `${prefix}.relevantDienstverband`, !!inst.relevantDienstverband));
+  const wijzen = rekenwijzenVoor(id);
+  if (wijzen.aangeboden.length > 1) {
+    velden.push(keuze('Rekenwijze (weging toetsjaren)', `${prefix}.rekenwijze`, wijzen.aangeboden.map((rw) => [rw, REKENWIJZEN[rw].label]),
+      effectieveRekenwijze(id, inst, d.beleidsinvoer, kader), { hint: wijzen.toelichting }));
+  }
   if (id === 'ASN') velden.push(vink('Trackrecord bij dezelfde onderneming bevestigd', `${prefix}.trackrecordZelfdeOnderneming`, !!inst.trackrecordZelfdeOnderneming));
   if (kader.beletRegel || kader.incidentRegel) {
     const belet = { ...algemeen.belet, ...lokaal.belet };

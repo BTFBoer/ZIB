@@ -1,4 +1,7 @@
 import { vergelijkKaders } from '../engine/index.js';
+import { REKENWIJZEN, REKENWIJZE_IDS } from '../engine/rekenwijze.js';
+import { VERMOGENS_CORRECTIES, WINST_CORRECTIES } from '../schema/correcties.js';
+import { renderInkomensbesluitOnderneming } from './fiatbeoordeling.js';
 import { heeftBedrag, heeftResultaatVoorBelasting } from '../engine/financieel.js';
 import { esc, fmt } from '../util.js';
 import { icoon, pil } from './ui.js';
@@ -168,12 +171,23 @@ function analyseRij(d, x, compact, uitklap) {
   const toelichting = horizontaal ? '<small>Groepsmodel</small>' : x.beleid && !x.beleid.bewijs && (Number.isFinite(x.box1) || Number.isFinite(x.box2)) ? '<small>Indicatie</small>' : '';
   return `<tr data-analysekader="${esc(x.id)}"><th scope="row">${esc(x.kort)}<small>${esc(x.versie || '')}</small>${uitklap ? analyseUitklapKnop(d, x.id, x.kort) : ''}</th>
     ${compact && !uitklap ? '' : `<td>${oordeel}</td>`}<td class="num">${esc(box1)}${toelichting}</td><td class="num">${esc(box2)}${toelichting}</td>
-    <td class="num"><strong>${esc(waarde)}</strong>${herkomst ? `<small>${esc(herkomst)}</small>` : ''}</td>${compact ? '' : `<td>${uitleg}</td>`}</tr>${uitklap ? analyseUitklapRij(d, x.id, compact ? 5 : 6) : ''}`;
+    ${rekenwijzeCellen(x)}
+    <td class="num"><strong>${esc(waarde)}</strong>${herkomst ? `<small>${esc(herkomst)}</small>` : ''}</td>${compact ? '' : `<td>${uitleg}</td>`}</tr>${uitklap ? analyseUitklapRij(d, x.id, (compact ? 5 : 6) + REKENWIJZE_IDS.length) : ''}`;
+}
+
+/** Uitkomst per rekenwijze; een rekenwijze die de geldverstrekker niet aanbiedt, blijft leeg en grijs. */
+function rekenwijzeCellen(x) {
+  const rijen = x.perRekenwijze?.rijen || [];
+  return REKENWIJZE_IDS.map((id) => {
+    const rw = rijen.find((r) => r.id === id);
+    if (x.fout || !rw?.aangeboden) return '<td class="num reken-nvt" title="Niet aangeboden door deze geldverstrekker">—</td>';
+    return `<td class="num${rw.toegepast ? ' reken-toegepast' : ''}">${esc(Number.isFinite(rw.bedrag) ? fmt.eur(rw.bedrag) : BEDRAG_LEEG)}${rw.toegepast ? '<small>Toegepast</small>' : ''}</td>`;
+  }).join('');
 }
 
 export function renderAnalyseTabel(d, uitkomsten = vergelijkKaders(d), { compact = false, uitklap = false } = {}) {
   return `<div class="scroll" data-inkomensanalyse><table class="tabel reken-tabel reken-analysetabel">
-      <thead><tr><th scope="col">Toetskader</th>${compact && !uitklap ? '' : '<th scope="col">Oordeel</th>'}<th scope="col" class="num">Box 1</th><th scope="col" class="num">Box 2</th><th scope="col" class="num">Jaarinkomen</th>${compact ? '' : '<th scope="col">Onderbouwing</th>'}</tr></thead>
+      <thead><tr><th scope="col">Toetskader</th>${compact && !uitklap ? '' : '<th scope="col">Oordeel</th>'}<th scope="col" class="num">Box 1</th><th scope="col" class="num">Box 2</th>${REKENWIJZE_IDS.map((id) => `<th scope="col" class="num">${esc(REKENWIJZEN[id].label)}</th>`).join('')}<th scope="col" class="num">Jaarinkomen</th>${compact ? '' : '<th scope="col">Onderbouwing</th>'}</tr></thead>
       <tbody>${uitkomsten.map((x) => analyseRij(d, x, compact, uitklap)).join('')}</tbody>
     </table></div>`;
 }
@@ -194,6 +208,34 @@ export function renderUitkomstentabel(d, r, { controles = false } = {}) {
   </section>${r.inkomensanalyse ? analysePaneel(d, vergelijkKaders(d), !controles) : ''}`;
 }
 
+/**
+ * Onderaan de ondernemingsberekening: een rekenwaarde aanpassen (correctie per jaar) en het inkomensbesluit voor
+ * deze onderneming (overrule of 0-inkomen). Het besluit vraagt dezelfde accreditatie als bij Fiattering.
+ */
+function ondernemingAanpassen(d, r, a) {
+  const o = (d.ondernemingen || []).find((x) => x.id === a.id);
+  if (!o || r.inkomensanalyse || d.soort !== 'IKV') return '';
+  const jaren = [...new Set([...r.T, ...(r.C ? [r.C] : [])])].sort((x, y) => x - y);
+  const correcties = (lijstNaam, titel, defs, sleutel) => {
+    const rijen = jaren.flatMap((y) => (o.jaren?.[y]?.[sleutel] || []).map((c) => `<tr><td>${esc(y)}</td><td>${esc(defs[c.type]?.label || c.type)}</td><td class="num">${esc(fmt.eur(c.bedrag))}</td><td>${esc(c.toelichting || '')}</td></tr>`));
+    return `<div><h4>${esc(titel)}</h4>
+      <div class="scroll"><table class="tabel compact"><thead><tr><th>Jaar</th><th>Soort</th><th class="num">Bedrag</th><th>Toelichting</th></tr></thead>
+      <tbody>${rijen.join('') || '<tr><td colspan="4" class="dempen">Nog geen aanpassingen.</td></tr>'}</tbody></table></div>
+      <div class="acties" style="margin-top:8px">${jaren.filter((y) => a.jaren?.[y]).map((y) => `<button type="button" class="knop sec klein" data-actie="correctie-open" data-ond="${esc(o.id)}" data-jaar="${y}" data-lijst="${lijstNaam}">${icoon('correctie')}${esc(y)}</button>`).join('')}</div></div>`;
+  };
+  const besluit = renderInkomensbesluitOnderneming(d, r, o);
+  return `<section class="reken-paneel" aria-labelledby="reken-aanpassen-titel">
+    <div class="reken-paneel-kop"><h2 id="reken-aanpassen-titel">Aanpassen voor ${esc(a.naam)}</h2></div>
+    <div class="reken-aanpassen">
+      <h3>Rekenwaarde aanpassen</h3>
+      <p class="reken-neutraal">Leg per jaar een correctie op het resultaat of de balans vast. ZIB rekent daarna opnieuw; de correctie staat in de rekenstappen en het rapport.</p>
+      <div class="raster-2">${correcties('winst', 'Correcties op het resultaat', WINST_CORRECTIES, 'winstCorrecties')}${correcties('vermogen', 'Correcties op de balans', VERMOGENS_CORRECTIES, 'vermogensCorrecties')}</div>
+      <h3>Inkomen overrulen of 0-inkomen afgeven</h3>
+      ${besluit || '<p class="reken-neutraal">Bij dit toetskader stelt de geldverstrekker of de rekenexpert het inkomen vast. Een besluit per onderneming is daarom niet beschikbaar; gebruik de invoer van het beleid.</p>'}
+    </div>
+  </section>`;
+}
+
 export function renderOndernemingBerekening(d, r, a, { details = '', weergave = '' } = {}) {
   if (!a) return renderRekenwerkruimte(d, r);
   const bron = (d.ondernemingen || []).find((o) => o.id === a.id);
@@ -206,6 +248,7 @@ export function renderOndernemingBerekening(d, r, a, { details = '', weergave = 
     ${renderOndernemingInkomen(d, r, a)}
     <details class="stappen reken-uitklap"><summary>Onderliggende jaarcijfers</summary><div class="reken-uitklap-inhoud">${jaarTabelBedrijf(a, bron, jaren, r.C)}</div></details>
     ${r.inkomensanalyse ? `<section class="reken-paneel"><h2>Uitkomsten voor het dossier</h2><p>De kaders berekenen een dossieruitkomst. Voor meerdere ondernemingen is die niet altijd aan één onderneming toe te rekenen.</p>${renderAnalyseTabel(d, undefined, { compact: true })}</section>` : `<section class="reken-paneel"><div class="reken-paneel-kop"><h2>Rekenstappen</h2>${weergave}</div>${renderTrace({ ...a.trace, secties: (a.trace?.secties || []).filter((s) => !['controles', 'voorwaarden'].includes(s.groep)) })}${r.beleid ? `<details class="stappen reken-uitklap"><summary>Berekening volgens ${esc(r.kaderCfg.kort)}</summary><div class="reken-uitklap-inhoud">${renderTrace({ ...r.trace, secties: (r.trace?.secties || []).filter((s) => s.groep === 'inkomen') })}</div></details>` : ''}${details}</section>`}
+    ${ondernemingAanpassen(d, r, a)}
   </div>`;
 }
 

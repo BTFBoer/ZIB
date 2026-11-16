@@ -3,6 +3,7 @@ import { RABO_NIBC } from './policy-rabo-nibc.js';
 import { EXTRA_PROFIELEN } from './policy-extra.js';
 import { addMonthsISO } from './periods.js';
 import { fmt, isIngevuld, num, rond } from '../util.js';
+import { REKENWIJZEN, beleidsinvoerMetRekenwijze, effectieveRekenwijze } from './rekenwijze.js';
 
 export const BELEIDSPROFIELEN = [...VENN_ING, ...RABO_NIBC, ...EXTRA_PROFIELEN];
 export const BELEID_PER_ID = Object.fromEntries(BELEIDSPROFIELEN.map((p) => [p.id, p]));
@@ -32,13 +33,17 @@ export const BELEIDSMETHODE = {
 const METHODE_TEKST = {
   111: 'gemiddelde van drie jaar, maximaal het laatste jaar',
   123: 'gewogen 1-2-3 (oudste 1×, middelste 2×, laatste 3×), maximaal het laatste jaar',
+  134: 'gewogen 1-3-4 (oudste 1×, middelste 3×, laatste 4×), maximaal het laatste jaar',
   nhg: 'toetsinkomen volgens het NHG-toetskader (rekenbasis van deze geldverstrekker)',
 };
 
-/** Rekenindicatie volgens de methode van de geldverstrekker op de jaarinkomens van de NHG-rekenkern. */
-export function beleidsindicatie(profiel, nhg) {
+/**
+ * Rekenindicatie volgens de methode van de geldverstrekker op de jaarinkomens van de NHG-rekenkern. Een gekozen
+ * gewogen rekenwijze (1-2-3 of 1-3-4, als de geldverstrekker die aanbiedt) gaat voor de standaardmethode.
+ */
+export function beleidsindicatie(profiel, nhg, rekenwijze = null) {
   if (!nhg?.inkomen) return null;
-  const methode = BELEIDSMETHODE[profiel.id] || 'nhg';
+  const methode = REKENWIJZEN[rekenwijze] && rekenwijze !== '111' ? rekenwijze : BELEIDSMETHODE[profiel.id] || 'nhg';
   const T = nhg.T || [];
   const reeks = T.map((y) => nhg.inkomen.perJaar?.[y]);
   // Zonder cijfers geen indicatie: een lege berekening is geen inkomen van € 0.
@@ -54,10 +59,11 @@ export function beleidsindicatie(profiel, nhg) {
     };
   }
   const [a, b, c] = reeks;
-  const gem = methode === '123' ? (a + 2 * b + 3 * c) / 6 : (a + b + c) / 3;
-  const formule = methode === '123'
-    ? `(${fmt.getal(a)} + 2 × ${fmt.getal(b)} + 3 × ${fmt.getal(c)}) / 6 = ${fmt.getal(gem)}; maximaal ${fmt.getal(c)}`
-    : `(${fmt.getal(a)} + ${fmt.getal(b)} + ${fmt.getal(c)}) / 3 = ${fmt.getal(gem)}; maximaal ${fmt.getal(c)}`;
+  const [wa, wb, wc] = REKENWIJZEN[methode]?.gewichten || [1, 1, 1];
+  const noemer = wa + wb + wc;
+  const gem = (wa * a + wb * b + wc * c) / noemer;
+  const deel = (w, x) => `${w > 1 ? `${w} × ` : ''}${fmt.getal(x)}`;
+  const formule = `(${deel(wa, a)} + ${deel(wb, b)} + ${deel(wc, c)}) / ${noemer} = ${fmt.getal(gem)}; maximaal ${fmt.getal(c)}`;
   // Het lopende jaar kan alleen verlagen, zoals bij NHG.
   const extr = Number.isFinite(nhg.inkomen.controleExtr) ? nhg.inkomen.controleExtr : null;
   let bedrag = Math.max(0, Math.min(gem, c));
@@ -72,7 +78,8 @@ export function beleidsindicatie(profiel, nhg) {
 
 /** Bereken de route van de geldverstrekker; een bankverklaring is een bron, geen ZIB-berekening. */
 export function toetsBeleidsprofiel(profiel, dossier, analyses, ctx, nhg) {
-  const invoer = { ...dossier.beleidsinvoer?.[profiel.id], nhg: ctx.kader.nhg === true };
+  // De rekenwijze bij de algemene rekenkeuzes (bijv. 1-2-3 bij NIBC of bunq) stuurt de route van het profiel.
+  const invoer = beleidsinvoerMetRekenwijze(profiel.id, { ...dossier.beleidsinvoer?.[profiel.id], nhg: ctx.kader.nhg === true }, dossier.instellingen);
   const grondslag = profiel.bereken?.({ dossier, analyses, ctx, nhg, invoer }) || {};
   if (dossier.soort === 'NUL') {
     return {
@@ -109,7 +116,7 @@ export function toetsBeleidsprofiel(profiel, dossier, analyses, ctx, nhg) {
   // gepubliceerde methode van de geldverstrekker op de jaarinkomens na correcties (NHG-rekenkern). Zo staan de
   // rekenvelden altijd ingevuld; het formele bedrag blijft de verklaring of bankbeoordeling waar het beleid die eist.
   if (indicatie === null && dossier.soort !== 'NUL') {
-    const fallback = beleidsindicatie(profiel, nhg);
+    const fallback = beleidsindicatie(profiel, nhg, effectieveRekenwijze(profiel.id, dossier.instellingen, dossier.beleidsinvoer));
     if (fallback) {
       indicatie = fallback.bedrag;
       viaIndicatie = true;
@@ -150,19 +157,22 @@ export function toetsBeleidsprofiel(profiel, dossier, analyses, ctx, nhg) {
   if (bedrag === null && !checks.some((c) => c.status === 'attentie' || c.status === 'niet_akkoord')) {
     meld('attentie', 'Voor deze situatie is nog geen toetsinkomen onderbouwd.');
   }
-  // Bij een rekenindicatie: de jaarinkomens en de box 2-component uit de NHG-rekenkern, zodat de rekenvelden gevuld zijn.
-  const box2Indicatie = viaIndicatie && Number.isFinite(nhg?.inkomen?.box2) ? Math.max(0, Math.min(nhg.inkomen.box2, indicatie)) : 0;
+  // Bij een rekenindicatie zonder eigen uitsplitsing: de jaarinkomens en de box 2-component uit de NHG-rekenkern,
+  // zodat de rekenvelden (box 1, box 2, jaren) gevuld zijn.
+  const zonderSplitsing = grondslag.box1 === undefined && grondslag.box2 === undefined && Number.isFinite(indicatie);
+  const splitsen = viaIndicatie || zonderSplitsing;
+  const box2Indicatie = splitsen && Number.isFinite(nhg?.inkomen?.box2) ? Math.max(0, Math.min(nhg.inkomen.box2, indicatie)) : 0;
   const perJaarGrondslag = grondslag.perJaar && Object.keys(grondslag.perJaar).length ? grondslag.perJaar : null;
   return {
     methode: extern ? 'extern' : grondslag.methode || (profiel.methode === 'extern' ? 'eigen' : profiel.methode),
     bedrag, indicatie, stappen, checks, bewijs,
-    box1: grondslag.box1 ?? (viaIndicatie ? rond(indicatie - box2Indicatie) : undefined),
-    box2: grondslag.box2 ?? (viaIndicatie ? rond(box2Indicatie) : undefined),
+    box1: grondslag.box1 ?? (splitsen ? rond(indicatie - box2Indicatie) : undefined),
+    box2: grondslag.box2 ?? (splitsen ? rond(box2Indicatie) : undefined),
     rc: grondslag.rc,
     ...(grondslag.vervanging ? { vervanging: grondslag.vervanging } : {}),
     versie: grondslag.versie || profiel.versie,
     bronUrl: grondslag.bronUrl || profiel.bronUrl,
-    perJaar: perJaarGrondslag || (viaIndicatie ? { ...(nhg.inkomen.perJaar || {}) } : {}),
+    perJaar: perJaarGrondslag || (splitsen && nhg?.inkomen?.perJaar ? { ...nhg.inkomen.perJaar } : {}),
     documenten: grondslag.documenten ?? (typeof profiel.documenten === 'function' ? profiel.documenten({ ctx, dossier, invoer }) : profiel.documenten),
   };
 }

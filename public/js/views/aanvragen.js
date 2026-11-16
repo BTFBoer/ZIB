@@ -85,7 +85,7 @@ function initialen(naam) {
 //   w(d): sorteerwaarde
 const KOLOMMEN = [
   { k: 'naam', label: 'Naam', std: true, stdAfg: true, filter: 'tekst', w: (d) => naamAanvrager(d.aanvrager).toLowerCase(), tekst: (d) => naamAanvrager(d.aanvrager) },
-  { k: 'hypotheek', label: 'Hypotheek<br>aanvr. nr.', lang: 'Hypotheekaanvraagnummer', std: true, stdAfg: true, filter: 'tekst', w: (d) => d.leningnummer || '', tekst: (d) => d.leningnummer || '' },
+  { k: 'hypotheek', label: 'Aanvraag-<br>nummer', lang: 'Aanvraag- of leningnummer', std: true, stdAfg: true, filter: 'tekst', w: (d) => d.leningnummer || '', tekst: (d) => d.leningnummer || '' },
   { k: 'eerder', label: '', vast: true, sorteer: false, w: () => 0 },
   { k: 'nr', label: 'Nr.', lang: 'Dossiernummer', std: true, stdAfg: true, filter: 'tekst', w: (d) => d.nummer || '', tekst: (d) => d.nummer || '' },
   { k: 'datumAanvraag', label: 'Datum<br>aanvraag', lang: 'Datum aanvraag', filter: 'tekst', w: datumAanvraag, tekst: (d) => fmt.datum(datumAanvraag(d)) },
@@ -101,7 +101,7 @@ const KOLOMMEN = [
   { k: 'statutair', label: 'Statutaire naam<br>Onderneming 1', lang: 'Onderneming', std: true, stdAfg: true, filter: 'tekst', w: (d) => (d.ondernemingen?.[0]?.naam || '').toLowerCase(), tekst: (d) => (d.ondernemingen || []).map((o) => o.naam || '').join(' ') },
   { k: 'advies', label: 'Advieskantoor', filter: 'tekst', w: (d) => (get(d.advieskantoorId)?.naam || '').toLowerCase(), tekst: (d) => get(d.advieskantoorId)?.naam || '' },
   { k: 'via', label: 'Via', filter: 'tekst', w: (d) => d.via || '', tekst: (d) => d.via || '' },
-  { k: 'opdrachtnemer', label: 'Opdracht-<br>nemer', lang: 'Opdrachtnemer', filter: 'tekst', w: (d) => d.label || '', tekst: (d) => d.label || '' },
+  { k: 'opdrachtnemer', label: 'Geld-<br>verstrekker', lang: 'Geldverstrekker', filter: 'tekst', w: (d) => d.label || KADERS[d.kader]?.kort || '', tekst: (d) => d.label || KADERS[d.kader]?.kort || '' },
   { k: 'uitkomst', label: 'Uitkomst', std: true, stdAfg: true, filter: 'keuze', w: (d) => ['akkoord', 'attentie', 'niet_akkoord'].indexOf(samenvatting(d).status), tekst: (d) => STATUS_TEKST[samenvatting(d).status] || '' },
   { k: 'inkomen', label: 'Zakelijk<br>inkomen', lang: 'Zakelijk inkomen', stdAfg: true, w: (d) => samenvatting(d).vastgesteld || 0, num: true },
 ];
@@ -225,7 +225,7 @@ function cel(d, k) {
     case 'statutair': return esc(d.ondernemingen?.[0]?.naam || '');
     case 'advies': return esc(get(d.advieskantoorId)?.naam || '');
     case 'via': return esc(d.via || '');
-    case 'opdrachtnemer': return esc(d.label || '');
+    case 'opdrachtnemer': return esc(d.label || KADERS[d.kader]?.kort || '');
     case 'inkomen': {
       if (d.soort === 'ANALYSE') return '–';
       if (d.soort === 'NUL') return '€ 0';
@@ -383,17 +383,22 @@ export function renderAanvragen(afgerond) {
 // ---------------------------------------------------------------------------
 // Inhoud van de pop-ups
 // ---------------------------------------------------------------------------
+const IKV_TOELICHTING = {
+  NHG: ' · met NHG',
+  ABN: ' · Woonbeleid, zonder NHG',
+  ASN: ' · zonder NHG (voorheen de Volksbank)',
+  KNAB: ' · zonder NHG',
+  OPT: ' · referentiekader van ZIB',
+};
+// Inkomensverklaringen per toetskader in alfabetische volgorde (de naam staat vooraan); daarna de overige soorten.
 export const SOORT_KEUZES = [
-  ['IKV|NHG', 'Inkomensverklaring met NHG'],
-  ['IKV|ABN', 'Inkomensverklaring zonder NHG (ABN AMRO Woonbeleid)'],
-  ['IKV|ASN', 'Inkomensverklaring zonder NHG (ASN Bank, voorheen de Volksbank)'],
-  ['IKV|KNAB', 'Inkomensverklaring zonder NHG (Knab)'],
-  ['IKV|OPT', 'Inkomensverklaring volgens het Optimaal toetskader (referentie)'],
-  ...KADER_VOLGORDE.filter((id) => KADERS[id].beleid).map((id) => [`IKV|${id}`, KADERS[id].kort]),
-  ['NUL|ABN', '0-verklaring / beoordelingsverklaring zonder NHG'],
-  ['NUL|NHG', '0-verklaring / beoordelingsverklaring met NHG'],
-  ['ANALYSE|ABN', 'Inkomensanalyse (alle toetskaders)'],
+  ...KADER_VOLGORDE.map((id) => [`IKV|${id}`, `${KADERS[id].kort}${IKV_TOELICHTING[id] || ''}`, 'Inkomensverklaring']),
+  ['NUL|ABN', '0-verklaring / beoordelingsverklaring zonder NHG', 'Overige soorten'],
+  ['NUL|NHG', '0-verklaring / beoordelingsverklaring met NHG', 'Overige soorten'],
+  ['ANALYSE|ABN', 'Inkomensanalyse (alle toetskaders)', 'Overige soorten'],
 ];
+const soortOpties = (gekozen) => [...new Set(SOORT_KEUZES.map(([, , groep]) => groep))].map((groep) => `<optgroup label="${esc(groep)}">${SOORT_KEUZES.filter(([, , g]) => g === groep)
+  .map(([k, l]) => `<option value="${esc(k)}"${k === gekozen ? ' selected' : ''}>${esc(l)}</option>`).join('')}</optgroup>`).join('');
 
 export function modaalNieuweKlant() {
   const adv = lijst('advieskantoor').sort((a, b) => a.naam.localeCompare(b.naam));
@@ -402,11 +407,11 @@ export function modaalNieuweKlant() {
     <label class="veld"><span>Tussenvoegsel</span><input name="tussenvoegsel" autocomplete="off"></label>
     <label class="veld"><span>Achternaam klant *</span><input name="achternaam" autocomplete="off"></label>
     <label class="veld"><span>Soort aanvraag en toetskader *</span><select name="soortkader">
-      ${SOORT_KEUZES.map(([k, l], i) => `<option value="${esc(k)}"${i === 1 ? ' selected' : ''}>${esc(l)}</option>`).join('')}
+      ${soortOpties('IKV|ABN')}
     </select></label>
     <div class="raster-2" style="grid-template-columns:1fr 1fr;gap:12px">
-      <label class="veld"><span>Geldverstrekker (label)</span><select name="label">${['ABN AMRO', 'Florius', 'Moneyou', 'ASN Bank', 'Knab', 'Overig'].map((x) => `<option>${x}</option>`).join('')}</select></label>
-      <label class="veld"><span>Hypotheekaanvraagnummer</span><input name="leningnummer" autocomplete="off"></label>
+      <label class="veld"><span>Label (alleen bij ABN AMRO)</span><select name="label">${['ABN AMRO', 'Florius', 'Moneyou'].map((x) => `<option>${x}</option>`).join('')}</select></label>
+      <label class="veld"><span>Aanvraag- of leningnummer</span><input name="leningnummer" autocomplete="off"></label>
       <label class="veld"><span>Advieskantoor</span><select name="advieskantoor"><option value="">Geen / onbekend</option>${adv.map((a) => `<option value="${esc(a.id)}">${esc(a.naam)}</option>`).join('')}</select></label>
       <label class="veld"><span>Uiterste datum</span><input type="date" name="uiterste"></label>
     </div>

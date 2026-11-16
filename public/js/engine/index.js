@@ -11,6 +11,8 @@ import { toetsBeleidsprofiel } from './beleid.js';
 import { rekenInvoerStatus } from './reken-invoer.js';
 import { berekenDgaGezamenlijk, bronDgaGezamenlijk } from './abn-aanvrager.js';
 import { kiesAbnVaststelling, vergelijkAbnBronmodel } from './abn-bronvergelijking.js';
+import { dossierMetSurplus, verdeelSurplusWerkkapitaal } from './surplus.js';
+import { REKENWIJZE_IDS, REKENWIJZEN, effectieveRekenwijze, rekenwijzenVoor } from './rekenwijze.js';
 
 export { KADERS, KADER_VOLGORDE, kaderVoor } from './kaders.js';
 export { dertigProcentToets } from './totaal.js';
@@ -855,6 +857,17 @@ function totaalABN(dossier, analyses, ctx, trace, st) {
 // Hoofdfunctie
 // ---------------------------------------------------------------------------
 export function bereken(dossier, opties = {}) {
+  // Algemene rekenkeuze: surplus werkkapitaal uit meerderheidsbelangen inzetten. Eerst rekenen zonder inzet, dan met
+  // de daaruit volgende balanscorrecties per vennootschap en jaar (zichtbaar in de rekenstappen en bij Diversen).
+  if (dossier?.instellingen?.surplusWerkkapitaal === true && !opties.surplusVerwerkt && dossier.soort !== 'NUL') {
+    const zonder = bereken(dossier, { ...opties, surplusVerwerkt: true });
+    if (zonder.inkomensanalyse) return zonder;
+    const verdeling = verdeelSurplusWerkkapitaal(dossier, zonder, zonder.structuur, belangen(dossier, zonder.structuur));
+    if (!verdeling.toegepast) return { ...zonder, surplusWerkkapitaal: verdeling };
+    const met = bereken(dossierMetSurplus(dossier, verdeling), { ...opties, surplusVerwerkt: true });
+    met.meldingen.push(...verdeling.meldingen);
+    return { ...met, surplusWerkkapitaal: verdeling };
+  }
   const { kader, datum, jaarNu, T, T3, C, kandidaatC } = bepaalJaren(dossier);
   const inst = dossier.instellingen || {};
   const inkomensanalyse = dossier.soort === 'ANALYSE';
@@ -1100,6 +1113,27 @@ export function bereken(dossier, opties = {}) {
     }
   });
 
+  // Handmatig inkomensbesluit per onderneming (overrule) bij kaders die op totaalniveau rekenen: het vastgelegde
+  // jaarinkomen vervangt het inkomen van die onderneming in alle toetsjaren en het lopende jaar; haar box 2 vervalt,
+  // want het besluit omvat het volledige inkomen uit die onderneming. ABN AMRO verwerkt dit per hoofdbedrijf.
+  if (kader.familie !== 'ABN' && !kader.beleid && soort === 'IKV') {
+    for (const a of analyses) {
+      const afw = onds.find((o) => o.id === a.id)?.afwijkend;
+      if (!afw?.actief || !isIngevuld(afw.bedrag) || nietMeeIds.has(a.id)) continue;
+      const bedrag = Math.max(0, rond(num(afw.bedrag)));
+      for (const y of [...T, ...(C ? [C] : [])]) {
+        const j = a.jaren[y];
+        if (!j?.inkomen || !j.actief) continue;
+        const factor = j.factor || 1;
+        j.inkomen = { ...j.inkomen, totaal: y === C ? rond(bedrag / factor) : bedrag, extr: bedrag, afwijkend: true,
+          pos: [], neg: [], basis: y === C ? rond(bedrag / factor) : bedrag };
+      }
+      if (a.box2) a.box2 = { ...a.box2, totaal: 0, dividendInTotaal: false, P: Object.fromEntries(Object.keys(a.box2.P || {}).map((k) => [k, 0])), afwijkend: true };
+      a.afwijkendInkomen = bedrag;
+      meldingen.push({ niveau: 'info', tekst: `${a.naam}: handmatig vastgesteld jaarinkomen van ${g(bedrag)} vervangt de berekening van deze onderneming${String(afw.motivatie || '').trim() ? '' : ' (leg de motivatie vast)'}.` });
+    }
+  }
+
   // Inkomen
   let inkomen = null;
   let nul = null;
@@ -1299,6 +1333,34 @@ export function vergelijkDossierVoorKader(dossier, id) {
   };
 }
 
+/**
+ * Uitkomst per rekenwijze (1-1-1, 1-2-3, 1-3-4) voor het toetskader van dit dossier. Een rekenwijze die de
+ * geldverstrekker niet aanbiedt, krijgt geen bedrag (aangeboden: false). De toegepaste rekenwijze is gemarkeerd.
+ * @param {object} basis  de berekening met de huidige keuzes (wordt hergebruikt voor de toegepaste rekenwijze)
+ */
+export function uitkomstenPerRekenwijze(dossier, basis = bereken(dossier)) {
+  const kaderId = basis.kader;
+  const { aangeboden, standaard, toelichting } = rekenwijzenVoor(kaderId);
+  const toegepast = effectieveRekenwijze(kaderId, dossier.instellingen, dossier.beleidsinvoer, basis.kaderCfg);
+  const bedragVan = (r) => (r.soort === 'NUL' ? 0 : r.beleid ? r.beleid.indicatie ?? r.beleid.bedrag : r.toetsinkomen);
+  const rijen = REKENWIJZE_IDS.map((id) => {
+    const label = REKENWIJZEN[id].label;
+    if (!aangeboden.includes(id) || basis.inkomensanalyse) return { id, label, aangeboden: false, toegepast: false, bedrag: null };
+    if (id === toegepast) return { id, label, aangeboden: true, toegepast: true, bedrag: bedragVan(basis) };
+    try {
+      const r = bereken({ ...dossier, instellingen: { ...(dossier.instellingen || {}), rekenwijze: id } });
+      return { id, label, aangeboden: true, toegepast: false, bedrag: bedragVan(r) };
+    } catch {
+      return { id, label, aangeboden: true, toegepast: false, bedrag: null };
+    }
+  });
+  // Een eigen weging in de parameters (bijv. 2-3-5) staat als aparte regel.
+  if (toegepast === 'eigen') {
+    rijen.push({ id: 'eigen', label: (basis.kaderCfg?.methode123?.gewichten || []).join('-'), aangeboden: true, toegepast: true, bedrag: bedragVan(basis) });
+  }
+  return { kader: kaderId, toegepast, standaard, toelichting, aangeboden, rijen };
+}
+
 export function vergelijkKaders(dossier, ids = KADER_VOLGORDE) {
   return ids.map((id) => {
     try {
@@ -1327,6 +1389,7 @@ export function vergelijkKaders(dossier, ids = KADER_VOLGORDE) {
         invoerBlokkeert,
         toelichtingen: [...new Set(r.meldingen.filter((m) => ['attentie', 'niet_akkoord'].includes(m.niveau)).map((m) => m.tekst))],
         attenties: r.meldingen.filter((m) => m.niveau === 'attentie').length, T: r.T, C: r.C, starter: r.inkomen?.starter || null,
+        perRekenwijze: uitkomstenPerRekenwijze(invoerDossier, r),
       };
     } catch (e) {
       return { id, kort: KADERS[id]?.kort || id, fout: String(e?.message || e) };

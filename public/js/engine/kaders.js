@@ -1,4 +1,5 @@
 import { BELEIDSPROFIELEN } from './beleid.js';
+import { gewichtenVoorKeuze } from './rekenwijze.js';
 
 // Beleidskaders als configuratie. De rekenkern leest uitsluitend deze parameters (geen vergelijkingen
 // op de naam van een kader), zodat een kader een extra object is. Teksten zijn samenvattingen in eigen
@@ -428,7 +429,11 @@ for (const profiel of BELEIDSPROFIELEN) {
     inkomensberekening: profiel.regels,
   };
 }
-export const KADER_VOLGORDE = [...BASIS_KADERS, ...BELEIDSPROFIELEN.map((p) => p.id)];
+/** Toetskaders altijd op alfabetische volgorde van de naam (hoofdletterongevoelig, Nederlandse sortering). */
+export function alfabetisch(ids, naam = (id) => KADERS[id]?.kort || id) {
+  return [...ids].sort((a, b) => naam(a).localeCompare(naam(b), 'nl', { sensitivity: 'base' }));
+}
+export const KADER_VOLGORDE = alfabetisch([...BASIS_KADERS, ...BELEIDSPROFIELEN.map((p) => p.id)]);
 
 /** Labels van de instelbare parameters (pad → [label, eenheid]). */
 export const PARAM_LABELS = {
@@ -498,11 +503,17 @@ export function kaderVoor(idOfDossier, instellingen) {
   const inst = instellingen ?? (typeof idOfDossier === 'object' ? idOfDossier?.instellingen : null) ?? {};
   const over = inst.kaderParams?.[basis.id];
   if (basis.beleid) return basis;
-  if (!over || !basis.instelbaar?.length) return basis;
+  // Rekenwijze uit de algemene rekenkeuzes (1-2-3 of 1-3-4) voor kaders met een gewogen methode.
+  const gewichten = basis.methode123 ? gewichtenVoorKeuze(basis.id, inst) : null;
+  if ((!over || !basis.instelbaar?.length) && !gewichten) return basis;
   const k = { ...basis };
+  if (gewichten) k.methode123 = { ...basis.methode123, gewichten: [...gewichten] };
+  if (!over || !basis.instelbaar?.length) return k;
   let gewijzigd = false;
   const aangepast = {};
   basis.instelbaar.forEach((pad) => {
+    // De rekenwijze bij de rekenkeuzes gaat voor een losse weging in de parameters.
+    if (gewichten && pad.startsWith('methode123.gewichten.')) return;
     // Percentages worden ingevoerd als procent (20 = 20%), factoren en aantallen als getal.
     const v = over[pad] ?? leesPad(over, pad);
     if (v === undefined || v === null || v === '') return;

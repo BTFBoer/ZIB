@@ -1,9 +1,45 @@
 import { getekendeDossierfase } from '../engine/beoordelingsrechten.js';
+import { uitkomstenPerRekenwijze } from '../engine/index.js';
+import { REKENWIJZEN, effectieveRekenwijze, rekenwijzenVoor } from '../engine/rekenwijze.js';
 import { esc, fmt } from '../util.js';
 import { renderBronUitkomsten } from './broncontrole.js';
 
 function opties(waarden, huidig) {
   return waarden.map(([waarde, label]) => `<option value="${esc(waarde)}"${waarde === huidig ? ' selected' : ''}>${esc(label)}</option>`).join('');
+}
+
+/** Keuze en uitkomst per rekenwijze (1-1-1, 1-2-3, 1-3-4); niet aangeboden rekenwijzen blijven grijs. */
+function rekenwijzeKeuze(d, r, gesloten, kies) {
+  if (r.inkomensanalyse) return 'Per toetskader; zie de kolommen 1-1-1, 1-2-3 en 1-3-4 bij de uitkomsten';
+  if (r.soort === 'NUL') return 'Niet van toepassing bij een 0-verklaring';
+  const { aangeboden, toelichting } = rekenwijzenVoor(r.kader);
+  const toegepast = effectieveRekenwijze(r.kader, d.instellingen, d.beleidsinvoer, r.kaderCfg);
+  const opties = aangeboden.map((id) => [id, `${REKENWIJZEN[id].label} · ${REKENWIJZEN[id].omschrijving.toLowerCase()}`]);
+  if (toegepast === 'eigen') opties.push(['eigen', `${(r.kaderCfg.methode123?.gewichten || []).join('-')} · eigen weging (parameters)`]);
+  const veld = opties.length > 1
+    ? kies('reken-rekenwijze', 'instellingen.rekenwijze', toegepast, opties, { kenmerk: 'data-reken-rekenwijze', uit: gesloten })
+    : `<span>${esc(opties[0]?.[1] || '1-1-1')}</span>`;
+  return `${veld}<small>${esc(toelichting)}</small>`;
+}
+
+function uitkomstPerRekenwijze(d, r) {
+  const per = uitkomstenPerRekenwijze(d, r);
+  const cellen = per.rijen.map((x) => `<td class="num${x.aangeboden ? '' : ' reken-nvt'}${x.toegepast ? ' reken-toegepast' : ''}"${x.aangeboden ? '' : ' title="Niet aangeboden door deze geldverstrekker"'}>${x.aangeboden ? `${esc(Number.isFinite(x.bedrag) ? fmt.eur(x.bedrag) : '—')}${x.toegepast ? '<small>Toegepast</small>' : ''}` : '—'}</td>`).join('');
+  return `<div class="scroll"><table class="tabel reken-tabel reken-rekenwijzetabel" aria-label="Uitkomst per rekenwijze"><thead><tr>${per.rijen.map((x) => `<th scope="col" class="num">${esc(x.label)}</th>`).join('')}</tr></thead>
+    <tbody><tr>${cellen}</tr></tbody></table></div>`;
+}
+
+function surplusKeuze(d, r, gesloten, kies, toonUitkomst) {
+  const kader = r.kaderCfg;
+  const toepasbaar = r.inkomensanalyse || kader.correctieModel === 'NHG' || !!kader.beleid;
+  if (!toepasbaar) return 'Niet van toepassing: ABN AMRO toetst de groep in het eigen groepsmodel';
+  const aan = d.instellingen?.surplusWerkkapitaal === true;
+  const verdeling = r.surplusWerkkapitaal;
+  const uitleg = toonUitkomst && aan && !r.inkomensanalyse
+    ? verdeling?.toegepast ? `${verdeling.overdrachten.length} ${verdeling.overdrachten.length === 1 ? 'inzet' : 'inzetten'} verwerkt als balanscorrectie (zie Meldingen bij Fiattering)`
+      : kader.beleid ? 'Toegepast in de NHG-rekenbasis van deze geldverstrekker' : verdeling?.reden || ''
+    : 'Van dochter naar moeder naar rato van het belang, van moeder naar dochter 100%; de gevende vennootschap blijft aan de normen voldoen.';
+  return `${kies('reken-surplus', 'instellingen.surplusWerkkapitaal', String(aan), [['false', 'Nee'], ['true', 'Ja']], { kenmerk: 'data-reken-surplus', uit: gesloten })}<small${toonUitkomst ? ' data-reken-keuze-uitkomst' : ''}>${esc(uitleg)}</small>`;
 }
 
 export function renderRekenkeuzes(d, r, toonUitkomst) {
@@ -27,6 +63,9 @@ export function renderRekenkeuzes(d, r, toonUitkomst) {
     ['Controlejaar', `${kies('reken-controlejaar', 'instellingen.controlejaar', String(controleAan), [['true', 'Aan'], ['false', 'Uit']], { kenmerk: 'data-reken-controlejaar', uit: gesloten })}${controleToelichting}`, 'reken-controlejaar'],
     ['Oudste toetsjaar vervangen', r.inkomensanalyse ? 'In te stellen bij de toepasselijke toetskaders' : heeftVervanging ? `${kies('reken-vervanging', vervangPad, String(vervang), jaNee, { kenmerk: 'data-reken-vervanging', uit: gesloten || !controleAan })}${vervangToelichting}` : 'Niet van toepassing', 'reken-vervanging'],
     ['Vaststellingsmethode', r.inkomensanalyse ? 'Per toetskader' : heeftMethode ? kies('reken-methode', 'instellingen.abnVaststelling', methode, [...(!d.abnGroep ? [['standaard', 'Standaard volgens Woonbeleid']] : []), ['horizontaal', 'Horizontaal'], ['verticaal', 'Verticaal']], { uit: gesloten }) : 'Volgens het gekozen toetskader', 'reken-methode'],
+    ['Rekenwijze (weging toetsjaren)', rekenwijzeKeuze(d, r, gesloten, kies), 'reken-rekenwijze'],
+    ...(toonUitkomst && !r.inkomensanalyse && r.soort !== 'NUL' ? [['Uitkomst per rekenwijze', uitkomstPerRekenwijze(d, r)]] : []),
+    ['Surplus werkkapitaal uit meerderheidsbelangen inzetten', surplusKeuze(d, r, gesloten, kies, toonUitkomst), 'reken-surplus'],
   ];
   return `<section class="reken-paneel reken-algemeen" aria-labelledby="reken-algemeen-titel"${r.inkomensanalyse ? ' data-inkomensanalyse' : ` data-beoordelingskader="${esc(r.kader)}"`}>
     <div class="reken-paneel-kop"><div><h2 id="reken-algemeen-titel">Algemene rekenkeuzes</h2><p class="reken-neutraal">${esc(r.inkomensanalyse ? 'Inkomensanalyse' : [r.kaderCfg.kort, r.kaderVersie].filter(Boolean).join(' · '))}</p></div></div>

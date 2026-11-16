@@ -47,10 +47,13 @@ function aggBV(id, naam, extra = {}, jaarExtra = {}, bzi = {}) {
 }
 
 test('Kaders: basiskaders en alle aanvullende geldverstrekkers', () => {
+  // Toetskaders staan overal op alfabetische volgorde van de naam.
   assert.deepEqual(KADER_VOLGORDE, [
-    'NHG', 'ABN', 'ASN', 'KNAB', 'OPT', 'VENN', 'ING', 'RABO', 'NIBC',
-    'ATTENS', 'SYNTRUS', 'LLOYDS', 'MUNT', 'MERIUS', 'NN', 'ASR', 'BIJBOUWE', 'DYNAMIC', 'BUNQ', 'TULP',
+    'ASR', 'ABN', 'ASN', 'ATTENS', 'BIJBOUWE', 'BUNQ', 'DYNAMIC', 'ING', 'KNAB', 'LLOYDS',
+    'MERIUS', 'MUNT', 'NN', 'NHG', 'NIBC', 'OPT', 'RABO', 'SYNTRUS', 'TULP', 'VENN',
   ]);
+  const namen = KADER_VOLGORDE.map((id) => KADERS[id].kort);
+  assert.deepEqual(namen, [...namen].sort((a, b) => a.localeCompare(b, 'nl', { sensitivity: 'base' })));
   KADER_VOLGORDE.forEach((id) => {
     const k = KADERS[id];
     assert.ok(k.familie && k.totaal && k.correctieModel && k.bron && k.regels?.length, id);
